@@ -471,6 +471,24 @@ void setup(){
  otaRunningPartition=running?running->label:"desconocida";
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
  loadProfile();storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
+ // Recover credentials from the original 9.5.3 namespace, retained by application-only OTA.
+ // Verified on owner's private 8MB flash: namespace "iwagumi-rgb", keys homeSsid/homePass.
+ // Never embed passwords in firmware, logs, source repository, report or response.
+ if(storedSSID.isEmpty()){
+  Preferences legacy;
+  if(legacy.begin("iwagumi-rgb",true)){
+   String oldSsid=legacy.getString("homeSsid","");
+   String oldPass=legacy.getString("homePass","");
+   legacy.end();
+   if(oldSsid.length()>0 && oldSsid.length()<=32 && oldPass.length()<=63){
+    if(prefs.putString("ssid",oldSsid)==oldSsid.length()){
+     prefs.putString("wifi_pw",oldPass);
+     storedSSID=oldSsid;storedPass=oldPass;
+     record("WIFI_MIGRADA","Configuracion local 9.5.3 reutilizada sin mostrar claves");
+    }
+   }
+  }
+ }
  // Emergency AP secret is created from hardware randomness on first boot,
  // persisted in NVS, printed ONLY on the physical serial port.
  apPassword=prefs.getString("ap_secret","");
