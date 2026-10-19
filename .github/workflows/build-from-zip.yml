@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, dev/r4-3-2-diagnostico-seguro]
     paths:
       - 'CIELO_SOURCE.zip'
       - 'src/**'
@@ -125,7 +125,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Publicar resultado legible y codigo fuente en GitHub
-        if: always() && github.event_name != 'pull_request'
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           CI_FINAL_STATUS: ${{ job.status }}
           CI_RUN_ID: ${{ github.run_id }}
