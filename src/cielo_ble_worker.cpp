@@ -10,6 +10,7 @@
 namespace cielo96 {
 namespace {
 struct Target {
+ Target(const char* n, const char* s, const char* w): name(n), service(s), writeUuid(w) {}
  const char* name; const char* service; const char* writeUuid;
  bool addressKnown=false;
  String address;
