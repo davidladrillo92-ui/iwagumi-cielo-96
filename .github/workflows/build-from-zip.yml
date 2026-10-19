@@ -17,8 +17,8 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: cielo-zip-main
-  cancel-in-progress: false
+  group: cielo-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   firmware:
     runs-on: ubuntu-22.04
