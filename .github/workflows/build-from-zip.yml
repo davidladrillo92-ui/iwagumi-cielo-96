@@ -99,6 +99,24 @@ jobs:
             build-src/.pio/build/atoms3_lite_c124/firmware.elf
           if-no-files-found: error
           retention-days: 30
+      - name: Resguardar codigo fuente completo para restaurar sin GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_96_R43_FUENTE_COMPLETA
+          path: |
+            build-src/src/
+            build-src/include/
+            build-src/web/
+            build-src/tests/
+            build-src/tools/
+            build-src/reference/
+            build-src/platformio.ini
+            build-src/partitions_8mb.csv
+            build-src/README.md
+            build-src/.github/workflows/
+          if-no-files-found: error
+          retention-days: 30
       - name: Conservar logs en Actions
         if: always()
         uses: actions/upload-artifact@v4
