@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_attr.h>
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
 #include "profiles_generated.h"
@@ -44,7 +45,24 @@ static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
 static uint32_t httpCount=0,bleResultCount=0,bleResultErrors=0,bleSoftTimeouts=0;
 static uint32_t bleSlowCount=0,bleDurationMax=0,wifiFailures=0;
 struct DevTelemetry {uint32_t completed=0,gatt_ok=0,write_calls=0,errors=0,slow=0,last_ms=0,max_ms=0;};
-static DevTelemetry devices[2]; // PV and Chihiros. GATT acceptance is not an optical ACK.
+static DevTelemetry devices[2];
+static uint32_t latencyMs[2][32]{},latencyCount[2]{};
+static uint32_t p95(int dev){
+ uint32_t sorted[32]{};unsigned n=latencyCount[dev]<32?latencyCount[dev]:32;
+ if(!n)return 0;
+ for(unsigned i=0;i<n;i++)sorted[i]=latencyMs[dev][i];
+ for(unsigned i=1;i<n;i++){uint32_t v=sorted[i];int j=int(i)-1;while(j>=0&&sorted[j]>v){sorted[j+1]=sorted[j];--j;}sorted[j+1]=v;}
+ return sorted[(95*n+99)/100-1];
+}
+RTC_NOINIT_ATTR static uint32_t rtcCieloMagic,rtcBlePhase,rtcBootCount;
+static uint32_t previousPhase=0,persistentBoots=0,lastStoredFault=0;
+static String persistedFault;
+static void saveCriticalIncident(const String&message){
+ if(lastStoredFault && millis()-lastStoredFault<3600000UL)return;
+ lastStoredFault=millis();
+ String safe=message.substring(0,92);prefs.putString("last_fault",safe);persistedFault=safe;
+}
+ // PV and Chihiros. GATT acceptance is not an optical ACK.
 static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
@@ -236,7 +254,7 @@ static void diagnosticJson(){
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"watchdog_active\":null,\"last_phase\":\"NO_INSTRUMENTADA\"";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
- j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null}";
+ j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null,\"boot_count\":"+String(persistentBoots)+",\"previous_runtime_phase\":"+String(previousPhase)+",\"rtc_phase_current\":"+String(rtcBlePhase)+",\"last_stored_fault\":"+jsonQuote(persistedFault)+"}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
  j+=",\"wifi_disconnects\":null,\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_migrated_from_953\":"+String(wifiMigrated?"true":"false")+",\"mdns_started\":"+String(mdnsStarted?"true":"false")+",\"recovery_ap_open\":"+String(rescueOpen?"true":"false")+",\"physical_unlock_remaining_sec\":"+String(physicalSeconds())+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0)+"}";
  j+=",\"lighting\":{\"pez_verde\":{\"mode\":"+jsonQuote(pezManual?"manual":"programa")+",\"tx_batches\":"+String(devices[0].completed);
@@ -248,6 +266,7 @@ static void diagnosticJson(){
  j+=",\"slow_calls\":"+String(bleSlowCount);
  j+=",\"per_device\":{\"pez_verde\":{\"operations\":"+String(devices[0].completed)+",\"gatt_ok\":"+String(devices[0].gatt_ok)+",\"write_calls\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+",\"slow_calls\":"+String(devices[0].slow)+",\"last_ms\":"+String(devices[0].last_ms)+",\"max_ms\":"+String(devices[0].max_ms)+"}";
  j+=",\"chihiros\":{\"operations\":"+String(devices[1].completed)+",\"gatt_ok\":"+String(devices[1].gatt_ok)+",\"write_calls\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+",\"slow_calls\":"+String(devices[1].slow)+",\"last_ms\":"+String(devices[1].last_ms)+",\"max_ms\":"+String(devices[1].max_ms)+"}}";
+ j+=",\"p95_ms\":{\"pez_verde\":"+String(p95(0))+",\"chihiros\":"+String(p95(1))+"}";
  j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
@@ -471,13 +490,15 @@ static void bleTick(){
  uint32_t now=millis();cielo96::BleResult res{};
  while(cielo96::ble_result(res)){
   DevTelemetry& t=devices[res.device==1?1:0];t.completed++;t.write_calls+=res.write_calls;t.last_ms=res.duration_ms;
+  latencyMs[res.device==1?1:0][latencyCount[res.device==1?1:0]++%32]=res.duration_ms;
+  rtcBlePhase=0;
   if(res.duration_ms>t.max_ms)t.max_ms=res.duration_ms;
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
   queue.complete(res.sequence,res.success,now);bleResultCount++;
   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
   if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}
-  if(!res.success){bleResultErrors++;lastBleError=String(res.device?"CH ":"PV ")+String(res.reason);record("BLE_ERROR",lastBleError);}
+  if(!res.success){bleResultErrors++;lastBleError=String(res.device?"CH ":"PV ")+String(res.reason);record("BLE_ERROR",lastBleError);saveCriticalIncident(lastBleError);}
   else if(res.device==1 && chiAutoPending){chiAutoPending=false;record("CH_AUTO","GATT completado, efecto optico no verificado");}
  }
  queue.tick(now);
@@ -485,7 +506,8 @@ static void bleTick(){
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Web sigue activo; tarea BLE no liberada artificialmente");}
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
-  if(!cielo96::ble_dispatch(cmd)){
+  rtcBlePhase=cmd.device==cielo::ble::Device::PezVerde?1:2;
+  if(!cielo96::ble_dispatch(cmd)){rtcBlePhase=0;
     queue.complete(cmd.sequence,false,now);record("BLE_COLA_LLENA","No se envio comando al worker");
   }
  }
@@ -495,6 +517,12 @@ void setup(){
  Serial.printf("IWAGUMI CIELO %s | ATOMS3-Lite | build experimental\n",VERSION);
  setenv("TZ","CET-1CEST,M3.5.0,M10.5.0/3",1);tzset();
  prefs.begin("cielo96",false);
+ persistentBoots=prefs.getUInt("boot_count",0)+1;prefs.putUInt("boot_count",persistentBoots);
+ persistedFault=prefs.getString("last_fault","");
+ if(rtcCieloMagic==0xC1E10960UL)previousPhase=rtcBlePhase;
+ else previousPhase=0;
+ rtcCieloMagic=0xC1E10960UL;rtcBootCount=persistentBoots;rtcBlePhase=0;
+ if(previousPhase)record("REINICIO_BLE_PREVIO",String("Ultima fase BLE=")+String(previousPhase)+"; causa no demostrada");
  loadProfile();storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
  recoverOldWifi();
  // Emergency AP secret is created from hardware randomness on first boot,
