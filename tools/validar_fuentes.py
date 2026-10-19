@@ -9,8 +9,15 @@ assert '/api/updates/' not in actual and 'workers.dev' not in actual
 assert 'Actualizar CIELO · desde GitHub' not in actual
 assert '<button id="otaInstall" disabled>' in actual
 assert 'Descargar JSON' in actual
-assert '<title>CIELO 9.6 R4.2 · Desarrollo</title>' in actual
-assert 'CIELO 9.6 R4.2 · firmware de desarrollo' in actual
+code=(r/'src/main.cpp').read_text()
+assert 'ESP_RST_PANIC' in code and 'reset_reason_name' in code
+assert 'boot_marked_healthy' in code and 'latencyP95' in code
+assert 'WiFi.softAP("CIELO96-CONFIG",apPassword.c_str())' in code
+assert 'WiFi.softAP("CIELO96-RESCATE")' not in code
+assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
+
+assert '<title>CIELO 9.6 R4.3.2 · Diagnóstico</title>' in actual
+assert 'CIELO 9.6 R4.3.2 · firmware de diagnóstico' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
