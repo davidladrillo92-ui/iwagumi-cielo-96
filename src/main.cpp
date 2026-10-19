@@ -83,6 +83,7 @@ static bool parseSha256(const String&s,uint8_t out[32]){
 static void endOtaHash(){if(otaHashStarted){mbedtls_sha256_free(&otaHash);otaHashStarted=false;}}
 
 static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin actualizaciones";
+static void record(const char*,const String&);
 static String storedSSID,storedPass,apPassword;
 static bool wifiMigrated=false,mdnsStarted=false,rescueOpen=false,safeBoot=false;
 static uint32_t physicalUntil=0,rescueUntil=0,buttonStarted=0;
