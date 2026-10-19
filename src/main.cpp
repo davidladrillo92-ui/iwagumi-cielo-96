@@ -298,7 +298,8 @@ static void physicalButtonTask(){
  bool held=(digitalRead(ATOMS3_BUTTON_GPIO)==LOW);
  uint32_t now=millis();
  if(held && buttonDownAt==0)buttonDownAt=now;
- if(!held){buttonDownAt=0;physicalArmed=false;return;}
+ if(!held){buttonDownAt=0;return;}
+ if((int32_t)(otaPhysicalUntil-now)<=0)physicalArmed=false;
  // Holding button for 5 s grants a short local-only OTA provisioning window.
  // NEVER starts OTA itself. Does not erase Wi-Fi settings. Reset/bootloader button is separate.
  if(!physicalArmed && now-buttonDownAt>=5000UL){
@@ -394,14 +395,15 @@ static void wifiTask(){
  wl_status_t w=WiFi.status();
  if(lastWifiStatus==WL_CONNECTED && w!=WL_CONNECTED){wifiDisconnects++;record("WIFI_CAIDA","STA desconectada; AP de rescate continua activo");}
  lastWifiStatus=w;
+ if(!wifiApOn && now-bootMs>5000){
+  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
+  record("AP_RECUPERACION",String("192.168.4.1; clave solo por USB; activo=")+String(wifiApOn));
+ }
  if(w==WL_CONNECTED)return;
  if(storedSSID.length() && now-lastWiFiAttempt>30000UL){
   lastWiFiAttempt=now;WiFi.begin(storedSSID.c_str(),storedPass.c_str());wifiFailures++;
  }
- if(!wifiApOn && now-bootMs>5000){
-  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
-  record("AP_RECUPERACION",String("192.168.4.1; password en Serial. activo=")+String(wifiApOn));
- }
+
 }
 static void lightingTask(){
  uint32_t now=millis();
