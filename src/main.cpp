@@ -298,7 +298,8 @@ static void physicalButtonTask(){
  bool held=(digitalRead(ATOMS3_BUTTON_GPIO)==LOW);
  uint32_t now=millis();
  if(held && buttonDownAt==0)buttonDownAt=now;
- if(!held){buttonDownAt=0;physicalArmed=false;return;}
+ if(!held){buttonDownAt=0;return;}
+ if((int32_t)(otaPhysicalUntil-now)<=0)physicalArmed=false;
  // Holding button for 5 s grants a short local-only OTA provisioning window.
  // NEVER starts OTA itself. Does not erase Wi-Fi settings. Reset/bootloader button is separate.
  if(!physicalArmed && now-buttonDownAt>=5000UL){
@@ -394,14 +395,15 @@ static void wifiTask(){
  wl_status_t w=WiFi.status();
  if(lastWifiStatus==WL_CONNECTED && w!=WL_CONNECTED){wifiDisconnects++;record("WIFI_CAIDA","STA desconectada; AP de rescate continua activo");}
  lastWifiStatus=w;
+ if(!wifiApOn && now-bootMs>5000){
+  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
+  record("AP_RECUPERACION",String("192.168.4.1; clave solo por USB; activo=")+String(wifiApOn));
+ }
  if(w==WL_CONNECTED)return;
  if(storedSSID.length() && now-lastWiFiAttempt>30000UL){
   lastWiFiAttempt=now;WiFi.begin(storedSSID.c_str(),storedPass.c_str());wifiFailures++;
  }
- if(!wifiApOn && now-bootMs>5000){
-  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
-  record("AP_RECUPERACION",String("192.168.4.1; password en Serial. activo=")+String(wifiApOn));
- }
+
 }
 static void lightingTask(){
  uint32_t now=millis();
@@ -469,6 +471,24 @@ void setup(){
  otaRunningPartition=running?running->label:"desconocida";
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
  loadProfile();storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
+ // Recover credentials from the original 9.5.3 namespace, retained by application-only OTA.
+ // Verified on owner's private 8MB flash: namespace "iwagumi-rgb", keys homeSsid/homePass.
+ // Never embed passwords in firmware, logs, source repository, report or response.
+ if(storedSSID.isEmpty()){
+  Preferences legacy;
+  if(legacy.begin("iwagumi-rgb",true)){
+   String oldSsid=legacy.getString("homeSsid","");
+   String oldPass=legacy.getString("homePass","");
+   legacy.end();
+   if(oldSsid.length()>0 && oldSsid.length()<=32 && oldPass.length()<=63){
+    if(prefs.putString("ssid",oldSsid)==oldSsid.length()){
+     prefs.putString("wifi_pw",oldPass);
+     storedSSID=oldSsid;storedPass=oldPass;
+     record("WIFI_MIGRADA","Configuracion local 9.5.3 reutilizada sin mostrar claves");
+    }
+   }
+  }
+ }
  // Emergency AP secret is created from hardware randomness on first boot,
  // persisted in NVS, printed ONLY on the physical serial port.
  apPassword=prefs.getString("ap_secret","");
