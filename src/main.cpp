@@ -30,7 +30,7 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4-DEV";
+static constexpr const char* VERSION="9.6.0-R4.2-DEV";
 static WebServer srv(80);
 static Preferences prefs;
 static cielo96::ProfileImage profile;
@@ -42,6 +42,8 @@ static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,ota
 static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
 static uint32_t httpCount=0,bleResultCount=0,bleResultErrors=0,bleSoftTimeouts=0;
 static uint32_t bleSlowCount=0,bleDurationMax=0,wifiFailures=0;
+struct DevTelemetry {uint32_t completed=0,gatt_ok=0,write_calls=0,errors=0,slow=0,last_ms=0,max_ms=0;};
+static DevTelemetry devices[2]; // PV and Chihiros. GATT acceptance is not an optical ACK.
 static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
@@ -108,7 +110,9 @@ static void loadProfile(){
  if(va||vb){profile=va&&(!vb||int32_t(a.generation-b.generation)>0)?a:b;
   record("CURVAS_OK",String("NVS generacion=")+String(profile.generation));
  }else{
-  profileRecovery=true;record("CURVAS_FABRICA","NVS sin copia valida. Natural v4 inicializada en RAM");
+  bool corrupt=prefs.getBytesLength("curvesA")!=0 || prefs.getBytesLength("curvesB")!=0;
+  profileRecovery=corrupt;
+  record(corrupt?"CURVA_ERROR":"CURVAS_INICIALES",corrupt?"NVS invalida; Natural v4 en RAM":"Primera inicializacion; Natural v4 sin copia anterior");
  }
 }
 static bool saveProfile(const cielo96::ProfileImage& candidate){
@@ -182,9 +186,9 @@ static void statusJson(){
  j+=",\"chActive\":"+String(chiCieloNight?"true":"false")+",\"chEvening\":"+String(chiCieloNight?"true":"false");
  j+=",\"chContinuous\":"+String(chiCieloNight?"true":"false")+",\"chStatus\":"+jsonQuote(chiAutoPending?"Restaurando AUTO (sin confirmacion fisica)":chiCieloNight?"Curva CIELO - transmision BLE sin confirmacion optica":"AUTO de My Chihiros solicitado")+"";
  j+=",\"chEveningStatus\":"+jsonQuote(chiCieloNight?"Curva CIELO":"AUTO solicitado")+",\"bleFailures\":"+String(bleResultErrors);
- j+=",\"txFrames\":"+String(queue.metrics().acknowledged)+",\"txBatches\":"+String(queue.metrics().started);
+ j+=",\"txFrames\":"+String(devices[0].write_calls)+",\"txBatches\":"+String(devices[0].completed);
  j+=",\"bleError\":"+jsonQuote(lastBleError)+",\"bleLive\":false,\"storm\":false,\"stormStatus\":\"No disponible en R4 DEV\"";
- j+=",\"chFrames\":"+String(queue.metrics().acknowledged)+",\"chFailures\":"+String(bleResultErrors);
+ j+=",\"chFrames\":"+String(devices[1].write_calls)+",\"chFailures\":"+String(devices[1].errors);
  j+=",\"chLiveRgb\":["+String(c.r)+","+String(c.g)+","+String(c.b)+"],\"chLiveFailures\":0,\"chAutoAttempts\":"+String(chiAutoAttempted?1:0);
  j+=",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+"}";
  jsonSend(200,j);
@@ -198,23 +202,26 @@ static void diagnosticJson(){
  String j;j.reserve(7200);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
- j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"watchdog_active\":true,\"last_phase\":\"LIBRE\"";
+ j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"watchdog_active\":null,\"last_phase\":\"NO_INSTRUMENTADA\"";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
- j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":0}";
+ j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
- j+=",\"wifi_disconnects\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0)+"}";
- j+=",\"lighting\":{\"pez_verde\":{\"mode\":"+jsonQuote(pezManual?"manual":"programa")+",\"tx_batches\":"+String(m.started);
- j+=",\"tx_frames\":"+String(m.acknowledged)+",\"errors\":"+String(bleResultErrors)+"},\"chihiros\":{\"cielo_night_enabled\":"+String(chiCieloNight?"true":"false");
- j+=",\"ble_active\":"+String(bleReady?"true":"false")+",\"auto_restore_pending\":"+String(chiAutoPending?"true":"false")+",\"tx_frames\":"+String(m.acknowledged)+",\"errors\":"+String(bleResultErrors)+"}}";
+ j+=",\"wifi_disconnects\":null,\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0)+"}";
+ j+=",\"lighting\":{\"pez_verde\":{\"mode\":"+jsonQuote(pezManual?"manual":"programa")+",\"tx_batches\":"+String(devices[0].completed);
+ j+=",\"tx_frames\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+"},\"chihiros\":{\"cielo_night_enabled\":"+String(chiCieloNight?"true":"false");
+ j+=",\"ble_active\":"+String(bleReady?"true":"false")+",\"auto_restore_pending\":"+String(chiAutoPending?"true":"false")+",\"tx_frames\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+"}}";
  j+=",\"bluetooth\":{\"worker_heartbeat_age_ms\":"+String(millis()-cielo96::ble_last_heartbeat());
  j+=",\"queued\":"+String(m.submitted)+",\"superseded\":"+String(m.superseded)+",\"failed\":"+String(m.failed);
  j+=",\"timeouts\":"+String(m.soft_timeouts)+",\"retries\":"+String(m.retries)+",\"max_call_ms\":"+String(bleDurationMax);
- j+=",\"slow_calls\":"+String(bleSlowCount)+",\"note\":\"Escritura GATT completada no equivale a resultado optico confirmado\"}";
+ j+=",\"slow_calls\":"+String(bleSlowCount);
+ j+=",\"per_device\":{\"pez_verde\":{\"operations\":"+String(devices[0].completed)+",\"gatt_ok\":"+String(devices[0].gatt_ok)+",\"write_calls\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+",\"slow_calls\":"+String(devices[0].slow)+",\"last_ms\":"+String(devices[0].last_ms)+",\"max_ms\":"+String(devices[0].max_ms)+"}";
+ j+=",\"chihiros\":{\"operations\":"+String(devices[1].completed)+",\"gatt_ok\":"+String(devices[1].gatt_ok)+",\"write_calls\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+",\"slow_calls\":"+String(devices[1].slow)+",\"last_ms\":"+String(devices[1].last_ms)+",\"max_ms\":"+String(devices[1].max_ms)+"}}";
+ j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
  j+=",\"last_ota_message\":"+jsonQuote(lastOtaError)+",\"github_check\":\"NO_USADO\",\"cloud\":\"DESACTIVADA\"}";
- j+=",\"events\":[";
+ j+=",\"event_retention\":\"RAM_36_SOLO_ARRANQUE_ACTUAL\",\"events\":[";
  for(int i=0;i<eventCount;i++){
   int idx=(eventHead-eventCount+i+EVENT_MAX)%EVENT_MAX;
   if(i)j+=',';
@@ -304,9 +311,9 @@ static void configureRoutes(){
  const char*keys[]={"X-Cielo-Key"};srv.collectHeaders(keys,1);
  srv.on("/",HTTP_GET,[]{++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
  srv.on("/api/status",HTTP_GET,statusJson);
- srv.on("/api/diagnostico/maestro",HTTP_GET,diagnosticJson);
+ srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
  srv.on("/api/service/report",HTTP_GET,diagnosticJson);
- srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
+ srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
  srv.on("/api/clock",HTTP_POST,[]{unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
    // epoch exceeds minute parser max, parse separately with strict digits
    String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
@@ -376,6 +383,10 @@ static void lightingTask(){
 static void bleTick(){
  uint32_t now=millis();cielo96::BleResult res{};
  while(cielo96::ble_result(res)){
+  DevTelemetry& t=devices[res.device==1?1:0];t.completed++;t.write_calls+=res.write_calls;t.last_ms=res.duration_ms;
+  if(res.duration_ms>t.max_ms)t.max_ms=res.duration_ms;
+  if(res.duration_ms>3500)t.slow++;
+  if(res.success)t.gatt_ok++;else t.errors++;
   queue.complete(res.sequence,res.success,now);bleResultCount++;
   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
   if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}
