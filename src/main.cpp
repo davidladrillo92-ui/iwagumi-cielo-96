@@ -31,7 +31,7 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.3-DEV";
+static constexpr const char* VERSION="9.6.0-R4.3.2-DIAG";
 static WebServer srv(80);
 static Preferences prefs;
 static cielo96::ProfileImage profile;
@@ -58,8 +58,40 @@ static bool physicalArmed=false;
 static uint32_t previousBootCount=0;
 static String priorEvent="ninguno",priorEventDetail="ninguno";
 static bool priorBootClean=false;
+static bool currentBootMarkedHealthy=false;
+static const char* resetReasonName(esp_reset_reason_t r){
+ switch(r){
+  case ESP_RST_POWERON:return "POWER_ON";
+  case ESP_RST_EXT:return "EXTERNAL_RESET";
+  case ESP_RST_SW:return "SOFTWARE_RESTART";
+  case ESP_RST_PANIC:return "PANIC_EXCEPTION";
+  case ESP_RST_INT_WDT:return "INTERRUPT_WATCHDOG";
+  case ESP_RST_TASK_WDT:return "TASK_WATCHDOG";
+  case ESP_RST_WDT:return "OTHER_WATCHDOG";
+  case ESP_RST_BROWNOUT:return "BROWNOUT";
+  case ESP_RST_USB:return "USB_RESET";
+  default:return "OTHER_OR_UNKNOWN";
+ }
+}
+static bool abnormalReset(esp_reset_reason_t r){
+ return r==ESP_RST_PANIC||r==ESP_RST_INT_WDT||r==ESP_RST_TASK_WDT||
+        r==ESP_RST_WDT||r==ESP_RST_BROWNOUT;
+}
+
 static uint32_t savedFailures=0;
 static uint32_t lastPersistentFaultAt=0;
+static uint32_t latencyHistory[2][32]{},latencyCount[2]{};
+static uint32_t latencyP95(uint8_t device){
+ const uint32_t n=latencyCount[device]<32?latencyCount[device]:32;
+ if(!n)return 0;
+ uint32_t sorted[32]{};
+ for(uint32_t i=0;i<n;i++)sorted[i]=latencyHistory[device][i];
+ for(uint32_t i=1;i<n;i++){
+  uint32_t key=sorted[i];int j=int(i)-1;
+  while(j>=0&&sorted[j]>key){sorted[j+1]=sorted[j];--j;}sorted[j+1]=key;
+ }
+ return sorted[(95*n+99)/100-1];
+}
 static uint32_t wifiDisconnects=0;
 static wl_status_t lastWifiStatus=WL_IDLE_STATUS;
 static bool connectionStarted=false;
@@ -224,11 +256,13 @@ static void diagnosticJson(){
  uint32_t freeMem=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
  uint32_t minimum=heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
  uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
- bool warning=bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
+ bool badReset=abnormalReset(esp_reset_reason());
+ bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
+ bool warning=badReset||!bleReady||!wifi||workerUnavailable||bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
  String j;j.reserve(7200);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
- j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"watchdog_active\":null,\"last_phase\":\"NO_INSTRUMENTADA\"";
+ j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null,\"last_phase\":\"NO_INSTRUMENTADA\"";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null";
  j+=",\"boot_count\":"+String(previousBootCount+1)+",\"previous_boot_marked_clean\":"+String(priorBootClean?"true":"false");
@@ -244,6 +278,8 @@ static void diagnosticJson(){
  j+=",\"slow_calls\":"+String(bleSlowCount);
  j+=",\"per_device\":{\"pez_verde\":{\"operations\":"+String(devices[0].completed)+",\"gatt_ok\":"+String(devices[0].gatt_ok)+",\"write_calls\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+",\"slow_calls\":"+String(devices[0].slow)+",\"last_ms\":"+String(devices[0].last_ms)+",\"max_ms\":"+String(devices[0].max_ms)+"}";
  j+=",\"chihiros\":{\"operations\":"+String(devices[1].completed)+",\"gatt_ok\":"+String(devices[1].gatt_ok)+",\"write_calls\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+",\"slow_calls\":"+String(devices[1].slow)+",\"last_ms\":"+String(devices[1].last_ms)+",\"max_ms\":"+String(devices[1].max_ms)+"}}";
+ j+=",\"p95_ms\":{\"pez_verde\":"+String(latencyP95(0))+",\"chihiros\":"+String(latencyP95(1))+"}";
+ j+=",\"worker_unresponsive\":"+String(workerUnavailable?"true":"false");
  j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
@@ -433,7 +469,9 @@ static void lightingTask(){
 static void bleTick(){
  uint32_t now=millis();cielo96::BleResult res{};
  while(cielo96::ble_result(res)){
-  DevTelemetry& t=devices[res.device==1?1:0];t.completed++;t.write_calls+=res.write_calls;t.last_ms=res.duration_ms;
+  uint8_t device=res.device==1?1:0;
+  DevTelemetry& t=devices[device];t.completed++;t.write_calls+=res.write_calls;t.last_ms=res.duration_ms;
+  latencyHistory[device][latencyCount[device]++%32]=res.duration_ms;
   if(res.duration_ms>t.max_ms)t.max_ms=res.duration_ms;
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
@@ -504,11 +542,17 @@ void setup(){
  if(storedSSID.length()){WiFi.begin(storedSSID.c_str(),storedPass.c_str());lastWiFiAttempt=millis();}
  configTime(0,0,"pool.ntp.org","time.google.com");
  bleReady=cielo96::ble_begin();
- record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" BLE="+String(bleReady));
+ record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" ("+resetReasonName(esp_reset_reason())+") BLE="+String(bleReady));
+ if(abnormalReset(esp_reset_reason()))record("REINICIO_ANOMALO",resetReasonName(esp_reset_reason()));
  Serial.printf("WIFI de rescate si fuera necesaria: CIELO96-CONFIG | clave: %s\n",apPassword.c_str());
  configureRoutes();
 }
 void loop(){
+ if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
+  currentBootMarkedHealthy=true;
+  prefs.putBool("clean",true);
+  record("ARRANQUE_ESTABLE","180 segundos sin reiniciar; NO implica que BLE funcione correctamente");
+ }
  srv.handleClient();
  wifiTask();
  lightingTask();
