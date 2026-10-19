@@ -3,7 +3,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#101213"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Cielo"><meta name="description" content="IWAGUMI CIELO · Iluminación del acuario">
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png">
-<title>CIELO 9.6 R4.2 · Desarrollo</title>
+<title>CIELO 9.6 R4.3 · Piloto</title>
 <style>
 :root{color-scheme:dark;--bg:#0c0d0e;--panel:#191b1e;--panel2:#222529;--line:#ffffff16;--text:#f4f2ee;--soft:#a8a9a7;--dim:#777a7d;--warm:#e7c4a7;--mint:#c7d6d0;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,Arial,sans-serif;font-synthesis:none}
 *{box-sizing:border-box}html{height:100%;-webkit-tap-highlight-color:transparent}body{background:#050607;color:var(--text);margin:0;min-height:100%;-webkit-font-smoothing:antialiased}button,input{font:inherit}button{cursor:pointer;touch-action:manipulation}button:disabled{opacity:.36;cursor:default}button:focus-visible,input:focus-visible{outline:2px solid var(--warm);outline-offset:3px}.shell{position:relative;overflow:hidden;max-width:480px;margin:auto;background:var(--bg);min-height:100dvh;box-shadow:0 0 80px #0008;padding:calc(env(safe-area-inset-top) + 19px) 23px calc(112px + env(safe-area-inset-bottom))}
@@ -68,14 +68,16 @@
 <section class="livePanel" id="legacyOta942">
 <strong>Actualización manual · archivo BIN</strong>
 <p id="otaInstalledVersion">Versión instalada: consultando...</p>
-<p>Selecciona un BIN de confianza que hayas descargado previamente en el iPhone. Cuando validemos la función de recuperación y el acceso físico, podrás actualizar el ATOM desde aquí, solo por la red local.</p>
+<p>Selecciona un BIN de confianza que hayas descargado previamente en el iPhone. La instalación requiere botón físico del ATOM (GPIO41, mantener 3 segundos), clave privada y huella SHA-256. Solo desde Bambu o el AP de recuperación, sin nube.</p>
 <label style="display:block;margin:8px 0 4px" for="otaSecret">Clave privada de actualización</label>
 <input id="otaSecret" type="password" autocomplete="off" placeholder="Clave de actualización local" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256">
 <div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave</button></div>
 <label style="display:block;margin:14px 0 4px" for="otaFile">Archivo (.bin)</label>
 <input id="otaFile" type="file" accept=".bin,application/octet-stream" style="width:100%;color:#e7ded4">
-<div class="liveButtons" style="margin-top:12px"><button id="otaInstall" disabled>Instalar BIN</button></div>
-<p id="otaState">OTA manual bloqueada en esta versión experimental; la autenticación física no está validada.</p>
+<label style="display:block;margin:12px 0 4px" for="otaSha">SHA-256 del archivo (.bin): 64 caracteres</label>
+<input id="otaSha" type="text" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="Pega aquí el SHA-256 entregado con el firmware" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256;font-size:13px">
+<div class="liveButtons" style="margin-top:12px"><button id="otaInstall" disabled>Instalar BIN verificado</button></div>
+<p id="otaState">Para habilitar instalación, mantén 3 segundos el botón frontal del ATOMS3 Lite (no RESET) y pulsa Actualizar diagnóstico. Requiere clave local y SHA.</p>
 <p class="note">CIELO no consultará GitHub ni buscará actualizaciones automáticamente. No instales binarios experimentales sin comprobar origen y SHA-256.</p>
 </section>
 <details class="livePanel" id="stormPanel" style="display:none"><summary style="cursor:pointer;font-weight:600">Tormenta opcional · en pruebas</summary>
@@ -451,12 +453,18 @@ async function serviceRefresh(){
   const r=await fetch('/api/service/status',{cache:'no-store'});
   if(!r.ok)throw Error('HTTP '+r.status);
   const d=await r.json();
-  if($('otaInstalledVersion'))$('otaInstalledVersion').textContent='Versión instalada: '+(d.version||'sin identificar');
-  if($('otaPair')){ $('otaPair').style.display=d.otaPaired?'none':''; $('otaPair').disabled=!d.otaEnabled; }
-  if($('otaInstall'))$('otaInstall').disabled=!d.otaEnabled;
-  $('otaState').textContent=d.otaBusy?'Instalando... bytes '+d.otaBytes:
-    !d.otaEnabled?'Actualización manual pendiente de validación':d.otaPaired?'Clave OTA configurada':'Configura una clave para instalar BIN';
- }catch(e){toast('Diagnóstico no disponible: '+e.message);}
+  if($('otaInstalledVersion'))$('otaInstalledVersion').textContent='Versión instalada: '+(d.version||'desconocida');
+  const unlock=Number(d.physicalSeconds||0)>0;
+  if($('otaPair')){
+   $('otaPair').style.display=d.otaPaired?'none':'';
+   $('otaPair').disabled=!d.otaEnabled||!unlock;
+  }
+  if($('otaInstall'))$('otaInstall').disabled=!d.otaEnabled||!d.otaPaired||!unlock;
+  $('otaState').textContent=d.otaBusy?'Subiendo firmware: '+d.otaBytes+' bytes':
+   !d.otaEnabled?'OTA manual desactivada en este firmware':
+   unlock?'Botón físico autorizado durante '+d.physicalSeconds+' s · '+(d.otaPaired?'Puedes instalar BIN con clave y SHA-256':'Configura la clave privada primero'):
+   'Bloqueado: mantén el botón frontal GPIO41 durante 3 segundos, después pulsa Actualizar diagnóstico.';
+ }catch(e){toast('Servicio no disponible: '+e.message);}
 }
 async function serviceCopy(onlyErrors){
  try{
@@ -485,6 +493,8 @@ async function otaPairUi(){
 }
 async function otaInstallUi(){
  const file=$('otaFile').files?.[0],key=$('otaSecret').value;
+ const sha=$('otaSha').value.trim().toLowerCase();
+ if(!/^[0-9a-f]{64}$/.test(sha))return toast('Pega el SHA-256 completo del BIN (64 caracteres)');
  if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Elige un firmware BIN');
  if(key.length<12)return toast('Escribe la clave OTA configurada');
  if(!confirm('Vas a instalar firmware '+file.name+' ('+Math.round(file.size/1024)+' KB). No desconectes ATOM. La página dejará de responder al reiniciar. ¿Instalar?'))return;
@@ -492,7 +502,7 @@ async function otaInstallUi(){
  $('otaState').textContent='Subiendo el BIN por Wi-Fi. No interrumpas la alimentación.';
  try{
    const form=new FormData();form.append('firmware',file,file.name);
-   const response=await fetch('/api/ota/upload',{method:'POST',headers:{'X-Cielo-Key':key},body:form});
+   const response=await fetch('/api/ota/upload',{method:'POST',headers:{'X-Cielo-Key':key,'X-Cielo-SHA256':sha},body:form});
    const txt=await response.text();
    if(!response.ok)throw Error(txt||('HTTP '+response.status));
    $('otaState').textContent=txt;toast('OTA preparada, reinicio próximo');
