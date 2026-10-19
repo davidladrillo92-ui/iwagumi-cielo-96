@@ -398,7 +398,15 @@ static void configureRoutes(){
  srv.on("/api/status",HTTP_GET,statusJson);
  srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
  srv.on("/api/service/report",HTTP_GET,diagnosticJson);
- srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
+ srv.on("/api/service/status",HTTP_GET,[]{
+ jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)
+  +",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")
+  +",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")
+  +",\"otaBusy\":"+String(otaBusy?"true":"false")
+  +",\"otaBytes\":"+String(otaBytes)
+  +",\"physicalSeconds\":"+String(physicalSeconds())
+  +",\"recoveryApOpen\":"+String(rescueOpen?"true":"false")+"}");
+ });
  srv.on("/api/clock",HTTP_POST,[]{unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
    // epoch exceeds minute parser max, parse separately with strict digits
    String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
@@ -487,6 +495,7 @@ static void lightingTask(){
  }
 }
 static void bleTick(){
+ if(safeBoot)return;
  uint32_t now=millis();cielo96::BleResult res{};
  while(cielo96::ble_result(res)){
   DevTelemetry& t=devices[res.device==1?1:0];t.completed++;t.write_calls+=res.write_calls;t.last_ms=res.duration_ms;
