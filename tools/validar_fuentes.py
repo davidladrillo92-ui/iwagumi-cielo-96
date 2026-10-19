@@ -9,8 +9,17 @@ assert '/api/updates/' not in actual and 'workers.dev' not in actual
 assert 'Actualizar CIELO · desde GitHub' not in actual
 assert '<button id="otaInstall" disabled>' in actual
 assert 'Descargar JSON' in actual
-assert '<title>CIELO 9.6 R4.2 · Desarrollo</title>' in actual
-assert 'CIELO 9.6 R4.2 · firmware de desarrollo' in actual
+assert 'X-Cielo-SHA256' in (r/'src/main.cpp').read_text()
+assert 'physicalWindow()' in (r/'src/main.cpp').read_text()
+assert 'old.begin("iwagumi-rgb",true)' in (r/'src/main.cpp').read_text()
+assert 'homeSsid' in (r/'src/main.cpp').read_text()
+assert 'rtcBlePhase' in (r/'src/main.cpp').read_text()
+assert 'p95_ms' in (r/'src/main.cpp').read_text()
+assert '-DCIELO_ENABLE_OTA=1' in (r/'platformio.ini').read_text()
+assert 'otaSha' in actual
+
+assert '<title>CIELO 9.6 R4.3 · Piloto</title>' in actual
+assert 'CIELO 9.6 R4.3 · firmware de desarrollo' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
