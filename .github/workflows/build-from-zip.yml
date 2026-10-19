@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - 'CIELO_SOURCE.zip'
+      - 'src/**'
+      - 'include/**'
+      - 'tools/**'
+      - 'web/**'
+      - 'platformio.ini'
+      - 'partitions_8mb.csv'
       - '.github/workflows/build-from-zip.yml'
 permissions:
   contents: write
@@ -44,6 +50,20 @@ jobs:
                   raise FileNotFoundError(n)
           print('Fuente verificada y extraida')
           PY
+      - name: Aplicar codigo fuente editable de GitHub
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in src include tests tools web reference; do
+            if test -d "$d"; then
+              mkdir -p "build-src/$d"
+              cp -R "$d/." "build-src/$d/"
+            fi
+          done
+          for f in platformio.ini partitions_8mb.csv; do
+            if test -f "$f"; then cp "$f" "build-src/$f"; fi
+          done
+          echo 'Build sobre archivos fuente editables del repositorio, no sobre ZIP antiguo'
       - name: Instalar PlatformIO
         id: install
         run: python -m pip install 'platformio==6.1.18'
