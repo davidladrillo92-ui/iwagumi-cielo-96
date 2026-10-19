@@ -303,8 +303,8 @@ static void manualCh(){
  if(!timeOK())return fail(503,"Reloj aun sin sincronizar");
  unsigned a[3]{};const char* k[]={"r","g","b"};
  for(int i=0;i<3;i++){if(!positiveInt(srv.arg(k[i]),a[i])||a[i]>100)return fail(400,"Canal Chihiros incorrecto");}
- chiManual=true;chiManualUntil=millis()+8000UL;
- submitCh({uint8_t(a[0]),uint8_t(a[1]),uint8_t(a[2])},8000);record("CH_MANUAL","8 segundos");ok();
+ chiManual=true;chiManualUntil=millis()+20000UL;chiAutoAttempted=false;
+ submitCh({uint8_t(a[0]),uint8_t(a[1]),uint8_t(a[2])},20000);record("CH_MANUAL","20 segundos; retorno programado");ok();
 }
 static bool sha256String(const String&str,uint8_t dest[32]){return mbedtls_sha256_ret((const unsigned char*)str.c_str(),str.length(),dest,0)==0;}
 static bool tokenEqual(){
@@ -490,7 +490,7 @@ static void lightingTask(){
   if(!lastChDesired||memcmp(&c,&prevCh,sizeof(c))!=0||now-lastChDesiredAt>300000UL){
    submitCh(c);prevCh=c;lastChDesired=true;lastChDesiredAt=now;chiAutoPending=false;chiAutoAttempted=false;
   }
- }else if(!within && !chiAutoAttempted){
+ }else if(!chiManual && (!within || !chiCieloNight) && !chiAutoAttempted){
   requestAuto();lastChDesired=false;
  }
 }
