@@ -5,7 +5,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#101213"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Cielo"><meta name="description" content="IWAGUMI CIELO · Iluminación del acuario">
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png">
-<title>CIELO 9.6 R4 · Desarrollo</title>
+<title>CIELO 9.6 R4.2 · Desarrollo</title>
 <style>
 :root{color-scheme:dark;--bg:#0c0d0e;--panel:#191b1e;--panel2:#222529;--line:#ffffff16;--text:#f4f2ee;--soft:#a8a9a7;--dim:#777a7d;--warm:#e7c4a7;--mint:#c7d6d0;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,Arial,sans-serif;font-synthesis:none}
 *{box-sizing:border-box}html{height:100%;-webkit-tap-highlight-color:transparent}body{background:#050607;color:var(--text);margin:0;min-height:100%;-webkit-font-smoothing:antialiased}button,input{font:inherit}button{cursor:pointer;touch-action:manipulation}button:disabled{opacity:.36;cursor:default}button:focus-visible,input:focus-visible{outline:2px solid var(--warm);outline-offset:3px}.shell{position:relative;overflow:hidden;max-width:480px;margin:auto;background:var(--bg);min-height:100dvh;box-shadow:0 0 80px #0008;padding:calc(env(safe-area-inset-top) + 19px) 23px calc(112px + env(safe-area-inset-bottom))}
@@ -29,7 +29,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 .liveButtons button{min-height:45px;border-radius:12px;border:1px solid #ffffff2b;background:#eae6df;color:#202124;font-size:13px;font-weight:600}
 .liveButtons button:last-child{background:#303337;color:#eae6df}
 </style>
-</head><body><div style="background:#59351c;color:#fff0db;padding:8px 14px;font:600 12px sans-serif;text-align:center;position:relative;z-index:9999">CIELO 9.6 R4 · firmware de desarrollo, aún sin validación física · funciones experimentales</div>
+</head><body><div style="background:#59351c;color:#fff0db;padding:8px 14px;font:600 12px sans-serif;text-align:center;position:relative;z-index:9999">CIELO 9.6 R4.2 · firmware de desarrollo, aún sin validación física · funciones experimentales</div>
 <div class="shell"><header class="top"><div class="brand">C I E L O</div><button id="openSettings" class="iconbtn" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/></svg></button></header>
 <main id="viewLight" class="page active"><div class="quietHead"><div class="status offline" id="status"><i></i><span id="statusText">Vista previa</span></div></div>
 <section class="hero" aria-label="Paisaje del acuario"><div class="glow" id="glow"></div><svg class="hero-art" viewBox="0 0 360 306" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="sea" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#1f2d38"/><stop offset=".53" stop-color="#5c6974"/><stop offset="1" stop-color="#12232b"/></linearGradient><linearGradient id="stone" x1="0" x2="1"><stop stop-color="#1e2c30"/><stop offset=".56" stop-color="#657473"/><stop offset="1" stop-color="#222e32"/></linearGradient><linearGradient id="stone2" x1="0" x2="1"><stop stop-color="#334a4b"/><stop offset=".5" stop-color="#85918d"/><stop offset="1" stop-color="#2a393c"/></linearGradient><linearGradient id="floor" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#254f40"/><stop offset="1" stop-color="#142e2a"/></linearGradient><filter id="blur"><feGaussianBlur stdDeviation="15"/></filter></defs><rect width="360" height="306" fill="url(#sea)"/><ellipse cx="206" cy="102" rx="154" ry="63" fill="#f0d3a0" opacity=".12" filter="url(#blur)"/><path d="M0 225C79 212 119 218 173 219c80-11 128-7 187 3v87H0Z" fill="url(#floor)"/><path d="M-20 250C40 231 67 240 101 226l38-80 18 71 37-81 39 97 48-32 58 50 42-4v65H-20Z" fill="#162b2d" opacity=".44"/><path d="M55 229l25-74 27-48 22 49-6 67z" fill="url(#stone)"/><path d="M81 165l26-58 22 49-16-9Z" fill="#c2b8ac" opacity=".30"/><path d="M116 232l26-107 27-52 25 88-3 69Z" fill="url(#stone2)"/><path d="M142 125l27-52 25 88-16-25-18 8Z" fill="#d6d5c4" opacity=".35"/><path d="M172 229l38-87 19 40 20 53Z" fill="url(#stone)"/><path d="M210 142l19 40-17-10Z" fill="#c5cfc2" opacity=".32"/><path d="M247 238l37-62 32 64Z" fill="url(#stone2)"/><path d="M0 235q35-13 73-5t68 7q68-5 93-6t126 11v65H0Z" fill="#2b593f"/><path d="M0 243Q68 230 127 247Q150 254 173 253Q187 249 212 245Q263 237 360 252v55H0Z" fill="#376746" opacity=".8"/><path d="M160 308Q158 280 185 253Q198 246 210 245Q199 265 218 307Z" fill="#c3c3a6"/><path d="M168 307Q167 280 188 261Q195 255 202 254Q192 282 204 307Z" fill="#e1d9bf" opacity=".84"/><g fill="none" stroke="#9aba8b" stroke-width="2.3" opacity=".42"><path d="M3 245q40-17 70-9t46 11M219 251q72-18 142 1M20 263q59-20 106-5M225 266q79-9 137 7"/></g><rect width="360" height="306" fill="url(#sea)" opacity=".05"/></svg>
@@ -60,59 +60,27 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 <main id="viewService" class="page">
 <div class="heading"><div><div class="eyebrow">MANTENIMIENTO Y ACTUALIZACIONES</div><h1 class="h1">Servicio.</h1></div></div>
 <section class="livePanel" id="cielo95Diagnostics">
-<strong>Salud de CIELO · informe maestro</strong>
-<p>Un único informe incluye estado, Bluetooth, Wi-Fi, memoria, reinicios, OTA y acontecimientos recientes. No se envían contraseñas ni claves.</p>
-<p id="diagState"><strong>Comprobando estado...</strong></p>
-<p id="diagDetails" style="font-size:13px;opacity:.85;white-space:pre-wrap"></p>
-<div class="liveButtons">
-<button id="diagView">Ver informe completo</button>
-<button id="diagSync">Sincronizar ahora</button>
-</div>
-<div class="liveButtons" style="margin-top:9px">
-<button id="diagDownload">Descargar informe único</button>
-<button id="serviceRefresh">Actualizar</button>
-</div>
-<p id="diagCloudStatus" style="font-size:12px;opacity:.8">Nube sin configurar · informe local disponible</p>
-<details class="curveHelper" id="diagAdvanced" style="margin-top:16px">
-<summary style="cursor:pointer">Conexión privada · configuración inicial</summary>
-<p>El informe se guarda en tu GitHub privado mediante un servicio HTTPS intermedio. No se introduce ningún token de GitHub en el ATOM. Requiere conectar el servicio una sola vez.</p>
-<label for="diagRelayUrl">Dirección segura del servicio (workers.dev)</label>
-<input id="diagRelayUrl" placeholder="https://cielo.tucuenta.workers.dev/ingest" type="url" spellcheck="false" autocomplete="off"/>
-<label for="diagRelayKey">Clave privada del servicio (mín. 32 caracteres)</label>
-<input id="diagRelayKey" type="password" placeholder="Clave del relay · nunca aparece en el informe" autocomplete="new-password"/>
-<div class="liveButtons">
-<button id="diagSaveCloud">Guardar conexión</button>
-<button id="diagDisableCloud">Desactivar</button>
-</div>
-</details>
+<strong>Estado del ATOM · Informe Maestro</strong>
+<p>Un único informe local de Bluetooth, Wi-Fi, memoria, reinicios, curvas y eventos. No se envía a Internet.</p>
+<p id="diagState">Comprobando diagnóstico...</p><p id="diagDetails" style="font-size:13px;opacity:.85;white-space:pre-wrap"></p>
+<div class="liveButtons"><button id="diagView">Ver informe</button><button id="diagDownload">Descargar JSON</button></div>
+<div class="liveButtons" style="margin-top:9px"><button id="serviceRefresh">Actualizar diagnóstico</button></div>
+<p class="note">Las órdenes GATT completadas no garantizan que la iluminación se haya aplicado. Guarda el informe para comparar mejoras y fallos.</p>
 </section>
-<section class="livePanel" id="cloudUpdates942">
-<strong>Actualizar CIELO · desde GitHub</strong>
-<p>CIELO busca el firmware oficial, verifica HTTPS y SHA-256 y lo instala cuando tú confirmes. Sin descargar BIN ni escribir contraseñas.</p>
-<p><strong id="cloudInstalled">Versión instalada: 9.5.3</strong></p>
-<p id="cloudVersionStatus">Comprobando versiones...</p>
-<p id="cloudReleaseNotes" style="font-size:12px;color:#b9bbc2"></p>
-<div class="liveButtons">
-<button id="cloudCheck">Comprobar versiones</button><button id="cloudInstall" disabled>Actualizar CIELO</button>
-</div>
-<p id="cloudProgress" style="font-size:12px;color:#c6c1b9">Instalación solo con tu autorización. No cortes la corriente.</p>
-</section>
-<details class="livePanel" id="legacyOta942">
-<summary style="font-size:13px;cursor:pointer">Instalación manual de recuperación (avanzado)</summary>
-<section class="livePanel"><strong>Actualizar desde archivo BIN</strong>
-<p><b id="otaInstalledVersion">Versión instalada: consultando...</b>. Descarga el nuevo archivo BIN en el iPhone, selecciónalo aquí y el ATOM lo instalará por Wi-Fi sin Mac. Las curvas guardadas permanecen en NVS.</p>
-<p style="font-size:13px">Las próximas versiones verificadas estarán disponibles en el <a href="https://github.com/rmw9mw9s49-blip/iwagumi-cielo-updates-/releases" target="_blank" rel="noopener noreferrer">canal público de versiones CIELO ↗</a>. Primero descarga el BIN y después vuelve a este panel para instalarlo.</p>
-<p>Para activar OTA por primera vez: conéctate a <b>Iwagumi-RGB</b>, abre <b>192.168.4.1</b>, mantén pulsado durante <b>2 segundos el botón físico del ATOMS3 Lite</b>, y antes de dos minutos configura una clave OTA de al menos 12 caracteres. Después podrás instalar versiones nuevas desde tu iPhone en la red doméstica, eligiendo el archivo BIN.</p>
-<label style="display:block;margin:8px 0 4px" for="otaSecret">Clave de actualizaciones (mínimo 12 caracteres)</label>
-<input id="otaSecret" type="password" autocomplete="off" placeholder="Clave OTA elegida por ti" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256">
-<div class="liveButtons" style="margin-top:10px"><button id="otaPair">Configurar clave desde Iwagumi-RGB</button></div>
-<label style="display:block;margin:14px 0 4px" for="otaFile">Archivo de firmware (.bin)</label>
+<section class="livePanel" id="legacyOta942">
+<strong>Actualización manual · archivo BIN</strong>
+<p id="otaInstalledVersion">Versión instalada: consultando...</p>
+<p>Selecciona un BIN de confianza que hayas descargado previamente en el iPhone. Cuando validemos la función de recuperación y el acceso físico, podrás actualizar el ATOM desde aquí, solo por la red local.</p>
+<label style="display:block;margin:8px 0 4px" for="otaSecret">Clave privada de actualización</label>
+<input id="otaSecret" type="password" autocomplete="off" placeholder="Clave de actualización local" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256">
+<div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave</button></div>
+<label style="display:block;margin:14px 0 4px" for="otaFile">Archivo (.bin)</label>
 <input id="otaFile" type="file" accept=".bin,application/octet-stream" style="width:100%;color:#e7ded4">
-<div class="liveButtons" style="margin-top:12px"><button id="otaInstall">Instalar actualización</button></div>
-<p id="otaState">Pendiente de comprobar la clave OTA.</p>
-<p style="opacity:.78;font-size:12px">Por seguridad, todavía no descargamos automáticamente firmware del repositorio privado de GitHub ni guardamos credenciales GitHub en el ATOM. OTA local protegida sí está implementada. No cortes la alimentación durante la instalación.</p>
-</section></details>
-<details class="livePanel" id="stormPanel"><summary style="cursor:pointer;font-weight:600">Tormenta opcional · en pruebas</summary>
+<div class="liveButtons" style="margin-top:12px"><button id="otaInstall" disabled>Instalar BIN</button></div>
+<p id="otaState">OTA manual bloqueada en esta versión experimental; la autenticación física no está validada.</p>
+<p class="note">CIELO no consultará GitHub ni buscará actualizaciones automáticamente. No instales binarios experimentales sin comprobar origen y SHA-256.</p>
+</section>
+<details class="livePanel" id="stormPanel" style="display:none"><summary style="cursor:pointer;font-weight:600">Tormenta opcional · en pruebas</summary>
 <strong>Tormenta · diez minutos</strong>
 <p>Nubes sobre el iwagumi: las dos luces se oscurecen gradualmente hacia azul pizarra. Dos relámpagos suaves, sin parpadeo rápido, y regreso progresivo a la iluminación natural.</p>
 <div class="liveButtons"><button id="stormOn">Iniciar tormenta · 10 min</button><button id="stormOff">Detener tormenta</button></div>
@@ -199,7 +167,7 @@ function render(){
  drawChart();
 }
 function drawChart(){let svg=$('chart'),x=t=>5+t/1440*327,y=v=>181-v/100*157;const build=(pts,idx,max)=>{let d='';let last=pts[0][0];for(let t=0;t<=1440;t+=5){let a=vAt(pts,t);let v=idx<0?Math.max(...a):a[idx]/max*100;d+=(t?'L':'M')+x(t).toFixed(1)+' '+y(v).toFixed(1)+' ';last=t;}return d};let line=(d,col,w,op)=>`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" opacity="${op}" stroke-linecap="round" stroke-linejoin="round"/>`;let str='';for(let k=0;k<4;k++)str+=`<path d="M5 ${y(k*25)} H332" stroke="#ffffff13" stroke-dasharray="2 5"/>`;if(state.curve!=='chi'){str+=line(build(state.pez,3,100),'#e5b5a0',2.65,1);if(state.curve==='pez')str+=line(build(state.pez,2,255),'#758ac0',1.4,.45)}if(state.curve!=='pez'){str+=line(build(state.chi,-1,100),'#d6ded6',2.65,1);if(state.curve==='chi')str+=line(build(state.chi,2,100),'#7694bc',1.4,.5)}str+=`<path d="M${x(state.scrub)} 13 V181" stroke="#ffffff84" stroke-width="1" stroke-dasharray="3 4"/>`;svg.innerHTML=str}
-function nav(n){state.view=n;document.querySelectorAll('.page').forEach(e=>e.classList.toggle('active',e.id==='view'+(n==='light'?'Light':n==='curves'?'Curves':'Service')));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===n));render();if(n==='service'&&!cloudCheckedInPage){cloudCheckedInPage=true;cloudCheckUi();}}
+function nav(n){state.view=n;document.querySelectorAll('.page').forEach(e=>e.classList.toggle('active',e.id==='view'+(n==='light'?'Light':n==='curves'?'Curves':'Service')));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===n));render();if(n==='service')serviceRefresh();}
 function sheet(html){$('modalBody').innerHTML=html;$('modal').classList.add('open');document.body.style.overflow='hidden'}function close(){ $('modal').classList.remove('open');document.body.style.overflow='';}
 function input(id,label,value,max){return `<div class="field"><label for="${id}">${label}</label><input type="number" id="${id}" inputmode="numeric" step="1" min="0" max="${max}" value="${value}"></div>`}
 let picked='chi';
@@ -461,27 +429,16 @@ async function diagLoad(){
   const r=await fetch('/api/diagnostico/maestro',{cache:'no-store'});
   if(!r.ok)throw Error('HTTP '+r.status);
   const d=await r.json();window.cieloMasterSnapshot=d;
-  const sys=d.system||{},l=d.lighting||{},w=d.network||{};
-  $('diagState').textContent=(d.status==='atencion'?'Requiere atención':'Diagnóstico disponible')+
-     ' · CIELO '+d.firmware+' · '+d.generated_at;
-  $('diagDetails').textContent='Watchdog: '+(sys.watchdog_active?'activo':'sin confirmar')+
-    ' · Última fase: '+(sys.last_phase||'no disponible')+
-    ' · Máx. operación '+(sys.max_operation_ms||0)+' ms'+
-    '\nRAM '+(sys.heap_free||0)+' B · Bloque continuo '+(sys.largest_heap_block||0)+' B'+
-    '\nBLE Pez Verde '+(l.pez_verde?.errors||0)+' fallos · Chihiros '+(l.chihiros?.errors||0)+
-    ' · Wi-Fi '+(w.home_wifi_connected?'conectado':'sin conexión')+
-    '\nHistorial incluido: '+(d.events?.length||0)+' eventos';
+  const sys=d.system||{},bt=d.bluetooth||{},net=d.network||{};
+  const pv=bt.per_device?.pez_verde||{},ch=bt.per_device?.chihiros||{};
+  $('diagState').textContent=(d.status==='avisos_detectados'?'Avisos detectados':'Diagnóstico disponible')+' · CIELO '+d.firmware+' · '+d.generated_at;
+  $('diagDetails').textContent='RAM libre '+(sys.heap_free??'—')+' B · bloque '+(sys.largest_heap_block??'—')+' B'
+   +'\nPez Verde: '+(pv.gatt_ok??'—')+' operaciones GATT · '+(pv.errors??'—')+' errores'
+   +'\nChihiros: '+(ch.gatt_ok??'—')+' operaciones GATT · '+(ch.errors??'—')+' errores'
+   +'\nBLE más lento '+(bt.max_call_ms??'—')+' ms · Wi-Fi '+(net.home_wifi_connected?'conectado':'sin conexión')
+   +'\nEventos de este arranque '+(d.events?.length??0);
   return d;
  }catch(e){$('diagState').textContent='Diagnóstico no disponible: '+e.message;throw e}
-}
-async function diagCloudRefresh(){
- try{
-  const r=await fetch('/api/diagnostico/nube/estado',{cache:'no-store'});
-  if(!r.ok)throw Error('HTTP '+r.status);
-  const d=await r.json();
-  $('diagCloudStatus').textContent=(d.configured?'Nube configurada · ':'Solo local · ')+
-    (d.sending?'Sincronizando...':d.message||'');
- }catch(e){$('diagCloudStatus').textContent='Nube: no se pudo comprobar el estado';}
 }
 async function diagViewUi(){
  try{
@@ -490,37 +447,17 @@ async function diagViewUi(){
   $('diagReportText').textContent=JSON.stringify(d,null,2);
  }catch(e){toast(e.message);}
 }
-async function diagSyncUi(){
- $('diagCloudStatus').textContent='Solicitando sincronización privada...';
- try{await api('/api/diagnostico/nube/sincronizar',{});toast('Envío iniciado sin interrumpir la iluminación');}
- catch(e){toast(e.message);}
- await diagCloudRefresh();
-}
-async function diagSaveCloudUi(){
- const url=$('diagRelayUrl').value.trim(),secret=$('diagRelayKey').value;
- if(!url||secret.length<32)return toast('Introduce la URL privada y una clave de al menos 32 caracteres');
- try{
-  await api('/api/diagnostico/nube/configurar',{url,secret});
-  $('diagRelayKey').value='';
-  toast('Conexión guardada, pendiente de prueba');await diagCloudRefresh();
- }catch(e){toast(e.message)}
-}
-async function diagDisableCloudUi(){
- if(!confirm('¿Desactivar la sincronización y eliminar su clave guardada en el ATOM?'))return;
- try{await api('/api/diagnostico/nube/desactivar',{});toast('Sincronización desactivada');await diagCloudRefresh();}
- catch(e){toast(e.message)}
-}
 async function serviceRefresh(){
  try{
   await diagLoad();
-  await diagCloudRefresh();
   const r=await fetch('/api/service/status',{cache:'no-store'});
   if(!r.ok)throw Error('HTTP '+r.status);
   const d=await r.json();
   if($('otaInstalledVersion'))$('otaInstalledVersion').textContent='Versión instalada: '+(d.version||'sin identificar');
-  if($('otaPair'))$('otaPair').style.display=d.otaPaired?'none':'';
+  if($('otaPair')){ $('otaPair').style.display=d.otaPaired?'none':''; $('otaPair').disabled=!d.otaEnabled; }
+  if($('otaInstall'))$('otaInstall').disabled=!d.otaEnabled;
   $('otaState').textContent=d.otaBusy?'Instalando... bytes '+d.otaBytes:
-    d.otaPaired?'Clave OTA configurada · Recuperación manual disponible':'OTA sin configurar';
+    !d.otaEnabled?'Actualización manual pendiente de validación':d.otaPaired?'Clave OTA configurada':'Configura una clave para instalar BIN';
  }catch(e){toast('Diagnóstico no disponible: '+e.message);}
 }
 async function serviceCopy(onlyErrors){
@@ -539,53 +476,10 @@ async function serviceCopy(onlyErrors){
  }catch(e){toast(e.message+' · prueba Descargar historial')}
 }
 
-let cloudCheckedInPage=false,cloudBusyUi=false;
-function cloudDisplay(d){
- if(!d)return;
- if($('cloudInstalled'))$('cloudInstalled').textContent='Versión instalada: '+(d.installed||'9.5.3');
- if($('cloudVersionStatus'))$('cloudVersionStatus').textContent=d.available?'Nueva versión '+d.latest+' disponible':d.message||'CIELO está actualizado';
- if($('cloudReleaseNotes'))$('cloudReleaseNotes').textContent=d.available?(d.note||'Nueva versión verificada'):'';
- if($('cloudInstall'))$('cloudInstall').disabled=!d.available||!d.verified||cloudBusyUi;
-}
-async function cloudCheckUi(){
- if(cloudBusyUi)return;
- cloudBusyUi=true;$('cloudCheck').disabled=true;$('cloudInstall').disabled=true;
- $('cloudVersionStatus').textContent='Consultando GitHub por HTTPS...';
- let result=null;
- try{
-  const response=await fetch('/api/updates/check',{cache:'no-store'});
-  if(!response.ok)throw Error('HTTP '+response.status);
-  result=await response.json();
- }catch(e){$('cloudVersionStatus').textContent='No se pudo consultar GitHub: '+e.message;}
- finally{
-  // La comprobación ha terminado ANTES de decidir si la actualización está habilitada.
-  cloudBusyUi=false;
-  $('cloudCheck').disabled=false;
-  if(result)cloudDisplay(result);
- }
-}
-async function cloudInstallUi(){
- if(cloudBusyUi)return;
- if(!confirm('CIELO descargará e instalará el firmware oficial desde GitHub. No interrumpas la alimentación. Asegúrate de que Chihiros está en AUTO y de que no hay pruebas activas. ¿Actualizar ahora?'))return;
- cloudBusyUi=true;$('cloudInstall').disabled=true;$('cloudCheck').disabled=true;
- $('cloudProgress').textContent='Descargando y validando firmware... Puede tardar un minuto. No cortes la corriente.';
- try{
-  const result=await api('/api/updates/install',{confirm:'actualizar-cielo'});
-  $('cloudProgress').textContent=typeof result==='string'?result:'Firmware recibido; espera el reinicio.';
-  toast('Firmware verificado. Reiniciando CIELO...');
- }catch(e){
-  $('cloudProgress').textContent='Actualización no confirmada: '+e.message;
-  toast('Revisa el informe Servicio si no cambia la versión');
- }finally{
-  cloudBusyUi=false;$('cloudCheck').disabled=false;
-  try{const r=await fetch('/api/updates/status',{cache:'no-store'});if(r.ok)cloudDisplay(await r.json());}catch(_){}
- }
-}
-
 async function otaPairUi(){
  const key=$('otaSecret').value;
  if(key.length<12||key.length>64)return toast('Clave: de 12 a 64 caracteres');
- if(!confirm('La configuración inicial necesita conectarte a Iwagumi-RGB (192.168.4.1) y mantener el botón físico del ATOM 2 segundos. Guarda bien la clave OTA: si la olvidas, requerirá recuperación por USB. ¿Configurar ahora?'))return;
+ if(!confirm('Configurar la clave de actualización local. Conserva tu respaldo USB. ¿Continuar?'))return;
  try{
   await api('/api/ota/pair',{key});
   toast('Clave OTA guardada');await serviceRefresh()
@@ -656,11 +550,8 @@ function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()
 document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;
 $('diagView').onclick=diagViewUi;
 $('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1','_blank');
-$('diagSync').onclick=diagSyncUi;
-$('diagSaveCloud').onclick=diagSaveCloudUi;
-$('diagDisableCloud').onclick=diagDisableCloudUi;
 $('serviceRefresh').onclick=serviceRefresh;
-$('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;$('cloudCheck').onclick=cloudCheckUi;$('cloudInstall').onclick=cloudInstallUi;
+$('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;
 $('stormOn').onclick=stormStartUi;$('stormOff').onclick=stormStopUi;$('stormSound').onclick=toggleStormSound;$('stormTestSound').onclick=stormTestSoundUi;$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(!state.preview){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000)}
 window.addEventListener('DOMContentLoaded',init);
 </script></body></html>)CIELOUI_96";
