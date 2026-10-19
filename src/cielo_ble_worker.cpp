@@ -24,6 +24,7 @@ Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
 QueueHandle_t requests=nullptr,responses=nullptr;
 volatile uint32_t lastHeartbeat=0;
 uint16_t chMessageId=1;
+uint8_t writesInCurrentOperation=0;
 // Exactly one FreeRTOS task owns all BLE calls. Web thread NEVER interacts with the stack.
 void copyReason(BleResult& r,const char* msg){strncpy(r.reason,msg,sizeof(r.reason)-1);r.reason[sizeof(r.reason)-1]='\0';}
 bool locate(Target& t) {
@@ -65,6 +66,7 @@ bool put(Target& t,const uint8_t* data,size_t n,const char*&err){
  if(!t.client || !t.client->isConnected() || !t.writer){err="GATT_NOT_CONNECTED";return false;}
  // Arduino BLE writeValue returns void: transport accepted != optical ACK!
  t.writer->writeValue(const_cast<uint8_t*>(data),n,t.writer->canWrite());
+ if(writesInCurrentOperation<255)writesInCurrentOperation++; // GATT write call, not optical acknowledgement
  if(!t.client->isConnected()){err="BLE_DISCONNECTED_DURING_WRITE";t.writer=nullptr;return false;}
  vTaskDelay(pdMS_TO_TICKS(30));
  return true;
@@ -105,10 +107,10 @@ void task(void*){
   cielo::ble::Command c{};
   // Block without consuming CPU; heartbeat updates every second when idle.
   if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){lastHeartbeat=millis();continue;}
-  uint32_t started=millis();const char*err="OK";
+  uint32_t started=millis();writesInCurrentOperation=0;const char*err="OK";
   bool success=(c.device==cielo::ble::Device::PezVerde)?sendPez(c,err):sendCh(c,err);
   BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);
-  res.success=success;res.duration_ms=millis()-started;copyReason(res,err);
+  res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);
   // Single reader: if response queue is full, drop oldest after noting failure upstream.
   if(xQueueSend(responses,&res,0)!=pdTRUE){BleResult discard;xQueueReceive(responses,&discard,0);xQueueSend(responses,&res,0);}
   lastHeartbeat=millis();

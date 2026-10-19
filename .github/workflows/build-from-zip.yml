@@ -1,6 +1,8 @@
 name: CIELO 9.6 | Compilar y registrar resultado
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -64,6 +66,8 @@ jobs:
             if test -f "$f"; then cp "$f" "build-src/$f"; fi
           done
           echo 'Build sobre archivos fuente editables del repositorio, no sobre ZIP antiguo'
+      - name: Generar interfaz C++ a partir del HTML unico
+        run: python build-src/tools/generar_ui.py
       - name: Instalar PlatformIO
         id: install
         run: python -m pip install 'platformio==6.1.18'
@@ -104,7 +108,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Publicar resultado legible y codigo fuente en GitHub
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         env:
           CI_FINAL_STATUS: ${{ job.status }}
           CI_RUN_ID: ${{ github.run_id }}

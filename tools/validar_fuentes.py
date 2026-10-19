@@ -5,8 +5,12 @@ r=Path(__file__).resolve().parents[1]
 original=(r/'reference/INTERFAZ_ORIGINAL_953_SIN_MODIFICAR.html').read_text()
 actual=(r/'web/interfaz_r4.html').read_text()
 assert 'IWAGUMI CIELO' in original and len(original)>70000
-assert '<title>CIELO 9.6 R4 · Desarrollo</title>' in actual
-assert 'CIELO 9.6 R4 · firmware de desarrollo' in actual
+assert '/api/updates/' not in actual and 'workers.dev' not in actual
+assert 'Actualizar CIELO · desde GitHub' not in actual
+assert '<button id="otaInstall" disabled>' in actual
+assert 'Descargar JSON' in actual
+assert '<title>CIELO 9.6 R4.2 · Desarrollo</title>' in actual
+assert 'CIELO 9.6 R4.2 · firmware de desarrollo' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
