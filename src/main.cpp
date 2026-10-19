@@ -69,7 +69,6 @@ static const char* resetReasonName(esp_reset_reason_t r){
   case ESP_RST_TASK_WDT:return "TASK_WATCHDOG";
   case ESP_RST_WDT:return "OTHER_WATCHDOG";
   case ESP_RST_BROWNOUT:return "BROWNOUT";
-  case ESP_RST_USB:return "USB_RESET";
   default:return "OTHER_OR_UNKNOWN";
  }
 }
