@@ -9,6 +9,7 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_ota_ops.h>
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
 #include "profiles_generated.h"
@@ -30,7 +31,7 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.2-DEV";
+static constexpr const char* VERSION="9.6.0-R4.3-DEV";
 static WebServer srv(80);
 static Preferences prefs;
 static cielo96::ProfileImage profile;
@@ -51,17 +52,41 @@ static bool otaBusy=false,otaAllowed=false,otaSuccess=false,otaError=false;
 static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin actualizaciones";
 static String storedSSID,storedPass,apPassword;
 static uint32_t bootMs=0;
+static constexpr int ATOMS3_BUTTON_GPIO=41;
+static uint32_t buttonDownAt=0,otaPhysicalUntil=0;
+static bool physicalArmed=false;
+static uint32_t previousBootCount=0;
+static String priorEvent="ninguno",priorEventDetail="ninguno";
+static bool priorBootClean=false;
+static uint32_t savedFailures=0;
+static uint32_t lastPersistentFaultAt=0;
+static uint32_t wifiDisconnects=0;
+static wl_status_t lastWifiStatus=WL_IDLE_STATUS;
+static bool connectionStarted=false;
+static bool apRecoveryAlways=true; // Rescue AP remains available while STA is connected.
+static String otaRunningPartition,otaNextPartition;
 static uint32_t lastEventId=0;
 static constexpr int EVENT_MAX=36;
 struct Event{uint32_t elapsed;char label[22];char detail[82];};
 static Event events[EVENT_MAX];static int eventCount=0,eventHead=0;
 
+static void persistCritical(const char* name,const String& detail){
+ // Persist only faults, never minute samples. Throttle NVS wear to one write per 60 s.
+ if(millis()-lastPersistentFaultAt<60000UL)return;
+ lastPersistentFaultAt=millis();
+ prefs.putString("fault_type",name);
+ prefs.putString("fault_text",detail.substring(0,70));
+ prefs.putUInt("fault_count",prefs.getUInt("fault_count",0)+1);
+}
 static void record(const char*name,const String& detail){
  Event&e=events[eventHead];e.elapsed=millis()-bootMs;
  snprintf(e.label,sizeof(e.label),"%s",name);
  snprintf(e.detail,sizeof(e.detail),"%s",detail.c_str());
  eventHead=(eventHead+1)%EVENT_MAX;if(eventCount<EVENT_MAX)eventCount++;lastEventId++;
  Serial.printf("CIELO EVENT %s %s\n",name,detail.c_str());
+ if(strncmp(name,"BLE_ERROR",9)==0 || strncmp(name,"CURVA_ERROR",11)==0 ||
+    strncmp(name,"BLE_SOFT_TIMEOUT",16)==0 || strncmp(name,"OTA_ERROR",9)==0)
+   persistCritical(name,detail);
 }
 static String jsonQuote(const String& s){
  String r="\"";for(size_t i=0;i<s.length();i++){
@@ -193,6 +218,7 @@ static void statusJson(){
  j+=",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+"}";
  jsonSend(200,j);
 }
+static bool physicalOtaGrant();
 static void diagnosticJson(){
  const auto&m=queue.metrics();bool wifi=WiFi.status()==WL_CONNECTED;
  uint32_t freeMem=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
@@ -204,9 +230,11 @@ static void diagnosticJson(){
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"watchdog_active\":null,\"last_phase\":\"NO_INSTRUMENTADA\"";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
- j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null}";
+ j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null";
+ j+=",\"boot_count\":"+String(previousBootCount+1)+",\"previous_boot_marked_clean\":"+String(priorBootClean?"true":"false");
+ j+=",\"persistent_fault_count\":"+String(savedFailures)+",\"prior_fault_type\":"+jsonQuote(priorEvent)+",\"prior_fault_detail\":"+jsonQuote(priorEventDetail)+"}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
- j+=",\"wifi_disconnects\":null,\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0)+"}";
+ j+=",\"wifi_disconnects\":"+String(wifiDisconnects)+",\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0)+"}";
  j+=",\"lighting\":{\"pez_verde\":{\"mode\":"+jsonQuote(pezManual?"manual":"programa")+",\"tx_batches\":"+String(devices[0].completed);
  j+=",\"tx_frames\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+"},\"chihiros\":{\"cielo_night_enabled\":"+String(chiCieloNight?"true":"false");
  j+=",\"ble_active\":"+String(bleReady?"true":"false")+",\"auto_restore_pending\":"+String(chiAutoPending?"true":"false")+",\"tx_frames\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+"}}";
@@ -221,7 +249,10 @@ static void diagnosticJson(){
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
  j+=",\"last_ota_message\":"+jsonQuote(lastOtaError)+",\"github_check\":\"NO_USADO\",\"cloud\":\"DESACTIVADA\"}";
- j+=",\"event_retention\":\"RAM_36_SOLO_ARRANQUE_ACTUAL\",\"events\":[";
+ j+=",\"recovery\":{\"ap_ssid\":\"CIELO96-CONFIG\",\"ap_ip\":\"192.168.4.1\",\"password_location\":\"SERIAL_USB_LOCAL\",\"always_on\":true";
+ j+=",\"running_partition\":"+jsonQuote(otaRunningPartition)+",\"next_update_partition\":"+jsonQuote(otaNextPartition);
+ j+=",\"physical_ota_grant\":"+String(physicalOtaGrant()?"true":"false")+",\"ota_enabled\":false}";
+ j+=",\"event_retention\":\"36_RAM_y_ultimo_error_persistente_NVS\",\"events\":[";
  for(int i=0;i<eventCount;i++){
   int idx=(eventHead-eventCount+i+EVENT_MAX)%EVENT_MAX;
   if(i)j+=',';
@@ -263,10 +294,23 @@ static bool tokenEqual(){
  prefs.getBytes("ota_sha",stored,32);uint8_t diff=0;
  for(unsigned i=0;i<32;i++)diff|=stored[i]^given[i];return diff==0;
 }
+static void physicalButtonTask(){
+ bool held=(digitalRead(ATOMS3_BUTTON_GPIO)==LOW);
+ uint32_t now=millis();
+ if(held && buttonDownAt==0)buttonDownAt=now;
+ if(!held){buttonDownAt=0;physicalArmed=false;return;}
+ // Holding button for 5 s grants a short local-only OTA provisioning window.
+ // NEVER starts OTA itself. Does not erase Wi-Fi settings. Reset/bootloader button is separate.
+ if(!physicalArmed && now-buttonDownAt>=5000UL){
+  physicalArmed=true;otaPhysicalUntil=now+90000UL;
+  record("OTA_FISICA","Boton local 5 s: ventana autorizacion 90 s (OTA permanece bloqueada)");
+ }
+}
+static bool physicalOtaGrant(){return physicalArmed && (int32_t)(otaPhysicalUntil-millis())>0;}
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
- if(millis()-bootMs>600000UL)return fail(403,"El emparejamiento inicial solo esta disponible durante 10 minutos tras arrancar");
+ if(!physicalOtaGrant())return fail(403,"Mantener pulsado el boton fisico GPIO41 durante 5 segundos antes del emparejamiento");
  String s=srv.arg("key");if(s.length()<12||s.length()>96)return fail(400,"Clave OTA de 12 a 96 caracteres");
  uint8_t digest[32];if(!sha256String(s,digest)||prefs.putBytes("ota_sha",digest,32)!=32)return fail(507,"No se pudo guardar la clave");
  record("OTA_EMPAREJADA","Clave hasheada SHA256. No se registra en texto");ok();
@@ -282,8 +326,9 @@ static void startOtaResponse(){
 static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
-  otaAllowed=tokenEqual();otaSuccess=false;otaError=false;otaBytes=0;
-  if(!otaAllowed){lastOtaError="Clave OTA incorrecta";otaError=true;return;}
+  otaAllowed=tokenEqual() && physicalOtaGrant();otaSuccess=false;otaError=false;otaBytes=0;
+  if(!physicalOtaGrant())record("OTA_RECHAZADA","Falta confirmacion fisica del boton");
+  if(!otaAllowed){lastOtaError="Sin clave correcta y autorizacion fisica";otaError=true;return;}
   if(!upload.filename.endsWith(".bin")||!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){
    lastOtaError="BIN invalido o sin particion OTA disponible";otaError=true;return;
   }
@@ -346,11 +391,14 @@ static void configureRoutes(){
 }
 static void wifiTask(){
  const uint32_t now=millis();
- if(WiFi.status()==WL_CONNECTED)return;
+ wl_status_t w=WiFi.status();
+ if(lastWifiStatus==WL_CONNECTED && w!=WL_CONNECTED){wifiDisconnects++;record("WIFI_CAIDA","STA desconectada; AP de rescate continua activo");}
+ lastWifiStatus=w;
+ if(w==WL_CONNECTED)return;
  if(storedSSID.length() && now-lastWiFiAttempt>30000UL){
   lastWiFiAttempt=now;WiFi.begin(storedSSID.c_str(),storedPass.c_str());wifiFailures++;
  }
- if(!wifiApOn && now-bootMs>20000){
+ if(!wifiApOn && now-bootMs>5000){
   wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
   record("AP_RECUPERACION",String("192.168.4.1; password en Serial. activo=")+String(wifiApOn));
  }
@@ -408,6 +456,18 @@ void setup(){
  Serial.printf("IWAGUMI CIELO %s | ATOMS3-Lite | build experimental\n",VERSION);
  setenv("TZ","CET-1CEST,M3.5.0,M10.5.0/3",1);tzset();
  prefs.begin("cielo96",false);
+ previousBootCount=prefs.getUInt("boots",0);
+ priorEvent=prefs.getString("fault_type","ninguno");
+ priorEventDetail=prefs.getString("fault_text","ninguno");
+ savedFailures=prefs.getUInt("fault_count",0);
+ priorBootClean=prefs.getBool("clean",false);
+ // One small write per boot; never on minute timer.
+ prefs.putUInt("boots",previousBootCount+1);
+ prefs.putBool("clean",false);
+ const esp_partition_t *running=esp_ota_get_running_partition();
+ const esp_partition_t *next=esp_ota_get_next_update_partition(nullptr);
+ otaRunningPartition=running?running->label:"desconocida";
+ otaNextPartition=next?next->label:"NO_DISPONIBLE";
  loadProfile();storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
  // Emergency AP secret is created from hardware randomness on first boot,
  // persisted in NVS, printed ONLY on the physical serial port.
@@ -418,6 +478,7 @@ void setup(){
    for(int i=0;i<14;i++)apPassword+=alphabet[esp_random()%(sizeof(alphabet)-1)];
    prefs.putString("ap_secret",apPassword);
  }
+ pinMode(ATOMS3_BUTTON_GPIO,INPUT_PULLUP);
  WiFi.mode(WIFI_AP_STA);WiFi.setSleep(false);WiFi.setAutoReconnect(false);
  WiFi.setHostname("iwagumi-cielo96");
  if(storedSSID.length()){WiFi.begin(storedSSID.c_str(),storedPass.c_str());lastWiFiAttempt=millis();}
@@ -432,5 +493,6 @@ void loop(){
  wifiTask();
  lightingTask();
  bleTick();
+ physicalButtonTask();
  delay(3);
 }
