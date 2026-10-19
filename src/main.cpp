@@ -49,6 +49,21 @@ static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
 static bool otaBusy=false,otaAllowed=false,otaSuccess=false,otaError=false;
+static mbedtls_sha256_context otaHash;
+static bool otaHashStarted=false;
+static uint8_t otaExpected[32]{};
+static uint8_t otaFailures=0;
+static uint32_t otaBlockedUntil=0;
+static bool parseSha256(const String&s,uint8_t out[32]){
+ if(s.length()!=64)return false;
+ for(int i=0;i<32;i++){
+  char a=s[2*i],b=s[2*i+1];
+  auto hex=[](char x)->int{return x>='0'&&x<='9'?x-'0':x>='a'&&x<='f'?x-'a'+10:x>='A'&&x<='F'?x-'A'+10:-1;};
+  int hi=hex(a),lo=hex(b);if(hi<0||lo<0)return false;out[i]=(hi<<4)|lo;
+ }return true;
+}
+static void endOtaHash(){if(otaHashStarted){mbedtls_sha256_free(&otaHash);otaHashStarted=false;}}
+
 static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin actualizaciones";
 static String storedSSID,storedPass,apPassword;
 static bool wifiMigrated=false,mdnsStarted=false,rescueOpen=false,safeBoot=false;
@@ -282,15 +297,16 @@ static bool tokenEqual(){
 }
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
- if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
- if(millis()-bootMs>600000UL)return fail(403,"El emparejamiento inicial solo esta disponible durante 10 minutos tras arrancar");
+ if(prefs.getBytesLength("ota_sha")==32)return fail(409,"Clave OTA ya configurada");
+ if(!physicalWindow())return fail(403,"Emparejamiento requiere boton fisico pulsado 3 segundos");
+ // El emparejamiento está autorizado mediante presencia física, no un plazo tras arrancar.
  String s=srv.arg("key");if(s.length()<12||s.length()>96)return fail(400,"Clave OTA de 12 a 96 caracteres");
  uint8_t digest[32];if(!sha256String(s,digest)||prefs.putBytes("ota_sha",digest,32)!=32)return fail(507,"No se pudo guardar la clave");
  record("OTA_EMPAREJADA","Clave hasheada SHA256. No se registra en texto");ok();
 }
 static void startOtaResponse(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA local desactivada por seguridad");
- if(!otaAllowed)return fail(403,"Clave OTA incorrecta");
+ if(!otaAllowed)return fail(403,"Clave OTA incorrecta o falta autorización física");
  if(otaError)return fail(500,lastOtaError.c_str());
  if(!otaSuccess)return fail(500,"La imagen no se ha completado");
  srv.send(200,"text/plain","Firmware recibido y validado por Update; reiniciando");
@@ -299,22 +315,54 @@ static void startOtaResponse(){
 static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
-  otaAllowed=tokenEqual();otaSuccess=false;otaError=false;otaBytes=0;
-  if(!otaAllowed){lastOtaError="Clave OTA incorrecta";otaError=true;return;}
-  if(!upload.filename.endsWith(".bin")||!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){
-   lastOtaError="BIN invalido o sin particion OTA disponible";otaError=true;return;
+  otaAllowed=false;otaSuccess=false;otaError=false;otaBytes=0;endOtaHash();
+  if(otaBlockedUntil && int32_t(otaBlockedUntil-millis())>0){
+   lastOtaError="OTA temporalmente bloqueada";otaError=true;return;
   }
-  otaBusy=true;record("OTA_START","Carga manual autenticada");
+  if(!physicalWindow()||!tokenEqual()){
+   lastOtaError="Se exige boton fisico 3 segundos y clave local correcta";otaError=true;
+   if(++otaFailures>=5){otaBlockedUntil=millis()+60000;otaFailures=0;}return;
+  }
+  otaFailures=0;
+  if(!upload.filename.endsWith(".bin")||!parseSha256(srv.header("X-Cielo-SHA256"),otaExpected)){
+   lastOtaError="BIN o huella SHA256 incorrectos";otaError=true;return;
+  }
+  if(!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){lastOtaError="Particion OTA no disponible";otaError=true;return;}
+  mbedtls_sha256_init(&otaHash);otaHashStarted=true;
+  if(mbedtls_sha256_starts_ret(&otaHash,0)!=0){
+   lastOtaError="Error inicializando SHA256";otaError=true;Update.abort();endOtaHash();return;
+  }
+  otaAllowed=true;otaBusy=true;record("OTA_INICIO","BIN local, presencia fisica, PIN y SHA");
  }else if(upload.status==UPLOAD_FILE_WRITE){
   if(!otaAllowed||otaError)return;
-  if(Update.write(upload.buf,upload.currentSize)!=upload.currentSize){lastOtaError="Error de escritura OTA";otaError=true;Update.abort();}
-  else otaBytes+=upload.currentSize;
+  if(otaBytes==0 && (upload.currentSize==0||upload.buf[0]!=0xe9)){
+   lastOtaError="No es una imagen ESP32";otaError=true;Update.abort();endOtaHash();otaBusy=false;return;
+  }
+  if(otaBytes+upload.currentSize>3342336UL ||
+     mbedtls_sha256_update_ret(&otaHash,upload.buf,upload.currentSize)!=0 ||
+     Update.write(upload.buf,upload.currentSize)!=upload.currentSize){
+   lastOtaError="Error de tamaño, SHA256 o escritura";otaError=true;Update.abort();endOtaHash();otaBusy=false;return;
+  }
+  otaBytes+=upload.currentSize;
  }else if(upload.status==UPLOAD_FILE_END){
   if(!otaAllowed||otaError)return;
-  if(!Update.end(true)){lastOtaError="Firmware incompleto o incorrecto";otaError=true;Update.abort();}
-  else{otaSuccess=true;lastOtaError="OTA verificada, reinicio pendiente";record("OTA_OK",String("bytes=")+String(otaBytes));}
+  uint8_t digest[32]{};
+  if(!otaHashStarted||mbedtls_sha256_finish_ret(&otaHash,digest)!=0){
+   lastOtaError="Error final SHA256";otaError=true;Update.abort();endOtaHash();otaBusy=false;return;
+  }
+  endOtaHash();uint8_t diff=0;
+  for(int i=0;i<32;i++)diff|=digest[i]^otaExpected[i];
+  if(diff||otaBytes<50000UL){
+   lastOtaError="BIN rechazado: SHA256 no coincide o tamaño pequeño";
+   otaError=true;Update.abort();otaBusy=false;record("OTA_RECHAZADA","BIN no supera integridad");return;
+  }
+  if(!Update.end(true)){lastOtaError="Imagen OTA invalida";otaError=true;Update.abort();}
+  else{otaSuccess=true;lastOtaError="BIN SHA256 comprobado y OTA aceptada";record("OTA_VERIFICADA",String("bytes=")+String(otaBytes));}
   otaBusy=false;
- }else if(upload.status==UPLOAD_FILE_ABORTED){otaError=true;otaBusy=false;lastOtaError="OTA abortada";Update.abort();}
+ }else if(upload.status==UPLOAD_FILE_ABORTED){
+  otaError=true;otaBusy=false;lastOtaError="Subida interrumpida";Update.abort();endOtaHash();
+  record("OTA_ABORTADA","Firmware activo sin modificar");
+ }
 }
 static void configureWifi(){
  if(!physicalWindow())return fail(403,"WiFi requiere mantener el boton 3 segundos");
@@ -326,7 +374,7 @@ static void configureWifi(){
  lastWiFiAttempt=0;ok();
 }
 static void configureRoutes(){
- const char*keys[]={"X-Cielo-Key"};srv.collectHeaders(keys,1);
+ const char*keys[]={"X-Cielo-Key","X-Cielo-SHA256"};srv.collectHeaders(keys,2);
  srv.on("/",HTTP_GET,[]{++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
  srv.on("/api/status",HTTP_GET,statusJson);
  srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
