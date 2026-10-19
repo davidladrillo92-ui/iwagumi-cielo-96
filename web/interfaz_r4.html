@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#101213"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Cielo"><meta name="description" content="IWAGUMI CIELO · Iluminación del acuario">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png">
+<title>CIELO 9.6 R4 · Desarrollo</title>
+<style>
+:root{color-scheme:dark;--bg:#0c0d0e;--panel:#191b1e;--panel2:#222529;--line:#ffffff16;--text:#f4f2ee;--soft:#a8a9a7;--dim:#777a7d;--warm:#e7c4a7;--mint:#c7d6d0;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,Arial,sans-serif;font-synthesis:none}
+*{box-sizing:border-box}html{height:100%;-webkit-tap-highlight-color:transparent}body{background:#050607;color:var(--text);margin:0;min-height:100%;-webkit-font-smoothing:antialiased}button,input{font:inherit}button{cursor:pointer;touch-action:manipulation}button:disabled{opacity:.36;cursor:default}button:focus-visible,input:focus-visible{outline:2px solid var(--warm);outline-offset:3px}.shell{position:relative;overflow:hidden;max-width:480px;margin:auto;background:var(--bg);min-height:100dvh;box-shadow:0 0 80px #0008;padding:calc(env(safe-area-inset-top) + 19px) 23px calc(112px + env(safe-area-inset-bottom))}
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:19px}.brand{font-size:14px;letter-spacing:.22em;font-weight:650;color:#f5f3ee}.iconbtn{width:43px;height:43px;display:grid;place-items:center;border-radius:50%;background:#ffffff08;border:1px solid #ffffff0e;color:var(--text)}.iconbtn svg{height:20px;width:20px}.heading{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:12px}.eyebrow{font-size:11px;letter-spacing:.08em;color:var(--soft);font-weight:500}.h1{font-size:39px;letter-spacing:-.062em;font-weight:580;line-height:1.1;margin:5px 0 0}.status{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#ced7d0;padding-bottom:6px;white-space:nowrap}.status i{width:6px;height:6px;background:#91c2a4;border-radius:50%;box-shadow:0 0 12px #91c2a466}.status.offline{color:#aaa2a0}.status.offline i{background:#a1928a;box-shadow:none}
+.hero{position:relative;width:100%;height:248px;border-radius:23px;overflow:hidden;background:#172126;border:1px solid #ffffff12;isolation:isolate;box-shadow:inset 0 1px #ffffff20}.hero-art{position:absolute;inset:0;width:100%;height:100%}.hero:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 38%,#06090b10 60%,#02060893 100%);pointer-events:none}.glow{position:absolute;inset:-40% -60%;background:radial-gradient(ellipse,var(--sky,#d9a382) 0%,transparent 58%);opacity:.28;filter:blur(32px);mix-blend-mode:screen;transition:background 1s ease}.hero-caption{position:absolute;z-index:2;bottom:22px;left:21px;right:21px;display:flex;justify-content:space-between;align-items:end}.hero-caption strong{font-size:21px;letter-spacing:-.045em;font-weight:560}.hero-caption span{display:block;margin-top:4px;color:#e5e8e5bd;font-size:11px}.hero-day{font-size:12px;font-variant-numeric:tabular-nums;color:#f9f4ee;opacity:.94;background:#ffffff18;border:1px solid #ffffff20;padding:8px 10px;border-radius:30px;backdrop-filter:blur(9px)}
+.sectionhead{display:flex;align-items:center;justify-content:space-between;margin:17px 1px 9px}.sectionhead h2{margin:0;font-size:18px;font-weight:590;letter-spacing:-.035em}.minor{border:0;background:none;color:#b6b9b9;font-size:12px;padding:9px 0}.lamps{border-radius:22px;background:#1a1d20;border:1px solid #ffffff0e;overflow:hidden}.lamp{width:100%;padding:12px 17px 12px;display:flex;align-items:center;text-align:left;gap:13px;border:0;color:var(--text);background:none}.lamp+.lamp{border-top:1px solid #ffffff0e}.lamp:active{background:#ffffff09}.lamp-icon{width:41px;height:41px;display:grid;place-items:center;background:#292c30;border:1px solid #ffffff0b;border-radius:15px;flex-shrink:0}.lamp-icon svg{width:20px;height:20px;opacity:.86}.lamp-copy{flex:1;min-width:0}.lamp-copy strong{font-size:15px;font-weight:600;letter-spacing:-.017em}.lamp-copy small{display:block;margin-top:4px;color:#969c9f;font-size:12px}.lamp-side{text-align:right}.lamp-side b{font-size:22px;font-variant-numeric:tabular-nums;font-weight:500;letter-spacing:-.045em}.lamp-side small{display:block;color:#82888b;font-size:10px;margin-top:3px}.chevron{color:#60686e;margin-left:3px}
+.scenes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:4px}.scene{padding:0;border:0;background:none;color:#b7b6b6;font-size:11px;text-align:center}.orb{margin:0 auto 9px;width:min(57px,18vw);aspect-ratio:1;border-radius:50%;display:block;box-shadow:inset 0 2px 9px #ffffff55,inset 0 -8px 18px #0008,0 6px 13px #0008}.scene.active .orb{outline:1px solid #ede4d8;outline-offset:4px}.scene:nth-child(1) .orb{background:radial-gradient(circle at 26% 17%,#f5dedb,#b97886 55%,#643f61)}.scene:nth-child(2) .orb{background:radial-gradient(circle at 26% 17%,#fff4dc,#dfdfc7 54%,#879b9c)}.scene:nth-child(3) .orb{background:radial-gradient(circle at 26% 17%,#f7c588,#bf5a37 64%,#72354c)}.scene:nth-child(4) .orb{background:radial-gradient(circle at 25% 20%,#687fbd,#1a355d 55%,#131c31)}
+.bottom{position:fixed;bottom:0;left:50%;transform:translateX(-50%);z-index:30;width:min(480px,100%);height:calc(81px + env(safe-area-inset-bottom));padding:10px 48px calc(7px + env(safe-area-inset-bottom));display:flex;justify-content:center;gap:42px;align-items:flex-start;background:linear-gradient(180deg,#141619f8,#151719);border-top:1px solid #ffffff12;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}.tab{display:grid;place-items:center;gap:6px;min-width:72px;border:0;color:#73787b;background:none;font-size:11px}.tab svg{width:21px;height:21px}.tab.active{color:#ece6df}.page{display:none}.page.active{display:block}.quiet{font-size:12px;color:#899094;line-height:1.5}.plot{width:100%;height:195px;display:block;overflow:visible}.plot-wrap{background:#191b1e;border:1px solid var(--line);padding:22px 13px 10px;border-radius:22px}.seg{display:flex;gap:3px;border-radius:12px;background:#25282c;padding:4px}.seg button{flex:1;min-width:0;border:0;background:none;border-radius:10px;color:#848b8f;font-size:12px;font-weight:550;padding:10px 4px}.seg button.active{background:#414348;color:#fff;box-shadow:0 2px 9px #0003}.plot-foot{display:flex;justify-content:space-between;color:#73797d;font-size:10px;margin:2px 5px 13px}.time-control{display:flex;align-items:center;justify-content:space-between;margin:23px 0 12px}.time-control strong{font-size:29px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.04em}.time-control small{color:#a0a4a5;font-size:12px}input[type=range]{width:100%;accent-color:#dcc4ac;cursor:pointer}input[type=number]{color:var(--text);background:#26292e;border:1px solid #414448;border-radius:12px;width:100%;min-width:0;font-size:20px;font-variant-numeric:tabular-nums;padding:12px 5px;text-align:center}.pills{display:flex;gap:7px;flex-wrap:wrap}.pill{border:1px solid #ffffff1e;background:#26292c;color:#dfdedd;border-radius:99px;padding:10px 13px;font-size:12px}.pill.active{color:#191c1d;background:#ece5dd}.readout{margin-top:13px;display:flex;justify-content:space-between;align-items:center;color:#c8cbc9;font-size:12px}.btn{padding:14px 19px;min-height:48px;border-radius:14px;background:#eae6df;color:#171a1c;border:0;font-size:14px;font-weight:620}.btn.sub{background:#2a2e32;color:#ededed}.btn.danger{background:#2e2727;color:#efbeb6}.btn:disabled{opacity:.38}.btn.wide{width:100%}.actions{display:flex;gap:9px}.actions>*{flex:1}.panel{border-radius:21px;background:#1a1d20;border:1px solid var(--line);padding:17px}.note{font-size:11px;color:#82888b;line-height:1.45}.sheet-bg{position:fixed;z-index:50;inset:0;background:#000a;display:none;align-items:end;justify-content:center;backdrop-filter:blur(7px)}.sheet-bg.open{display:flex}.sheet{background:#202226;border-radius:28px 28px 0 0;width:min(480px,100%);max-height:calc(94dvh - env(safe-area-inset-top));padding:11px 22px calc(24px + env(safe-area-inset-bottom));overflow-y:auto;box-shadow:0 -20px 80px #0007;animation:up .21s ease}@keyframes up{from{transform:translateY(14px);opacity:.8}to{transform:translateY(0);opacity:1}}.handle{width:39px;height:5px;border-radius:30px;background:#74777a6b;margin:0 auto 23px}.sheet-title{font-size:26px;letter-spacing:-.05em;font-weight:600;margin:0}.sheet-sub{font-size:12px;color:#9c9da1;margin:6px 0 26px}.fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:18px 0 23px}.fields.three{grid-template-columns:repeat(3,minmax(0,1fr))}.field{min-width:0}.field label{display:block;color:#898d90;font-size:12px;margin:0 0 8px;text-align:center}.settings-row{padding:15px 1px;border-bottom:1px solid #ffffff13;display:flex;justify-content:space-between;align-items:center;gap:13px;color:#dfdfdf;font-size:14px}.settings-row small{font-size:12px;color:#888d91}.settings-row button{background:none;border:0;color:#dbd3c9;font-size:13px}.helpchip{font-size:12px;color:#adadae;background:#24272a;padding:12px 14px;border-radius:12px;line-height:1.45}.toast{position:fixed;z-index:90;bottom:calc(94px + env(safe-area-inset-bottom));left:50%;transform:translate(-50%,20px);opacity:0;transition:.25s;pointer-events:none;background:#383c40;color:#fff;box-shadow:0 6px 40px #0009;border-radius:16px;padding:12px 17px;font-size:12px;max-width:calc(100% - 45px);width:max-content;text-align:center}.toast.show{opacity:1;transform:translate(-50%,0)}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media(min-width:700px){.shell{margin:35px auto;min-height:850px;border-radius:26px}.bottom{bottom:0}}@media(max-width:360px){.shell{padding-left:16px;padding-right:16px}.hero{height:267px}.scenes{gap:4px}.fields{gap:4px}}
+.wifiForm{display:flex;flex-direction:column;gap:13px;margin:18px 0}.wifiForm label{font-size:12px;color:var(--soft);display:flex;flex-direction:column;gap:7px}.wifiForm input{height:47px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:0 14px;font-size:16px}.wifiPrimary,.wifiSecondary{width:100%;min-height:48px;border-radius:13px;border:1px solid var(--line);font-size:15px}.wifiPrimary{background:var(--text);color:var(--bg)}.wifiSecondary{background:var(--panel);color:var(--soft)}
+.quietHead{display:flex;justify-content:flex-end;margin:0 0 11px}.information{cursor:default}.information .lamp-side small{display:flex;gap:7px;align-items:center;justify-content:flex-end}.color-dot{display:inline-block;width:9px;height:9px;border-radius:99px;border:1px solid #ffffff33;box-shadow:0 0 8px #ffffff1c}.homefoot{text-align:center;letter-spacing:.30em;color:#848885;font-size:9px;margin:26px 0 0}.editorActions{display:flex;gap:7px;flex-wrap:wrap;margin:11px 0}.editorActions button{background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);font-size:12px;padding:11px 13px}.minorActions button{background:transparent;color:var(--soft)}.curveHelper{font-size:12px;color:var(--dim);margin:7px 0 13px;min-height:16px}.pointSelect{display:flex;align-items:end;gap:10px;margin:18px 0}.pointSelect label{flex:1;font-size:12px;color:var(--soft)}.pointSelect select{width:100%;display:block;margin-top:7px;border:1px solid var(--line);background:var(--panel2);color:var(--text);height:45px;padding:0 8px;border-radius:11px}.pointSelect button{background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);height:45px;padding:0 14px}
+ .home-lamps{margin-top:17px}
+.pointTime{margin:17px 0 8px}.pointTime label{display:block;color:var(--soft);font-size:12px;margin-bottom:6px}.pointTime input{width:100%;max-width:100%;min-width:0;height:46px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:12px;font-size:19px;letter-spacing:.03em;padding:0 13px}.pointTime+.fields{margin-top:16px}
+.timeGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
+.timeGrid label{display:block;font-size:12px;color:#a6a8aa}
+.timeGrid select{display:block;width:100%;min-height:52px;margin-top:8px;padding:12px 13px;border:1px solid #ffffff28;border-radius:13px;background:#2a2d31;color:#f6f3ef;font-size:18px;appearance:auto}
+.editorHint{font-size:12px;line-height:1.5;color:#c4c3c1;background:#2c2e31;border-radius:14px;padding:12px 14px;margin-bottom:16px}
+.livePanel{margin:17px 0;background:#212429;border:1px solid #ffffff18;border-radius:20px;padding:17px}
+.livePanel strong{font-size:16px}.livePanel p{font-size:12px;color:#9da3a5;line-height:1.55}
+.liveButtons{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+.liveButtons button{min-height:45px;border-radius:12px;border:1px solid #ffffff2b;background:#eae6df;color:#202124;font-size:13px;font-weight:600}
+.liveButtons button:last-child{background:#303337;color:#eae6df}
+</style>
+</head><body><div style="background:#59351c;color:#fff0db;padding:8px 14px;font:600 12px sans-serif;text-align:center;position:relative;z-index:9999">CIELO 9.6 R4 · firmware de desarrollo, aún sin validación física · funciones experimentales</div>
+<div class="shell"><header class="top"><div class="brand">C I E L O</div><button id="openSettings" class="iconbtn" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/></svg></button></header>
+<main id="viewLight" class="page active"><div class="quietHead"><div class="status offline" id="status"><i></i><span id="statusText">Vista previa</span></div></div>
+<section class="hero" aria-label="Paisaje del acuario"><div class="glow" id="glow"></div><svg class="hero-art" viewBox="0 0 360 306" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="sea" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#1f2d38"/><stop offset=".53" stop-color="#5c6974"/><stop offset="1" stop-color="#12232b"/></linearGradient><linearGradient id="stone" x1="0" x2="1"><stop stop-color="#1e2c30"/><stop offset=".56" stop-color="#657473"/><stop offset="1" stop-color="#222e32"/></linearGradient><linearGradient id="stone2" x1="0" x2="1"><stop stop-color="#334a4b"/><stop offset=".5" stop-color="#85918d"/><stop offset="1" stop-color="#2a393c"/></linearGradient><linearGradient id="floor" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#254f40"/><stop offset="1" stop-color="#142e2a"/></linearGradient><filter id="blur"><feGaussianBlur stdDeviation="15"/></filter></defs><rect width="360" height="306" fill="url(#sea)"/><ellipse cx="206" cy="102" rx="154" ry="63" fill="#f0d3a0" opacity=".12" filter="url(#blur)"/><path d="M0 225C79 212 119 218 173 219c80-11 128-7 187 3v87H0Z" fill="url(#floor)"/><path d="M-20 250C40 231 67 240 101 226l38-80 18 71 37-81 39 97 48-32 58 50 42-4v65H-20Z" fill="#162b2d" opacity=".44"/><path d="M55 229l25-74 27-48 22 49-6 67z" fill="url(#stone)"/><path d="M81 165l26-58 22 49-16-9Z" fill="#c2b8ac" opacity=".30"/><path d="M116 232l26-107 27-52 25 88-3 69Z" fill="url(#stone2)"/><path d="M142 125l27-52 25 88-16-25-18 8Z" fill="#d6d5c4" opacity=".35"/><path d="M172 229l38-87 19 40 20 53Z" fill="url(#stone)"/><path d="M210 142l19 40-17-10Z" fill="#c5cfc2" opacity=".32"/><path d="M247 238l37-62 32 64Z" fill="url(#stone2)"/><path d="M0 235q35-13 73-5t68 7q68-5 93-6t126 11v65H0Z" fill="#2b593f"/><path d="M0 243Q68 230 127 247Q150 254 173 253Q187 249 212 245Q263 237 360 252v55H0Z" fill="#376746" opacity=".8"/><path d="M160 308Q158 280 185 253Q198 246 210 245Q199 265 218 307Z" fill="#c3c3a6"/><path d="M168 307Q167 280 188 261Q195 255 202 254Q192 282 204 307Z" fill="#e1d9bf" opacity=".84"/><g fill="none" stroke="#9aba8b" stroke-width="2.3" opacity=".42"><path d="M3 245q40-17 70-9t46 11M219 251q72-18 142 1M20 263q59-20 106-5M225 266q79-9 137 7"/></g><rect width="360" height="306" fill="url(#sea)" opacity=".05"/></svg>
+<div class="hero-caption"><div><strong id="moment">En calma</strong><span id="momentSub">Tu acuario, a su ritmo.</span></div><div class="hero-day" id="heroTime">22:20</div></div></section>
+<section class="lamps home-lamps">
+<div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#d6cbbf" stroke-width="1.6"><path d="M4 16h16M8 7l4-4 4 4M12 3v11m-8 5h16"/></svg></span><span class="lamp-copy"><strong>Chihiros</strong><small id="chiSub">AUTO</small></span><span class="lamp-side"><b id="chiPct">—</b><small><i class="color-dot" id="chiColor"></i><span id="chiInfo">Según programa</span></small></span></div>
+<div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#b5c5d4" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M6 15c4-3 7-3 12-6M5 11c5-3 8-2 14-2"/></svg></span><span class="lamp-copy"><strong>Pez Verde</strong><small id="pezSub">AUTO</small></span><span class="lamp-side"><b id="pezPct">—</b><small><i class="color-dot" id="pezColor"></i><span id="pezInfo">Según programa</span></small></span></div>
+</section></main>
+<main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curva de iluminación diaria" role="img"></svg><div class="plot-foot"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Atardecer</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Ahora</button></div>
+<div class="editorActions" role="group" aria-label="Editar y guardar curvas">
+<button id="editCurve">Editar puntos</button><button id="saveCurve">Guardar</button><button id="loadProfile">Cargar</button><button id="exportProfile">Exportar</button>
+</div>
+<details class="curveHelper" id="curvesAdvanced">
+<summary style="cursor:pointer">Opciones avanzadas de curvas</summary>
+<div class="editorActions minorActions"><button id="resetCurve">Restaurar originales</button></div>
+</details>
+
+<section class="livePanel" id="chLivePanel">
+<strong>¿Quién controla Chihiros?</strong>
+<p id="chNightStatus">My Chihiros · AUTO (predeterminado y recomendado).</p>
+<div class="liveButtons"><button id="chNightOff">My Chihiros · AUTO</button><button id="chNightOn">Probar control CIELO</button></div>
+<details class="curveHelper"><summary>Cómo funciona</summary><p>My Chihiros mantiene su programa normal. Si eliges CIELO, ATOM controla temporalmente la curva solo entre las 14:00 y las 23:05. Después recupera AUTO; no es todavía un control automático de 24 horas.</p><p id="chNightMetrics">Sin actividad de CIELO.</p></details>
+</section>
+<p class="note" id="pez95DefaultNote">Pez Verde usa por defecto el cielo intenso: amanecer magenta, anochecer dorado/cobre y luna azul. Puedes editar la curva cuando queramos afinarla; no hay que aplicar un perfil aparte.</p>
+<input type="file" accept=".json,application/json" id="importFile" hidden>
+<div class="curveHelper" id="editMessage">Selecciona Chihiros o Pez Verde para editar.</div>
+<div class="lamps"><button class="lamp" data-lamp="chi"><span class="lamp-icon">☀</span><span class="lamp-copy"><strong>Chihiros</strong><small id="curveChiRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curveChiPct">0%</b></span><span class="chevron">›</span></button><button class="lamp" data-lamp="pez"><span class="lamp-icon">◐</span><span class="lamp-copy"><strong>Pez Verde</strong><small id="curvePezRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curvePezPct">0%</b></span><span class="chevron">›</span></button></div></main>
+<main id="viewService" class="page">
+<div class="heading"><div><div class="eyebrow">MANTENIMIENTO Y ACTUALIZACIONES</div><h1 class="h1">Servicio.</h1></div></div>
+<section class="livePanel" id="cielo95Diagnostics">
+<strong>Salud de CIELO · informe maestro</strong>
+<p>Un único informe incluye estado, Bluetooth, Wi-Fi, memoria, reinicios, OTA y acontecimientos recientes. No se envían contraseñas ni claves.</p>
+<p id="diagState"><strong>Comprobando estado...</strong></p>
+<p id="diagDetails" style="font-size:13px;opacity:.85;white-space:pre-wrap"></p>
+<div class="liveButtons">
+<button id="diagView">Ver informe completo</button>
+<button id="diagSync">Sincronizar ahora</button>
+</div>
+<div class="liveButtons" style="margin-top:9px">
+<button id="diagDownload">Descargar informe único</button>
+<button id="serviceRefresh">Actualizar</button>
+</div>
+<p id="diagCloudStatus" style="font-size:12px;opacity:.8">Nube sin configurar · informe local disponible</p>
+<details class="curveHelper" id="diagAdvanced" style="margin-top:16px">
+<summary style="cursor:pointer">Conexión privada · configuración inicial</summary>
+<p>El informe se guarda en tu GitHub privado mediante un servicio HTTPS intermedio. No se introduce ningún token de GitHub en el ATOM. Requiere conectar el servicio una sola vez.</p>
+<label for="diagRelayUrl">Dirección segura del servicio (workers.dev)</label>
+<input id="diagRelayUrl" placeholder="https://cielo.tucuenta.workers.dev/ingest" type="url" spellcheck="false" autocomplete="off"/>
+<label for="diagRelayKey">Clave privada del servicio (mín. 32 caracteres)</label>
+<input id="diagRelayKey" type="password" placeholder="Clave del relay · nunca aparece en el informe" autocomplete="new-password"/>
+<div class="liveButtons">
+<button id="diagSaveCloud">Guardar conexión</button>
+<button id="diagDisableCloud">Desactivar</button>
+</div>
+</details>
+</section>
+<section class="livePanel" id="cloudUpdates942">
+<strong>Actualizar CIELO · desde GitHub</strong>
+<p>CIELO busca el firmware oficial, verifica HTTPS y SHA-256 y lo instala cuando tú confirmes. Sin descargar BIN ni escribir contraseñas.</p>
+<p><strong id="cloudInstalled">Versión instalada: 9.5.3</strong></p>
+<p id="cloudVersionStatus">Comprobando versiones...</p>
+<p id="cloudReleaseNotes" style="font-size:12px;color:#b9bbc2"></p>
+<div class="liveButtons">
+<button id="cloudCheck">Comprobar versiones</button><button id="cloudInstall" disabled>Actualizar CIELO</button>
+</div>
+<p id="cloudProgress" style="font-size:12px;color:#c6c1b9">Instalación solo con tu autorización. No cortes la corriente.</p>
+</section>
+<details class="livePanel" id="legacyOta942">
+<summary style="font-size:13px;cursor:pointer">Instalación manual de recuperación (avanzado)</summary>
+<section class="livePanel"><strong>Actualizar desde archivo BIN</strong>
+<p><b id="otaInstalledVersion">Versión instalada: consultando...</b>. Descarga el nuevo archivo BIN en el iPhone, selecciónalo aquí y el ATOM lo instalará por Wi-Fi sin Mac. Las curvas guardadas permanecen en NVS.</p>
+<p style="font-size:13px">Las próximas versiones verificadas estarán disponibles en el <a href="https://github.com/rmw9mw9s49-blip/iwagumi-cielo-updates-/releases" target="_blank" rel="noopener noreferrer">canal público de versiones CIELO ↗</a>. Primero descarga el BIN y después vuelve a este panel para instalarlo.</p>
+<p>Para activar OTA por primera vez: conéctate a <b>Iwagumi-RGB</b>, abre <b>192.168.4.1</b>, mantén pulsado durante <b>2 segundos el botón físico del ATOMS3 Lite</b>, y antes de dos minutos configura una clave OTA de al menos 12 caracteres. Después podrás instalar versiones nuevas desde tu iPhone en la red doméstica, eligiendo el archivo BIN.</p>
+<label style="display:block;margin:8px 0 4px" for="otaSecret">Clave de actualizaciones (mínimo 12 caracteres)</label>
+<input id="otaSecret" type="password" autocomplete="off" placeholder="Clave OTA elegida por ti" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256">
+<div class="liveButtons" style="margin-top:10px"><button id="otaPair">Configurar clave desde Iwagumi-RGB</button></div>
+<label style="display:block;margin:14px 0 4px" for="otaFile">Archivo de firmware (.bin)</label>
+<input id="otaFile" type="file" accept=".bin,application/octet-stream" style="width:100%;color:#e7ded4">
+<div class="liveButtons" style="margin-top:12px"><button id="otaInstall">Instalar actualización</button></div>
+<p id="otaState">Pendiente de comprobar la clave OTA.</p>
+<p style="opacity:.78;font-size:12px">Por seguridad, todavía no descargamos automáticamente firmware del repositorio privado de GitHub ni guardamos credenciales GitHub en el ATOM. OTA local protegida sí está implementada. No cortes la alimentación durante la instalación.</p>
+</section></details>
+<details class="livePanel" id="stormPanel"><summary style="cursor:pointer;font-weight:600">Tormenta opcional · en pruebas</summary>
+<strong>Tormenta · diez minutos</strong>
+<p>Nubes sobre el iwagumi: las dos luces se oscurecen gradualmente hacia azul pizarra. Dos relámpagos suaves, sin parpadeo rápido, y regreso progresivo a la iluminación natural.</p>
+<div class="liveButtons"><button id="stormOn">Iniciar tormenta · 10 min</button><button id="stormOff">Detener tormenta</button></div>
+<div class="liveButtons"><button id="stormSound" style="background:#303337;color:#eae6df">Activar audio de tormenta</button><button id="stormTestSound">Escuchar trueno de prueba</button></div>
+<p id="stormSoundStatus" style="font-size:12px;color:#ccb397">Antes de activar el sonido de tormenta, prueba el trueno con Safari abierto. En iPhone, Safari debe seguir abierto y el sonido activado.</p>
+<p id="stormStatus">Solo se puede iniciar entre las 15:40 y las 21:00. Nunca automáticamente.</p>
+<p id="stormMetrics">Bluetooth de las dos luces coordinado; los relámpagos duran ~3 s y no son destellos blancos intensos.</p>
+<p id="stormRestore" style="font-size:13px">Recuperación de ambas luces: pendiente de primera prueba.</p>
+<p style="font-size:12px;opacity:.8">La tormenta y su recuperación quedan registradas en el Informe Maestro de Servicio.</p>
+<p style="font-size:12px;opacity:.78">Conserva el último informe al finalizar e incluso si el ATOM se reinicia. También puedes guardar el texto desde Safari. El informe distingue órdenes BLE transmitidas de cambios físicos verificados.</p>
+<p>El sonido sale únicamente de Safari en el iPhone si lo activas y mantienes esta página abierta. El ATOM no tiene altavoz. Si se interrumpe la prueba, el ATOM solicita AUTO a Chihiros y recupera la curva habitual de Pez Verde.</p>
+</details></main>
+<nav class="bottom" aria-label="Secciones"><button class="tab active" data-view="light"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 17a9 9 0 1 1 12 0M9 20h6m-5 3h4"/></svg>Luz</button><button class="tab" data-view="curves"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 18L8 12l5 3 9-10M2 22h20"/></svg>Curvas</button><button class="tab" data-view="service"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2v4m0 12v4M4.9 4.9l2.8 2.8m8.6 8.6 2.8 2.8M2 12h4m12 0h4M4.9 19.1l2.8-2.8m8.6-8.6 2.8-2.8"/><circle cx="12" cy="12" r="4"/></svg>Servicio</button></nav></div>
+<div class="sheet-bg" id="modal"><section class="sheet" aria-modal="true" role="dialog"><div class="handle"></div><div id="modalBody"></div></section></div><div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+const $=s=>document.getElementById(s),clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),pad=n=>String(n).padStart(2,'0'),fmt=t=>(t===1440?'24:00':pad(Math.floor(t/60)%24)+':'+pad(Math.floor(t%60)));
+const CHI=[[870,0,0,0],[880,4,3,1],[890,9,7,2],[900,18,14,5],[910,30,25,10],[920,51,45,29],[930,65,60,55],[940,70,65,60],[1310,70,65,60],[1320,65,60,55],[1330,61,50,29],[1340,56,41,15],[1350,48,27,8],[1360,37,15,2],[1370,22,5,0],[1380,1,1,2],[1440,0,0,0]];
+const PEZ=[[870,210,0,145,0],[875,210,0,145,2],[885,255,0,140,7],[895,255,12,120,13],[905,255,45,110,19],[915,255,100,78,25],[925,255,174,145,25],[935,240,238,230,20],[940,240,238,230,20],[1270,240,238,230,20],[1285,255,218,145,30],[1300,255,164,31,38],[1315,255,104,3,46],[1325,255,85,0,50],[1335,255,49,3,46],[1345,255,17,20,40],[1355,225,6,30,28],[1365,172,5,45,18],[1370,190,16,85,12],[1375,255,72,36,5],[1377,218,112,80,4],[1379,155,142,160,2],[1380,130,156,187,1],[1390,130,156,187,1],[1430,130,156,187,1],[1439,130,156,187,1],[1440,130,156,187,0]];
+const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false,status:null,view:'light',curve:'both',scrub:1340,preview:null,busy:false,updated:0,dirty:{chi:false,pez:false},editWhich:'pez',editIndex:0};
+let toastTimer;
+function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3600)}
+function vAt(points,t){if(t<points[0][0]||t>=1440)return points[0].slice(1).map(()=>0);for(let i=0;i<points.length-1;i++){let a=points[i],b=points[i+1];if(t>b[0])continue;let f=(t-a[0])/(b[0]-a[0]);return a.slice(1).map((v,j)=>Math.round(v+(b[j+1]-v)*f))}return points.at(-1).slice(1)}
+function scene(t){if(t<870)return ['En calma','Descanso'];if(t<935)return ['Amanecer','La luz despierta'];if(t<1270)return ['Luz natural','Pleno día'];if(t<1320)return ['Luz dorada','Tarde'];if(t<1380)return ['Atardecer','Última luz'];if(t<1440)return ['Luna','Noche'];return ['En calma','Descanso']}
+function rgb(r,g,b){return '#'+[r,g,b].map(x=>clamp(x,0,255).toString(16).padStart(2,'0')).join('')}
+function nowMin(){let date=new Date();return date.getHours()*60+date.getMinutes()}
+function currentClock(){const s=state.status?.clock?.match(/(\d\d):(\d\d):(\d\d)/);return s?(Number(s[1])*60+Number(s[2])):nowMin()}
+function isLive(){return location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'||location.search.includes('live=1')}
+async function api(path,data){if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');const opt={cache:'no-store',credentials:'same-origin'};if(data){opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};opt.body=new URLSearchParams(data)}const r=await fetch(path,opt);const body=await r.text();if(!r.ok)throw Error(body||('Error '+r.status));try{return JSON.parse(body)}catch{return body}}
+async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}render()}catch(e){state.connected=false;render()}}
+function hourLabel(t){return fmt(clamp(t,0,1439))}
+function render(){
+ const d=state.status,c=currentClock();
+ const chi=vAt(state.chi,state.preview??c),pez=vAt(state.pez,state.preview??c),moment=scene(state.preview??c);
+ $('status').classList.toggle('offline',!state.connected);
+ $('statusText').textContent=state.connected?'Conectado':'Sin conexión';
+ $('moment').textContent=moment[0];
+ $('momentSub').textContent=state.preview===null?'A su ritmo':'Vista previa';
+ $('heroTime').textContent=hourLabel(state.preview??c);
+ $('glow').style.setProperty('--sky',rgb(...(pez.length?pez:[210,150,120])));
+ // Chihiros no devuelve lectura de intensidad: es una prevision de la curva, no una medida.
+ $('chiPct').textContent=Math.max(...chi)+'%';
+ $('chiSub').textContent=d?.chEvening?'CIELO · curva 2 s':d?.chContinuous?'CIELO · diagnóstico':d?.chActive?'Restaurando AUTO':'My Chihiros · AUTO estimado';
+ $('chiColor').style.background=rgb(...chi.map(v=>Math.round(v*2.55)));
+ $('chiInfo').textContent=chi.join(' / ');
+ let realPez=state.connected&&state.preview===null&&Array.isArray(d?.rgb)?d.rgb:pez;
+ $('pezPct').textContent=(state.connected&&state.preview===null?(d?.brightness??pez[3]):pez[3])+'%';
+ $('pezSub').textContent=d?.manual?'Prueba temporal':'AUTO · último envío';
+ $('pezColor').style.background=rgb(...realPez.slice(0,3));
+ $('pezInfo').textContent=realPez.slice(0,3).join(' / ');
+ const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
+ $('scrubTime').textContent=hourLabel(state.scrub);
+ $('scrubScene').textContent=scene(state.scrub)[0];
+ $('curveChiRgb').textContent='R '+vv[0]+' · G '+vv[1]+' · B '+vv[2];
+ $('curveChiPct').textContent=Math.max(...vv)+'%';
+ $('curvePezRgb').textContent='R '+pp[0]+' · G '+pp[1]+' · B '+pp[2];
+ $('curvePezPct').textContent=pp[3]+'%';
+ $('editMessage').textContent=state.curve==='both'?'Selecciona una luz. Añade o edita puntos y pulsa Guardar.':state.curve==='chi'?'Chihiros · Guarda el perfil y pulsa Probar curva CIELO para ensayarlo 90 s.':'Pez Verde · Guardar actualiza su curva automática.';
+ if($('stormStatus'))$('stormStatus').textContent=d?.storm?'Tormenta en marcha · '+(d.stormLeft||0)+' s restantes':d?.stormStatus||'Lista para iniciar';
+ if($('stormMetrics'))$('stormMetrics').textContent='Chihiros · '+(d?.stormChiWrites||0)+' lotes | Pez Verde · '+(d?.stormPezWrites||0)+' lotes | Reconexiones CH · '+(d?.stormChiReconnections||0)+' | Fallos CH/PV · '+(d?.stormChiFailures||0)+'/'+(d?.stormPezFailures||0)+' | Separación BLE máxima CH · '+((d?.stormChiMaxGapMs||0)/1000).toFixed(1)+' s | Relámpagos · '+(d?.stormLightning||0)+'/2';
+ if($('stormRestore'))$('stormRestore').textContent=d?.storm?'Prueba en curso; restauraciones aún no necesarias':d?.stormPendingRestore?'Restauración pendiente: Chihiros AUTO '+(d.stormChiAutoSent?'enviado':'pendiente')+' · Pez Verde '+(d.stormPezRestored?'orden normal enviada':'pendiente'):(d?.stormChiAutoSent||d?.stormPezRestored)?'Restauración software: CH AUTO '+(d.stormChiAutoSent?'enviado':'pendiente')+' · PV '+(d.stormPezRestored?'reenviado':'pendiente')+'. Comprueba físicamente ambas luces.':'Último informe disponible en el botón.';
+ if($('stormOn'))$('stormOn').disabled=!!d?.storm||!!d?.chContinuous||!!d?.chActive||!state.connected||!d?.clockValid;
+ if($('stormOff'))$('stormOff').disabled=!d?.storm;
+ if(d?.storm){let flashes=Number(d?.stormLightning||0);if(flashes>lastStormAudio){if(stormSoundOn)stormThunder();lastStormAudio=flashes;}}
+ else if(d?.stormLightning===0)lastStormAudio=0;
+ if($('chi931Status'))$('chi931Status').textContent=d?.chi931Active?'Curva Aurora 9.3.1 guardada en ATOM · activa CIELO para verla.':'Curva anterior sin sobrescribir; puedes aplicar el nuevo diseño.';
+ if($('chi931On'))$('chi931On').disabled=!!d?.chi931Active||!!d?.chContinuous||!!d?.chActive||!state.connected;
+ if($('chi931Off'))$('chi931Off').disabled=!d?.chi931Backup||!!d?.chContinuous||!!d?.chActive||!state.connected;
+ if($('chNightStatus'))$('chNightStatus').textContent=d?.chEvening?'CIELO controla Chihiros · '+(d?.chEveningStatus||'En curso'):d?.chActive?'Restaurando AUTO en My Chihiros; espera confirmación':d?.chEveningStatus||'Disponible para activar';
+ if($('chNightMetrics'))$('chNightMetrics').textContent='Comprobaciones: '+(d?.chEveningChecks||0)+' · Lotes RGB: '+(d?.chEveningSends||0)+' · Tramas: '+(d?.chEveningFrames||0)+' · Intervalo último/máx: '+((d?.chEveningLastGap||0)/1000).toFixed(1)+' / '+((d?.chEveningMaxGap||0)/1000).toFixed(1)+' s · Errores: '+(d?.chEveningErrors||0);
+ if($('chNightOn'))$('chNightOn').disabled=!!d?.chContinuous||!!d?.chActive||!d?.wifi||!d?.clockValid;
+ if($('chNightOff'))$('chNightOff').disabled=!d?.chEvening&&!d?.chActive;
+ if($('pez94Status'))$('pez94Status').textContent=d?.pez94Active?'Colores Impacto activos (en este ATOM). Hay copia de seguridad.':'Colores actuales conservados. Activar solo bajo tu confirmación.';
+ if($('pez94On'))$('pez94On').disabled=!!d?.pez94Active||!state.connected;
+ if($('pez94Off'))$('pez94Off').disabled=!d?.pez94Backup||!state.connected;
+ if($('pez93Status'))$('pez93Status').textContent=d?.pez931Active?'Aurora rosada 9.3.1 aplicada · anterior respaldada.':'Curva Pez Verde actual conservada; aplica el nuevo diseño cuando quieras.';
+ if($('pez93On'))$('pez93On').disabled=!!d?.pez931Active||!state.connected;
+ if($('pez93Off'))$('pez93Off').disabled=!d?.pez931Backup||!state.connected;
+ if($('chLiveStatus'))$('chLiveStatus').textContent=d?.chContinuous?'PRUEBA '+(d.chTest||'?')+' en curso · RGB '+(d.chLiveRgb||[]).join('/')+' · '+(d.chLiveSecondsLeft||0)+' s restantes':d?.chActive?'Restaurando AUTO por Bluetooth: espera antes de empezar otra':(d?.chStatus?.includes('AUTO enviado por BLE')?'AUTO transmitido · verifica físicamente la luz':'Listo para la siguiente prueba, solo si la Chihiros está en AUTO');
+ if($('chTestHistory'))$('chTestHistory').textContent=Array.isArray(d?.chReports)?d.chReports.map((s,i)=>s?(''+(i+1)+'. '+s):(''+(i+1)+'. Sin probar')).join('\n'):'Sin resultados';
+ if($('chTestMetrics'))$('chTestMetrics').textContent=(d?.chLastSummary||'Sin ensayos')+' · Envíos: '+(d?.chTxCount||0)+' · Conexiones: '+(d?.chConnectCount||0)+' · Tramas: '+(d?.chFrameCount||0)+' · Fallos: '+(d?.chTestErrorCount||0)+' · Intervalo último/máximo: '+((d?.chGapMs||0)/1000).toFixed(1)+'/'+((d?.chGapMaxMs||0)/1000).toFixed(1)+' s · Envío último/máximo: '+((d?.chTxMs||0)/1000).toFixed(1)+'/'+((d?.chTxMaxMs||0)/1000).toFixed(1)+' s · Intentos AUTO: '+(d?.chAutoAttempts||0);
+ document.querySelectorAll('[data-chi-test]').forEach(b=>b.disabled=!!d?.chContinuous||!!d?.chActive||!state.connected);
+ if($('chLiveOff'))$('chLiveOff').disabled=!d?.chContinuous&&!d?.chActive;
+ drawChart();
+}
+function drawChart(){let svg=$('chart'),x=t=>5+t/1440*327,y=v=>181-v/100*157;const build=(pts,idx,max)=>{let d='';let last=pts[0][0];for(let t=0;t<=1440;t+=5){let a=vAt(pts,t);let v=idx<0?Math.max(...a):a[idx]/max*100;d+=(t?'L':'M')+x(t).toFixed(1)+' '+y(v).toFixed(1)+' ';last=t;}return d};let line=(d,col,w,op)=>`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" opacity="${op}" stroke-linecap="round" stroke-linejoin="round"/>`;let str='';for(let k=0;k<4;k++)str+=`<path d="M5 ${y(k*25)} H332" stroke="#ffffff13" stroke-dasharray="2 5"/>`;if(state.curve!=='chi'){str+=line(build(state.pez,3,100),'#e5b5a0',2.65,1);if(state.curve==='pez')str+=line(build(state.pez,2,255),'#758ac0',1.4,.45)}if(state.curve!=='pez'){str+=line(build(state.chi,-1,100),'#d6ded6',2.65,1);if(state.curve==='chi')str+=line(build(state.chi,2,100),'#7694bc',1.4,.5)}str+=`<path d="M${x(state.scrub)} 13 V181" stroke="#ffffff84" stroke-width="1" stroke-dasharray="3 4"/>`;svg.innerHTML=str}
+function nav(n){state.view=n;document.querySelectorAll('.page').forEach(e=>e.classList.toggle('active',e.id==='view'+(n==='light'?'Light':n==='curves'?'Curves':'Service')));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===n));render();if(n==='service'&&!cloudCheckedInPage){cloudCheckedInPage=true;cloudCheckUi();}}
+function sheet(html){$('modalBody').innerHTML=html;$('modal').classList.add('open');document.body.style.overflow='hidden'}function close(){ $('modal').classList.remove('open');document.body.style.overflow='';}
+function input(id,label,value,max){return `<div class="field"><label for="${id}">${label}</label><input type="number" id="${id}" inputmode="numeric" step="1" min="0" max="${max}" value="${value}"></div>`}
+let picked='chi';
+function lampSheet(which){picked=which;let arr=vAt(state[which],state.preview??currentClock());let isPez=which==='pez';let base=isPez?arr:[...arr];sheet(`<h2 class="sheet-title">${isPez?'Pez Verde':'Chihiros'}</h2><p class="sheet-sub">${isPez?'Luz ambiente':'Luz principal'} · ${isPez?'RGB 255':'RGB 100'}</p><div class="fields ${isPez?'':'three'}">${input('r','Rojo',base[0],isPez?255:100)}${input('g','Verde',base[1],isPez?255:100)}${input('b','Azul',base[2],isPez?255:100)}${isPez?input('bright','Brillo',base[3],100):''}</div><div class="actions"><button id="previewButton" class="btn">Probar ${isPez?'20':'8'} s</button><button id="restoreButton" class="btn sub">Auto</button></div><p class="note" style="margin-top:18px">${isPez?'Vuelve a su programación habitual.':'La curva automática permanece en My Chihiros.'}</p>`);$('previewButton').onclick=()=>preview(which);$('restoreButton').onclick=()=>restore(which)}
+async function preview(which){if(state.busy)return;let isPez=which==='pez';let m=isPez?255:100,fields=['r','g','b',...(isPez?['bright']:[])];let a=fields.map(id=>{let v=$ (id).value.trim();return /^\d+$/.test(v)?Number(v):NaN});if(a.some((v,i)=>!Number.isInteger(v)||v<0||v>(i===3?100:m))){toast('Revisa los valores');return}if(!state.connected){toast('Conecta el iPhone a Iwagumi-RGB');return}if(!confirm(`Probar ${which==='chi'?'Chihiros':'Pez Verde'} durante ${isPez?20:8} segundos. ¿Continuar?`))return;state.busy=true;try{if(isPez)await api('/api/manual',{r:a[0],g:a[1],b:a[2],bright:a[3],confirm:'daytime',source:'sim'});else await api('/api/chihiros/manual',{r:a[0],g:a[1],b:a[2],confirm:'anyhour'});toast('Prueba enviada');close();await sync()}catch(e){toast(e.message)}finally{state.busy=false}}
+async function restore(which){if(!state.connected){toast('Sin conexión con ATOM');return}state.busy=true;try{await api(which==='pez'?'/api/manual':'/api/chihiros/stop',which==='pez'?{mode:'auto'}:{});toast('AUTO solicitado');close();await sync()}catch(e){toast(e.message)}finally{state.busy=false}}
+async function restoreAll(){if(!state.connected){toast('Sin conexión');return}if(!confirm('Terminar pruebas y devolver Chihiros al programa de My Chihiros y Pez Verde al del ATOM. No se borran las curvas. ¿Continuar?'))return;try{await api('/api/manual',{mode:'auto'});await api('/api/chihiros/stop',{});toast('AUTO solicitado');await sync()}catch(e){toast(e.message)}}
+function sceneChoose(name){let times={dawn:900,day:1100,dusk:1340,moon:1400};state.preview=times[name];state.scrub=times[name];$('scrub').value=state.scrub;document.querySelectorAll('.scene').forEach(b=>b.classList.toggle('active',b.dataset.scene===name));render();toast('Vista previa · sin cambios en las luces')}
+function wifiSetup(){
+ const d=state.status;
+ sheet('<h2 class="sheet-title">Red de casa</h2><p class="sheet-sub" id="wifiInfo">Conectar al router</p>'+
+ '<div class="wifiForm"><label>Nombre de red<input id="wifiSsid" type="text" autocapitalize="none" autocomplete="off" placeholder="Wi-Fi de casa"></label>'+
+ '<label>Contraseña<input id="wifiPass" type="password" autocomplete="new-password" placeholder="Solo WPA2 2,4 GHz"></label>'+
+ '<button class="wifiPrimary" id="wifiTry" type="button">Conectar</button>'+
+ '<button class="wifiSecondary" id="wifiForget" type="button">Olvidar red guardada</button></div>'+
+ '<p class="helpchip">Comprueba SSID EXACTO, 2,4 GHz y clave. WPA3 exclusivamente o banda 5 GHz no sirve. Durante la conexión Safari puede desconectarse de Iwagumi-RGB. Si conecta, usa <strong>iwagumi-cielo.local</strong> desde la red de casa; si falla, vuelve a <strong>Iwagumi-RGB</strong> y consulta el código.</p>');
+ $('wifiInfo').textContent=d?.wifi?('Conectada · '+d.homeIp):(d?.wifiStatus||'Conectar al router');
+ const description=document.createElement('p');description.className='note';description.textContent='Último intento: '+(d?.wifiLastResult||'Sin registrar')+' · Código Wi-Fi: '+(d?.wifiReason??'—')+' · Estado: '+(d?.wifiStatus||'—')+' · Reinicio: '+(d?.bootReason??'—');$('wifiInfo').after(description);
+ $('wifiForget').style.display=d?.wifiSaved?'block':'none';
+ $('wifiTry').onclick=async()=>{
+   const ssid=$('wifiSsid').value.trim(),password=$('wifiPass').value;
+   if(!ssid||password.length<8)return toast('Comprueba el nombre y la contraseña');
+   if(!confirm('Probar conexión a '+ssid+'. Iwagumi-RGB puede desconectarse unos segundos. Si falla, se recuperará. ¿Continuar?'))return;
+   try{
+     await api('/api/wifi',{ssid,password});
+     toast('Conectando… Puede cambiar la red Wi-Fi del iPhone');
+     close();
+   }catch(e){toast(e.message)}
+ };
+ $('wifiForget').onclick=async()=>{
+   if(!confirm('¿Olvidar la red de casa y volver a Iwagumi-RGB?'))return;
+   try{await api('/api/wifi/forget',{});toast('Red olvidada');close();await sync()}catch(e){toast(e.message)}
+ };
+}
+
+function chooseCurve(which){
+ state.curve=which;
+ document.querySelectorAll('[data-curve]').forEach(b=>b.classList.toggle('active',b.dataset.curve===which));
+ render();
+}
+function selectedCurve(){return state.curve==='both'?'pez':state.curve}
+function parseMinute(s){if(!/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/.test(s))return NaN;const a=s.split(':').map(Number);return a[0]*60+a[1]}
+function timeChoices(minute,fixed){
+ const h=Math.floor(minute/60),m=minute%60;
+ let hs='',ms='';
+ for(let n=0;n<=24;n++){if(n===24&&!fixed)continue;hs+='<option value="'+n+'" '+(n===h?'selected':'')+'>'+String(n).padStart(2,'0')+'</option>'}
+ for(let n=0;n<60;n++){ms+='<option value="'+n+'" '+(n===m?'selected':'')+'>'+String(n).padStart(2,'0')+'</option>'}
+ return '<div class="timeGrid"><label>Hora<select id="hourH" '+(fixed?'disabled':'')+'>'+hs+'</select></label><label>Minutos<select id="hourM" '+(fixed?'disabled':'')+'>'+ms+'</select></label></div>';
+}
+function editorTime(){return Number($('hourH').value)*60+Number($('hourM').value)}
+function pointEditor(which){
+ const arr=state[which];state.editWhich=which;state.editIndex=Math.max(0,Math.min(state.editIndex,arr.length-1));
+ const pos=state.editIndex,v=arr[pos],max=which==='chi'?100:255;
+ let options=arr.map((p,i)=>'<option value="'+i+'" '+(i===pos?'selected':'')+'>'+fmt(p[0])+(p[0]===1440?' (fin)':'')+'</option>').join('');
+ sheet('<h2 class="sheet-title">'+(which==='chi'?'Chihiros':'Pez Verde')+'</h2><p class="sheet-sub">Curva con '+arr.length+' puntos</p>'+
+ '<div class="editorHint">Elige un punto existente para editarlo o pulsa «+ Añadir punto» para crear otro.</div>'+
+ '<div class="pointSelect"><label>Punto existente<select id="pointPick">'+options+'</select></label><button id="pointAdd">+ Añadir punto</button></div>'+
+ timeChoices(v[0],pos===arr.length-1)+
+ '<div class="fields '+(which==='chi'?'three':'')+'">'+
+ input('pointR','Rojo',v[1],max)+input('pointG','Verde',v[2],max)+input('pointB','Azul',v[3],max)+
+ (which==='pez'?input('pointBright','Brillo',v[4],100):'')+'</div>'+
+ '<div class="actions"><button class="btn" id="pointApply">Aplicar cambios</button><button class="btn sub" id="pointRemove">Eliminar</button></div>'+
+ '<p class="note" style="margin-top:12px">Pulsa Guardar desde Curvas para conservar los cambios. El último punto de las 24:00 está protegido.</p>');
+ $('pointPick').onchange=e=>{state.editIndex=Number(e.target.value);pointEditor(which)};
+ $('pointApply').onclick=()=>applyPoint(which);
+ $('pointAdd').onclick=()=>addPoint(which);
+ $('pointRemove').onclick=()=>removePoint(which);
+ if(pos===arr.length-1)$('pointRemove').disabled=true;
+}
+function applyPoint(which){
+ const arr=state[which],idx=state.editIndex,last=idx===arr.length-1,max=which==='chi'?100:255;
+ const minute=last?1440:editorTime();
+ const fields=['pointR','pointG','pointB',...(which==='pez'?['pointBright']:[])];
+ const a=fields.map(id=>{let v=$(id).value.trim();return /^\d+$/.test(v)?Number(v):NaN});
+ if(!Number.isFinite(minute)||minute>1440||(idx>0&&minute<=arr[idx-1][0])||(!last&&minute>=arr[idx+1][0])){
+  toast('Hora repetida o fuera de orden. Selecciona una hora entre los puntos vecinos.');return;
+ }
+ if(a.some((v,i)=>!Number.isInteger(v)||v<0||v>(i===3?100:max))){toast('Valores RGB fuera de rango');return}
+ if(which==='chi'&&last&&a.some(x=>x!==0)){toast('24:00 Chihiros debe ser RGB 0');return}
+ if(which==='pez'&&((idx===0&&a[3]!==0)||(last&&a[3]!==0))){toast('Pez Verde: brillo inicial y final 0');return}
+ arr[idx]=[minute,...a];state.dirty[which]=true;render();toast('Punto actualizado. Recuerda Guardar.');pointEditor(which);
+}
+function addPoint(which){
+ const arr=state[which],max=which==='chi'?32:40;
+ if(arr.length>=max){toast('Has alcanzado el máximo de '+max+' puntos');return}
+ const pos=state.editIndex,anchor=Math.min(pos,arr.length-2);
+ const lo=arr[anchor][0],hi=arr[anchor+1][0];
+ let guess=(hi-lo>1)?Math.floor((lo+hi)/2):NaN;
+ if(!Number.isFinite(guess)){let spot=arr.findIndex((x,i)=>i<arr.length-1&&arr[i+1][0]-x[0]>1);guess=spot>=0?Math.floor((arr[spot][0]+arr[spot+1][0])/2):NaN}
+ if(!Number.isFinite(guess)){toast('No quedan minutos libres entre los puntos existentes.');return}
+ sheet('<h2 class="sheet-title">Añadir punto</h2><p class="sheet-sub">'+(which==='chi'?'Chihiros':'Pez Verde')+' · Nuevo horario</p>'+
+ '<div class="editorHint">Elige hora y minutos. Calcularemos automáticamente su color y brillo a partir de la curva actual. Luego podrás ajustarlos.</div>'+timeChoices(guess,false)+
+ '<p class="note">Puedes elegir cualquier minuto entre el primer punto y las 24:00, siempre que no exista ya.</p>'+
+ '<div class="actions"><button id="confirmNewPoint" class="btn">Crear punto</button><button id="cancelNewPoint" class="btn sub">Cancelar</button></div>');
+ $('confirmNewPoint').onclick=()=>{
+   const t=editorTime();
+   if(t<=arr[0][0]||t>=1440||arr.some(v=>v[0]===t)){toast('Selecciona una hora nueva posterior al comienzo y anterior a las 24:00');return}
+   const value=vAt(arr,t),idx=arr.findIndex(p=>p[0]>t);
+   arr.splice(idx,0,[t,...value]);state.editIndex=idx;state.dirty[which]=true;
+   render();pointEditor(which);toast('Punto '+fmt(t)+' creado con valores interpolados.');
+ };
+ $('cancelNewPoint').onclick=()=>pointEditor(which);
+}
+function removePoint(which){
+ const arr=state[which],idx=state.editIndex;
+ if(idx===arr.length-1||arr.length<=2){toast('Ese punto es necesario');return}
+ if(!confirm('¿Eliminar el punto de '+fmt(arr[idx][0])+'?'))return;
+ arr.splice(idx,1);state.editIndex=Math.min(idx,arr.length-1);state.dirty[which]=true;render();pointEditor(which);
+}
+function validCurve(which,a){
+ const max=which==='chi'?100:255,n=which==='chi'?4:5;
+ if(!Array.isArray(a)||a.length<2||a.length>(which==='chi'?32:40))return false;
+ if(!a.every((p,i)=>Array.isArray(p)&&p.length===n&&p.every(Number.isInteger)&&p[0]>=0&&p[0]<=1440&&(!i||p[0]>a[i-1][0])&&p.slice(1,4).every(v=>v>=0&&v<=max)))return false;
+ if(which==='chi')return a.at(-1)[0]===1440&&a.at(-1).slice(1).every(x=>x===0);
+ return a.every(p=>p[4]>=0&&p[4]<=100)&&a[0][4]===0&&a.at(-1)[0]===1440&&a.at(-1)[4]===0;
+}
+async function saveProgram(){
+ const targets=state.curve==='both'?['pez','chi']:[state.curve];
+ if(!state.connected){toast('Conecta el ATOM para guardar');return}
+ if(targets.some(k=>!validCurve(k,state[k]))){toast('Curva inválida; revisa sus puntos');return}
+ if(targets.includes('pez')&&!confirm('Guardar Pez Verde actualizará la iluminación automática. ¿Continuar?'))return;
+ try{
+  for(const k of targets){
+   await api(k==='chi'?'/api/chihiros/curve':'/api/save',{points:state[k].map(x=>x.join(',')).join(';')});
+   state.dirty[k]=false;
+  }
+  toast(targets.includes('chi')?'Guardado en ATOM · Activa curva CIELO para que Chihiros la ejecute':'Curva Pez Verde guardada');
+  await sync();
+ }catch(e){toast(e.message)}
+}
+async function restoreProgram(){
+ const targets=state.curve==='both'?['pez','chi']:[state.curve];
+ if(!confirm('Restaurar curva ORIGINAL DE FÁBRICA del firmware, no el último perfil cargado. Se perderán ediciones no exportadas. ¿Continuar?'))return;
+ try{
+  if(!state.connected)throw Error('Conecta el ATOM para restaurar');
+  for(const k of targets){await api(k==='chi'?'/api/chihiros/curve/reset':'/api/reset',{});state.dirty[k]=false}
+  await sync();toast('Valores originales recuperados');
+ }catch(e){toast(e.message)}
+}
+function exportProgram(){
+ const obj={name:'IWAGUMI CIELO',version:'9.5.3',exported:new Date().toISOString(),lights:{
+  pezverde:{points:state.pez,unit:'rgb255-plus-brightness',source:'ATOM'},
+  chihiros:{points:state.chi,unit:'percent',source:'ATOM-draft-or-continuous-if-enabled'}}};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));
+ const a=document.createElement('a');a.href=url;a.download='IWAGUMI-CIELO-perfil.json';a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Perfil exportado');
+}
+async function importProgram(ev){
+ const file=ev.target.files?.[0];if(!file)return;
+ try{
+  if(file.size>100000)throw Error('Archivo demasiado grande');
+  const obj=JSON.parse(await file.text()),chi=obj?.lights?.chihiros?.points,pez=obj?.lights?.pezverde?.points;
+  if(!validCurve('chi',chi)||!validCurve('pez',pez))throw Error('Perfil incompatible o incompleto');
+  if(!confirm('¿Cargar este perfil en el editor? No se guardará en las luces hasta que pulses Guardar.'))return;
+  state.chi=chi.map(x=>x.slice());state.pez=pez.map(x=>x.slice());
+  state.dirty.chi=true;state.dirty.pez=true;chooseCurve('both');toast('Perfil cargado · pulsa Guardar');
+ }catch(e){toast(e.message)}finally{ev.target.value=''}
+}
+function manualChooser(){
+ sheet('<h2 class="sheet-title">Prueba manual</h2><p class="sheet-sub">Pruebas breves con retorno automático</p>'+
+ '<div class="actions"><button class="btn" id="testChi">Chihiros · 8 s</button><button class="btn sub" id="testPez">Pez Verde · 20 s</button></div>'+
+ '<p class="note" style="margin-top:15px">La prueba se envía solo tras confirmar. AUTO vuelve al finalizar.</p>');
+ $('testChi').onclick=()=>lampSheet('chi');$('testPez').onclick=()=>lampSheet('pez');
+}
+
+function settings(){let d=state.status;sheet(`<h2 class="sheet-title">Ajustes</h2><p class="sheet-sub">IWAGUMI CIELO · Estudio 9.5.3</p><div class="settings-row"><span>ATOM</span><small>${state.connected?'Conectado · '+(d?.ip||'192.168.4.1'):'Sin conexión'}</small></div><div class="settings-row"><span>Bluetooth Pez Verde</span><small>${d?.ble?'Conectado':state.connected?'Sin enlace':'—'}</small></div><div class="settings-row"><span>Chihiros</span><small>${d?.chEvening?'CIELO · atardecer continuo':d?.chContinuous?'CIELO · diagnóstico':d?.chActive?'Restaurando AUTO':'My Chihiros · Auto'}</small></div><div class="settings-row"><span>Wi-Fi de casa</span><button id="wifiHome">Ver estado ↗</button></div><div class="settings-row"><span>Hora</span><small>${d?.clockValid?d?.clock:'No sincronizada'}</small></div><div class="settings-row"><span>Reloj del ATOM</span><button id="syncClock">Sincronizar ↗</button></div><div class="settings-row"><span>Diagnóstico</span><button id="refresh">Actualizar ↗</button></div><div style="margin-top:20px" class="helpchip">La curva Pez Verde se ejecuta en ATOM. Chihiros puede quedar bajo control CIELO hasta las 23:05 al activar la sesión nocturna; en otro caso sigue My Chihiros.</div>`);$('wifiHome').onclick=wifiSetup;let wi=$('wifiHome');if(d?.wifi)wi.textContent='Conectada · '+(d.homeIp||'IP');else if(d?.wifiConnecting)wi.textContent='Conectando…';else if(d?.wifiLastResult==='Fallida')wi.textContent='Falló · detalle ↗';else if(d?.wifiLastResult==='Desconectada')wi.textContent='Desconectada ↗';else wi.textContent='Sin conectar ↗';$('syncClock').onclick=async()=>{try{await api('/api/clock',{epoch:Math.floor(Date.now()/1000)});toast('Hora sincronizada');close();await sync()}catch(e){toast(e.message)}};$('refresh').onclick=async()=>{close();await sync();toast(state.connected?'Conectado':'Sin conexión')}}
+function exportCurves(){let d={name:'IWAGUMI CIELO',version:9,exported:new Date().toISOString(),lights:{chihiros:{points:state.chi,unit:'percent',source:'local-MyChihiros-not-synced'},pezverde:{points:state.pez,unit:'rgb255-plus-brightness',source:state.connected?'ATOM':'demo'}}};let b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='Cielo-curvas.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+// Audio opcional: trueno suave sintetizado en el navegador, nunca en el ATOM.
+let stormSoundOn=false,stormAudioContext=null,lastStormAudio=0;
+function stormThunder(){
+ if(!stormSoundOn||!stormAudioContext)return;
+ try{
+  const ctx=stormAudioContext,seconds=3.0;
+  const buffer=ctx.createBuffer(1,Math.floor(ctx.sampleRate*seconds),ctx.sampleRate),arr=buffer.getChannelData(0);
+  let x=0;for(let i=0;i<arr.length;i++){x=x*.90+(Math.random()*2-1)*.10;arr[i]=x;}
+  const src=ctx.createBufferSource();src.buffer=buffer;
+  const filter=ctx.createBiquadFilter();filter.type='lowpass';filter.frequency.value=270;
+  const gain=ctx.createGain();gain.gain.setValueAtTime(.001,ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(.48,ctx.currentTime+.18);
+  gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+seconds);
+  src.connect(filter);filter.connect(gain);gain.connect(ctx.destination);src.start();src.stop(ctx.currentTime+seconds);
+ }catch(e){console.log('Audio opcional:',e)}
+}
+async function toggleStormSound(){
+ try{
+  if(!stormSoundOn){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)throw Error('Safari no permite Web Audio en este dispositivo');
+    stormAudioContext=stormAudioContext||new AC();
+    await stormAudioContext.resume();stormSoundOn=true;
+    $('stormSound').textContent='Desactivar audio de tormenta';$('stormSoundStatus').textContent='Audio activado. Pulsa Escuchar trueno para comprobar volumen; mantén Safari visible.';
+    toast('Audio activado. Prueba el trueno ahora.');
+  }else{
+    stormSoundOn=false;
+    $('stormSound').textContent='Activar truenos suaves en este iPhone';
+    toast('Truenos desactivados');
+  }
+ }catch(e){toast(e.message)}
+}
+async function stormTestSoundUi(){
+ try{
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)throw Error('Web Audio no está disponible en este iPhone');
+  stormAudioContext=stormAudioContext||new AC();
+  await stormAudioContext.resume();
+  stormSoundOn=true;
+  stormThunder();
+  $('stormSound').textContent='Desactivar audio de tormenta';
+  $('stormSoundStatus').textContent='Si has oído el trueno, mantén Safari abierto, visible y con volumen.';
+  toast('Trueno de prueba enviado al altavoz del iPhone');
+ }catch(e){$('stormSoundStatus').textContent='ERROR de audio: '+e.message;toast(e.message)}
+}
+async function stormCopyReport(){
+ try{
+  const response=await fetch('/api/storm/report',{cache:'no-store'});
+  if(!response.ok)throw Error('No se pudo obtener informe');
+  const report=await response.text();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    await navigator.clipboard.writeText(report);toast('Informe copiado');
+  }else{
+    const el=document.createElement('textarea');
+    el.value=report;el.style.position='fixed';el.style.top='0';el.style.opacity='0';
+    document.body.appendChild(el);el.select();
+    const ok=document.execCommand('copy');el.remove();
+    if(ok)toast('Informe copiado');
+    else{
+      const w=window.open('/api/storm/report','_blank');
+      if(!w)toast('Abre el informe con el botón Ver informe');
+    }
+  }
+ }catch(e){toast('Abre el informe con Ver informe: '+e.message)}
+}
+async function stormStartUi(){
+ if(!state.connected)return toast('ATOM sin conexión');
+ if(!confirm('Iniciar una tormenta SUAVE de diez minutos entre las 15:40 y las 21:00. Oscurecerá Chihiros y Pez Verde y producirá dos relámpagos moderados. Recuperará My Chihiros AUTO y la curva Pez Verde. Supervisa las luces; evita la prueba si los animales se estresan. ¿Continuar?'))return;
+ try{
+  await api('/api/storm/start',{confirm:'storm600'});lastStormAudio=0;
+  toast('Tormenta iniciada · diez minutos');await sync()
+ }catch(e){toast(e.message)}
+}
+async function stormStopUi(){
+ if(!state.connected)return toast('ATOM sin conexión');
+ try{await api('/api/storm/stop',{});toast('Restaurando AUTO y luz natural');await sync()}
+ catch(e){toast(e.message)}
+}
+async function pezImpactApply(){
+ if(!state.connected)return toast('Sin conexión');
+ if(state.dirty.pez)return toast('Guarda o exporta ediciones pendientes primero');
+ if(!confirm('Pez Verde: colores 9.4 mucho más intensos (magenta, oro, cobre). Brillo hasta el 50% no probado físicamente. Guardaremos la curva anterior. ¿Aplicar?'))return;
+ try{await api('/api/pez/cielo94/apply',{confirm:'impact94'});toast('Impacto 9.4 activado, anterior guardado');await sync()}catch(e){toast(e.message)}
+}
+async function pezImpactRestore(){
+ if(!confirm('¿Recuperar la curva Pez Verde anterior?'))return;
+ try{await api('/api/pez/cielo94/restore',{});toast('Curva anterior recuperada');await sync()}catch(e){toast(e.message)}
+}
+
+async function diagLoad(){
+ try{
+  const r=await fetch('/api/diagnostico/maestro',{cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  const d=await r.json();window.cieloMasterSnapshot=d;
+  const sys=d.system||{},l=d.lighting||{},w=d.network||{};
+  $('diagState').textContent=(d.status==='atencion'?'Requiere atención':'Diagnóstico disponible')+
+     ' · CIELO '+d.firmware+' · '+d.generated_at;
+  $('diagDetails').textContent='Watchdog: '+(sys.watchdog_active?'activo':'sin confirmar')+
+    ' · Última fase: '+(sys.last_phase||'no disponible')+
+    ' · Máx. operación '+(sys.max_operation_ms||0)+' ms'+
+    '\nRAM '+(sys.heap_free||0)+' B · Bloque continuo '+(sys.largest_heap_block||0)+' B'+
+    '\nBLE Pez Verde '+(l.pez_verde?.errors||0)+' fallos · Chihiros '+(l.chihiros?.errors||0)+
+    ' · Wi-Fi '+(w.home_wifi_connected?'conectado':'sin conexión')+
+    '\nHistorial incluido: '+(d.events?.length||0)+' eventos';
+  return d;
+ }catch(e){$('diagState').textContent='Diagnóstico no disponible: '+e.message;throw e}
+}
+async function diagCloudRefresh(){
+ try{
+  const r=await fetch('/api/diagnostico/nube/estado',{cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  const d=await r.json();
+  $('diagCloudStatus').textContent=(d.configured?'Nube configurada · ':'Solo local · ')+
+    (d.sending?'Sincronizando...':d.message||'');
+ }catch(e){$('diagCloudStatus').textContent='Nube: no se pudo comprobar el estado';}
+}
+async function diagViewUi(){
+ try{
+  const d=await diagLoad();
+  sheet('<div style="max-height:70vh;overflow:auto"><h2>Informe maestro CIELO</h2><pre id="diagReportText" style="font-size:11px;white-space:pre-wrap;word-break:break-word"></pre></div>');
+  $('diagReportText').textContent=JSON.stringify(d,null,2);
+ }catch(e){toast(e.message);}
+}
+async function diagSyncUi(){
+ $('diagCloudStatus').textContent='Solicitando sincronización privada...';
+ try{await api('/api/diagnostico/nube/sincronizar',{});toast('Envío iniciado sin interrumpir la iluminación');}
+ catch(e){toast(e.message);}
+ await diagCloudRefresh();
+}
+async function diagSaveCloudUi(){
+ const url=$('diagRelayUrl').value.trim(),secret=$('diagRelayKey').value;
+ if(!url||secret.length<32)return toast('Introduce la URL privada y una clave de al menos 32 caracteres');
+ try{
+  await api('/api/diagnostico/nube/configurar',{url,secret});
+  $('diagRelayKey').value='';
+  toast('Conexión guardada, pendiente de prueba');await diagCloudRefresh();
+ }catch(e){toast(e.message)}
+}
+async function diagDisableCloudUi(){
+ if(!confirm('¿Desactivar la sincronización y eliminar su clave guardada en el ATOM?'))return;
+ try{await api('/api/diagnostico/nube/desactivar',{});toast('Sincronización desactivada');await diagCloudRefresh();}
+ catch(e){toast(e.message)}
+}
+async function serviceRefresh(){
+ try{
+  await diagLoad();
+  await diagCloudRefresh();
+  const r=await fetch('/api/service/status',{cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  const d=await r.json();
+  if($('otaInstalledVersion'))$('otaInstalledVersion').textContent='Versión instalada: '+(d.version||'sin identificar');
+  if($('otaPair'))$('otaPair').style.display=d.otaPaired?'none':'';
+  $('otaState').textContent=d.otaBusy?'Instalando... bytes '+d.otaBytes:
+    d.otaPaired?'Clave OTA configurada · Recuperación manual disponible':'OTA sin configurar';
+ }catch(e){toast('Diagnóstico no disponible: '+e.message);}
+}
+async function serviceCopy(onlyErrors){
+ try{
+  const res=await fetch('/api/service/report'+(onlyErrors?'?errors=1':''),{cache:'no-store'});
+  if(!res.ok)throw Error('No hay informe');
+  const txt=await res.text();
+  if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(txt);}
+  else{
+   const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+   document.body.appendChild(ta);ta.select();
+   if(!document.execCommand('copy'))throw Error('Copia no permitida');
+   ta.remove();
+  }
+  toast(onlyErrors?'Incidencias copiadas':'Informe copiado. Pégalo en ChatGPT.');
+ }catch(e){toast(e.message+' · prueba Descargar historial')}
+}
+
+let cloudCheckedInPage=false,cloudBusyUi=false;
+function cloudDisplay(d){
+ if(!d)return;
+ if($('cloudInstalled'))$('cloudInstalled').textContent='Versión instalada: '+(d.installed||'9.5.3');
+ if($('cloudVersionStatus'))$('cloudVersionStatus').textContent=d.available?'Nueva versión '+d.latest+' disponible':d.message||'CIELO está actualizado';
+ if($('cloudReleaseNotes'))$('cloudReleaseNotes').textContent=d.available?(d.note||'Nueva versión verificada'):'';
+ if($('cloudInstall'))$('cloudInstall').disabled=!d.available||!d.verified||cloudBusyUi;
+}
+async function cloudCheckUi(){
+ if(cloudBusyUi)return;
+ cloudBusyUi=true;$('cloudCheck').disabled=true;$('cloudInstall').disabled=true;
+ $('cloudVersionStatus').textContent='Consultando GitHub por HTTPS...';
+ let result=null;
+ try{
+  const response=await fetch('/api/updates/check',{cache:'no-store'});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  result=await response.json();
+ }catch(e){$('cloudVersionStatus').textContent='No se pudo consultar GitHub: '+e.message;}
+ finally{
+  // La comprobación ha terminado ANTES de decidir si la actualización está habilitada.
+  cloudBusyUi=false;
+  $('cloudCheck').disabled=false;
+  if(result)cloudDisplay(result);
+ }
+}
+async function cloudInstallUi(){
+ if(cloudBusyUi)return;
+ if(!confirm('CIELO descargará e instalará el firmware oficial desde GitHub. No interrumpas la alimentación. Asegúrate de que Chihiros está en AUTO y de que no hay pruebas activas. ¿Actualizar ahora?'))return;
+ cloudBusyUi=true;$('cloudInstall').disabled=true;$('cloudCheck').disabled=true;
+ $('cloudProgress').textContent='Descargando y validando firmware... Puede tardar un minuto. No cortes la corriente.';
+ try{
+  const result=await api('/api/updates/install',{confirm:'actualizar-cielo'});
+  $('cloudProgress').textContent=typeof result==='string'?result:'Firmware recibido; espera el reinicio.';
+  toast('Firmware verificado. Reiniciando CIELO...');
+ }catch(e){
+  $('cloudProgress').textContent='Actualización no confirmada: '+e.message;
+  toast('Revisa el informe Servicio si no cambia la versión');
+ }finally{
+  cloudBusyUi=false;$('cloudCheck').disabled=false;
+  try{const r=await fetch('/api/updates/status',{cache:'no-store'});if(r.ok)cloudDisplay(await r.json());}catch(_){}
+ }
+}
+
+async function otaPairUi(){
+ const key=$('otaSecret').value;
+ if(key.length<12||key.length>64)return toast('Clave: de 12 a 64 caracteres');
+ if(!confirm('La configuración inicial necesita conectarte a Iwagumi-RGB (192.168.4.1) y mantener el botón físico del ATOM 2 segundos. Guarda bien la clave OTA: si la olvidas, requerirá recuperación por USB. ¿Configurar ahora?'))return;
+ try{
+  await api('/api/ota/pair',{key});
+  toast('Clave OTA guardada');await serviceRefresh()
+ }catch(e){toast(e.message)}
+}
+async function otaInstallUi(){
+ const file=$('otaFile').files?.[0],key=$('otaSecret').value;
+ if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Elige un firmware BIN');
+ if(key.length<12)return toast('Escribe la clave OTA configurada');
+ if(!confirm('Vas a instalar firmware '+file.name+' ('+Math.round(file.size/1024)+' KB). No desconectes ATOM. La página dejará de responder al reiniciar. ¿Instalar?'))return;
+ $('otaInstall').disabled=true;
+ $('otaState').textContent='Subiendo el BIN por Wi-Fi. No interrumpas la alimentación.';
+ try{
+   const form=new FormData();form.append('firmware',file,file.name);
+   const response=await fetch('/api/ota/upload',{method:'POST',headers:{'X-Cielo-Key':key},body:form});
+   const txt=await response.text();
+   if(!response.ok)throw Error(txt||('HTTP '+response.status));
+   $('otaState').textContent=txt;toast('OTA preparada, reinicio próximo');
+ }catch(e){$('otaState').textContent='ERROR: '+e.message;toast('OTA falló, sigue con firmware anterior si no reinició')}
+ finally{$('otaInstall').disabled=false}
+}
+async function chiAuroraApply(){
+ if(!state.connected)return toast('ATOM desconectado');
+ if(state.dirty.chi)return toast('Guarda o exporta antes tus cambios sin guardar');
+ if(!confirm('Aplicar la Aurora Chihiros 9.3.1 con rosa/púrpura al amanecer y dorado/rojo al atardecer. Guardaremos la curva anterior. My Chihiros no cambia: solo CIELO usa estos puntos. ¿Continuar?'))return;
+ try{await api('/api/chihiros/aurora931/apply',{confirm:'aurora931'});toast('Nueva curva Chihiros guardada en ATOM');await sync()}
+ catch(e){toast(e.message)}
+}
+async function chiAuroraRestore(){
+ if(!state.connected)return toast('ATOM desconectado');
+ if(!confirm('¿Restaurar la curva Chihiros que había antes de aplicar Aurora 9.3.1?'))return;
+ try{await api('/api/chihiros/aurora931/restore',{});toast('Curva Chihiros anterior recuperada');await sync()}
+ catch(e){toast(e.message)}
+}
+async function chNightStart(){
+ if(!state.connected)return toast('Conecta el ATOM');
+ if(state.dirty.chi)return toast('Guarda primero las ediciones de la curva Chihiros');
+ if(!confirm('CIELO controlará la nueva curva Chihiros con cambios RGB cada 2 s, mantendrá BLE conectado y devolverá AUTO a las 23:05. Hoy se observará el atardecer; mañana podrás activar el amanecer antes de las 14:30. Cierra My Chihiros. ¿Activar ahora?'))return;
+ try{await api('/api/chihiros/evening/on',{confirm:'tonight'});toast('Control CIELO nocturno activado');await sync()}catch(e){toast(e.message)}
+}
+async function chNightStop(){
+ if(!state.connected)return toast('Sin conexión');
+ try{await api('/api/chihiros/evening/off',{});toast('Restaurando AUTO My Chihiros');await sync()}catch(e){toast(e.message)}
+}
+async function pezWarmApply(){
+ if(!state.connected)return toast('Conecta ATOM');
+ if(state.dirty.pez)return toast('Exporta o guarda antes las ediciones pendientes de Pez Verde');
+ if(!confirm('Aplicar el cielo rosado y dorado 9.3.1 a Pez Verde. Se guardarán los puntos actuales para recuperarlos. ¿Continuar?'))return;
+ try{await api('/api/pez/cielo931/apply',{confirm:'pink931'});toast('Nuevo Pez Verde 9.3.1 aplicado; copia guardada');await sync()}catch(e){toast(e.message)}
+}
+async function pezWarmRestore(){
+ if(!state.connected)return toast('Sin conexión');
+ if(!confirm('Restaurar Pez Verde a la curva que tenía antes de aplicar Cielo cálido 9.3. ¿Continuar?'))return;
+ try{await api('/api/pez/cielo931/restore',{});toast('Curva anterior Pez Verde recuperada');await sync()}catch(e){toast(e.message)}
+}
+async function runChTest(n){
+ if(!state.connected)return toast('Conecta el ATOM primero');
+ if(!confirm('PRUEBA '+n+' del banco Chihiros. Cambiará temporalmente la luz durante un máximo de dos minutos. La curva guardada no se modifica. El ATOM pedirá AUTO al terminar. Supervisa la pantalla y verifica el retorno a AUTO. ¿Iniciar?'))return;
+ try{await api('/api/chihiros/test',{confirm:'suite',test:String(n)});toast('Prueba '+n+' iniciada');await sync()}
+ catch(e){toast(e.message)}
+}
+async function chLiveDisableUi(){
+ if(!state.connected)return toast('Sin conexión');
+ try{await api('/api/chihiros/live/stop',{});toast('Volviendo a AUTO de My Chihiros');await sync()}
+ catch(e){toast(e.message)}
+}
+function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>nav(b.dataset.view));document.querySelectorAll('[data-lamp]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.lamp);state.editIndex=0;pointEditor(b.dataset.lamp)});
+document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;
+$('diagView').onclick=diagViewUi;
+$('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1','_blank');
+$('diagSync').onclick=diagSyncUi;
+$('diagSaveCloud').onclick=diagSaveCloudUi;
+$('diagDisableCloud').onclick=diagDisableCloudUi;
+$('serviceRefresh').onclick=serviceRefresh;
+$('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;$('cloudCheck').onclick=cloudCheckUi;$('cloudInstall').onclick=cloudInstallUi;
+$('stormOn').onclick=stormStartUi;$('stormOff').onclick=stormStopUi;$('stormSound').onclick=toggleStormSound;$('stormTestSound').onclick=stormTestSoundUi;$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(!state.preview){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000)}
+window.addEventListener('DOMContentLoaded',init);
+</script></body></html>

@@ -1,0 +1,14 @@
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc
+tests/test_codec_and_profile
+tests/test_ble_queue
+local_config.h
+**/local_config.h
+*.bin
+*.elf
+FLASH_ATOM_8MB_COMPLETA_PRIVADA.bin
