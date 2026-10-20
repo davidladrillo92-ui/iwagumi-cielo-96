@@ -863,6 +863,8 @@ static void configureRoutes(){
  });
  srv.on("/api/chihiros/contrast/cancel",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(queue.busy()||contrastStage==1||contrastStage==4)
+   return fail(409,"Espera a que termine el envío Bluetooth antes de cancelar");
   lab.txArmed=false;chiManual=false;
   if(contrastStage==1||contrastStage==2)contrastStage=7;
   if(!queue.busy())cielo96::ble_release_request(1);
