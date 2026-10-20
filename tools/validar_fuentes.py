@@ -17,7 +17,20 @@ assert 'WiFi.setSleep(false)' not in code
 assert 'WiFi.setSleep(true)' in code and 'wifiCoexistReady()' in code
 assert 'BLE_COEX_BLOQUEADO' in code and 'wifi_modem_sleep' in code
 assert 'COEX_AVISO' not in code and 'esp_wifi_set_ps(WIFI_PS_MIN_MODEM)' in code
-assert 'lightingTask();' not in code # arranque BLE no programa luces
+assert 'lightingTask();' in code # RC4: activo solo mediante boton, nunca desde BLE por si mismo
+assert 'static bool cieloPvRun=false,cieloChRun=false' in code
+assert 'if(!cieloPvRun && !cieloChRun && !cieloChWasDriven)return;' in code
+assert 'cielo::at(profile.pv,profile.pvCount,minuteOfDay())' not in code or 'desiredPv()' in code
+assert 'const bool chWindow=(minute>=870 && minute<1380)' in code
+assert 'lastPvDesiredAt' in code and 'lastChDesiredAt' in code
+assert 'queue.cancel_pending(cielo::ble::Device::Chihiros)' in code
+assert 'cielo96::ble_custom_resume_request()' in code
+assert 'cieloReturnTries<2' in code and 'V4_RETORNO_GATT_OK' in code
+assert 'V4_PV_FALLO' in code and 'V4_ACTIVADA' in code
+assert 'cieloChRun&&timeOK()' in code
+assert '/api/cielo/v4/start' in code and '/api/cielo/v4/return' in code and '/api/cielo/v4/pause' in code
+assert '!cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse' in code
+
 assert 'static bool labTxEnabled()' in code
 for guarded in ('static void submitPv(', 'static void submitCh('):
     section=code[code.index(guarded):code.index('}',code.index(guarded))]
@@ -56,7 +69,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '10.0.2-RC3-PRUEBA-30-RETORNO' in code
+assert '10.0.3-RC4-NATURAL-V4-EN-VIVO' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -108,7 +121,7 @@ assert 'X-Cielo-Sha256' in code and 'otaDigestOut' in code
 assert 'if(rescueOpen)return fail(403' in code
 assert 'Update.begin' in code and 'Update.end(true)' in code
 
-assert '<title>CIELO 10 RC3 · Contraste y retorno</title>' in actual
+assert '<title>CIELO 10 RC4 · Natural V4 en vivo</title>' in actual
 assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
 for identifier in ('labGuided','cieloLinks','releaseCh','releasePv','restoreCustomTest','restoreCustomState','contrast30','contrastCancel','contrastState','diagView','diagDownload','otaInstall'):
  assert ('id="'+identifier+'"') in actual,identifier
@@ -142,7 +155,13 @@ try:
  subprocess.run(['node','--check',js_path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 finally:
  Path(js_path).unlink(missing_ok=True)
-assert 'CIELO 10 RC3 · Contraste y retorno' in actual
+assert 'CIELO 10 RC4 · Natural V4 en vivo' in actual
+assert 'id="cieloPauseAll"' in actual
+assert 'Activar CIELO · ambas curvas' in actual
+assert 'Volver a My Chihiros' in actual
+assert "await api('/api/cielo/v4/start',{confirm:'ACTIVAR_NATURAL_V4'})" in actual
+assert "await api('/api/cielo/v4/return',{confirm:'VOLVER_MY_CHIHIROS'})" in actual
+assert "await api('/api/cielo/v4/pause',{confirm:'PAUSAR_TODO'})" in actual
 assert "await api('/api/chihiros/contrast/start',{confirm:'ENSAYO_30_30_30'})" in actual
 assert "await api('/api/chihiros/my-curve-test',{confirm:'PROBAR_CURVA_MY_CHIHIROS'})" in actual
 assert "$('restoreCustomTest').disabled=ctr.stage!=='esperando_confirmacion_visual'" in actual

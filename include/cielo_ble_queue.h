@@ -122,6 +122,14 @@ public:
     // Si apareció un estado más reciente, jamás reproducir el antiguo.
     return true;
   }
+  // Al ceder una lampara, descartar RGB en espera para no reactivarlos
+  // despues del retorno a la curva almacenada. El in-flight se deja acabar.
+  bool cancel_pending(Device d) {
+    const int i=index(d);if(i<0)return false;
+    const bool existed=queue_[i].present;
+    queue_[i].present=false;
+    return existed;
+  }
   bool busy() const {return inflight_;}
   bool pending(Device d) const {const int i=index(d);return i>=0 && queue_[i].present;}
   uint32_t active_sequence() const {return inflight_?active_.cmd.sequence:0;}

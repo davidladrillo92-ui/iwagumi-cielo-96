@@ -46,6 +46,20 @@ int main(){
  ProfileImage p{};p.pvCount=cielo::pezverde_count;p.chCount=cielo::chihiros_count;
  memcpy(p.pv,cielo::pezverde,sizeof(cielo::pezverde));memcpy(p.ch,cielo::chihiros,sizeof(cielo::chihiros));
  profileSeal(p);assert(profileValid(p));
+ // La curva operativa debe coincidir con las 27/21 muestras que usuario aprobó.
+ static_assert(cielo::pezverde_count==27,"Natural V4 Pez Verde cambió");
+ static_assert(cielo::chihiros_count==21,"Natural V4 Chihiros cambió");
+ auto dawnPv=cielo::at(p.pv,p.pvCount,875);
+ auto dayPv=cielo::at(p.pv,p.pvCount,940);
+ auto sunsetPv=cielo::at(p.pv,p.pvCount,1325);
+ auto midnightPv=cielo::at(p.pv,p.pvCount,0);
+ assert(dawnPv.brightness==1 && dayPv.brightness==20 && sunsetPv.brightness==50);
+ assert(midnightPv.brightness==0);
+ auto noonChi=cielo::at(p.ch,p.chCount,940);
+ auto duskChi=cielo::at(p.ch,p.chCount,1350);
+ assert(noonChi.r==70&&noonChi.g==65&&noonChi.b==60);
+ assert(duskChi.r==40&&duskChi.g==40&&duskChi.b==40);
+ assert(cielo::at(p.ch,p.chCount,870).r==0);
  assert(cielo::at(p.pv,p.pvCount,1439).brightness==0);
  assert(cielo::at(p.ch,p.chCount,1380).r==0);
  p.pv[10].r^=1;assert(!profileValid(p));

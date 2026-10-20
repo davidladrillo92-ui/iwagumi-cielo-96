@@ -15,5 +15,21 @@ int main(){
  assert(!q.submit(Device::Chihiros,Action::Apply,10,10,10,0,121));
  assert(q.start_next(122,cmd));assert(cmd.action==Action::RestoreAuto);
  assert(q.complete(cmd.sequence,true,130));
- puts("OK: dedup, serialized BLE, stall safety, mandatory AUTO priority");
+ // El selector My Chihiros no puede verse anulado por un RGB viejo en cola.
+ Scheduler r(200,20,1000);Command x{};
+ assert(r.submit(Device::Chihiros,Action::Apply,30,30,30,0,500,90000));
+ assert(r.cancel_pending(Device::Chihiros));
+ assert(!r.pending(Device::Chihiros));
+ assert(!r.start_next(501,x));
+ assert(!r.cancel_pending(Device::Chihiros));
+ // Si ya comenzo un envio, no se corta el trabajador BLE a mitad de trama:
+ // solo se retiran los siguientes comandos; despues se recupera la curva.
+ assert(r.submit(Device::Chihiros,Action::Apply,70,65,60,0,502));
+ assert(r.start_next(503,x));
+ assert(r.submit(Device::PezVerde,Action::Apply,240,238,230,20,504));
+ assert(!r.cancel_pending(Device::Chihiros));
+ assert(r.complete(x.sequence,true,505));
+ assert(r.start_next(525,x));assert(x.device==Device::PezVerde);
+ assert(r.complete(x.sequence,true,526));
+ puts("OK: dedup, BLE serializado, timeout blando, prioridad y cancelacion segura antes del retorno");
 }
