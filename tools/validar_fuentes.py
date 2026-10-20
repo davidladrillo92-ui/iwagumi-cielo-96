@@ -27,12 +27,13 @@ assert 'ble_scan_request()' in code and 'ble_scan_result(result)' in code
 assert 'lab.running' in code and 'profileValid(profile)' in code
 assert 'j+=",\\\"lab\\\":"+labJson();' in code
 assert 'LAB_TX_WINDOW_MS=90000UL' in code
+assert 'Cola BLE abortada: autorizacion caducada' in code
 bleworker=(r/'src/cielo_ble_worker.cpp').read_text()
 assert 'scanPassive()' in bleworker and 'scan->setActiveScan(false)' in bleworker
 assert 'BLEDevice::init(' in bleworker
 assert 'sendPez(c,err):sendCh(c,err)' in bleworker
 assert 'scanPassive();lastHeartbeat=millis();' in bleworker
-assert code.index('if(!sleepSet || !wifiCoexistReady())') < code.index('bleReady=cielo96::ble_begin();')
+assert code.index('if(!wifiCoexistReady())WiFi.setSleep(true);') < code.index('bleReady=cielo96::ble_begin();')
 assert 'RTC_NOINIT_ATTR' in code and 'previous_reset_phase_valid' in code
 assert 'phone_sync_this_boot' in code and 'utc_offset' in code
 # Comprobar el cambio invierno/verano de la regla TZ sin depender de la hora del runner.
