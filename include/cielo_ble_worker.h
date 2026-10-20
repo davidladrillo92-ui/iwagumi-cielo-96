@@ -30,6 +30,10 @@ struct BleLinkStatus {
  uint32_t release_count=0;
  uint32_t last_disconnect_ms=0;
 };
+// Experimento exclusivo: select custom curve (0x03), GATT en worker y desconectar.
+struct BleCustomResumeResult {bool success=false;uint32_t duration_ms=0;char reason[48]{};};
+bool ble_custom_resume_request();
+bool ble_custom_resume_result(BleCustomResumeResult& result);
 bool ble_release_request(uint8_t device);
 BleLinkStatus ble_link_status(uint8_t device);
 bool ble_probe_request(uint8_t device);
