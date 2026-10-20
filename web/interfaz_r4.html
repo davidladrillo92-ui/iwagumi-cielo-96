@@ -184,8 +184,9 @@ function render(){
  if($('chi931Off'))$('chi931Off').disabled=!d?.chi931Backup||!!d?.chContinuous||!!d?.chActive||!state.connected;
  const v4=d?.cieloV4||{};
  if($('chNightStatus'))$('chNightStatus').textContent=
-   v4.chihiros_active?'CIELO Natural V4 controla Chihiros; Pez Verde '+(v4.pez_verde_active?'ACTIVA':'pausada'):
    v4.return_pending?'Recuperando curva guardada de My Chihiros…':
+   v4.chihiros_active?(v4.ch_window_now?'CIELO Natural V4 controla Chihiros; Pez Verde ':
+        'My Chihiros durante el descanso · CIELO retomará a las 14:30; Pez Verde ')+(v4.pez_verde_active?'ACTIVA':'pausada'):
    v4.pez_verde_active?'My Chihiros recuperada · Pez Verde sigue con CIELO':
    'My Chihiros controla su curva · CIELO en espera';
  if($('chNightMetrics'))$('chNightMetrics').textContent=
