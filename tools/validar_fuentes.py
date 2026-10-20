@@ -13,6 +13,10 @@ code=(r/'src/main.cpp').read_text()
 assert 'ESP_RST_PANIC' in code and 'reset_reason_name' in code
 assert 'boot_marked_healthy' in code and 'latencyP95' in code
 assert 'configTzTime(CIELO_TZ' in code and 'configTime(0,0' not in code
+assert 'WiFi.setSleep(false)' not in code
+assert 'WiFi.setSleep(true)' in code and 'wifiCoexistReady()' in code
+assert 'BLE_COEX_BLOQUEADO' in code and 'wifi_modem_sleep' in code
+assert code.index('if(!sleepSet || !wifiCoexistReady())') < code.index('bleReady=cielo96::ble_begin();')
 assert 'RTC_NOINIT_ATTR' in code and 'previous_reset_phase_valid' in code
 assert 'phone_sync_this_boot' in code and 'utc_offset' in code
 # Comprobar el cambio invierno/verano de la regla TZ sin depender de la hora del runner.
@@ -37,11 +41,11 @@ assert 'WiFi.softAP("CIELO96-RESCATE")' in code
 assert 'if(rescueOpen)return fail(403' in code
 assert 'statusPixel' in code and 'CIELO_LED_GPIO=35' in code
 assert 'bleReady=false; // Do not start BLE' in code
-assert code.index('configureRoutes();') < code.index('blePilotRequested=false;blePilotAttempted=true;')
+assert code.index('configureRoutes();') < code.index('bleReady=cielo96::ble_begin();')
 assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
 
-assert '<title>CIELO 9.6 R4.3.4 · Diagnóstico</title>' in actual
-assert 'CIELO 9.6 R4.3.4 · firmware de pruebas' in actual
+assert '<title>CIELO 9.6 R4.3.5 · Coexistencia</title>' in actual
+assert 'CIELO 9.6 R4.3.5 · firmware de pruebas' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
