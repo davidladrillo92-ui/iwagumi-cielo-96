@@ -675,10 +675,18 @@ static void diagnosticJson(){
  uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
- bool warning=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||workerUnavailable||bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
+ bool critical=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
+  workerUnavailable||bleResultErrors||profileRecovery||otaError||!timeOK();
+ bool historical=m.soft_timeouts||bleSlowCount||savedFailures;
  String j;j.reserve(22000);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
- j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
+ j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+
+  jsonQuote(critical?"incidencia_actual":historical?"avisos_historicos":"sin_avisos_actuales");
+ j+=",\"alerts\":{\"current_critical\":"+String(critical?"true":"false");
+ j+=",\"historical_soft_timeouts\":"+String(m.soft_timeouts);
+ j+=",\"historical_slow_calls\":"+String(bleSlowCount);
+ j+=",\"historical_persistent_faults\":"+String(savedFailures);
+ j+=",\"meaning\":\"Los avisos historicos no significan que la luz haya fallado ahora\"}";
  j+=",\"pilot\":{\"ble_start_requires_button\":false,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
