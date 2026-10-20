@@ -3,7 +3,7 @@
 #include "cielo_ble_queue.h"
 namespace cielo96 {
 // Una sola tarea BLE propietaria del stack, aislada del servidor web.
-struct BleResult {uint32_t sequence; bool success;uint32_t duration_ms;uint8_t device;uint8_t write_calls;char reason[50];};
+struct BleResult {uint32_t sequence; bool success;uint32_t duration_ms;uint8_t device;uint8_t action;uint8_t write_calls;char reason[50];};
 // Descubrimiento BLE activo (scan responses), sin conexiones ni escrituras GATT.
 struct BleScanResult {
  uint32_t elapsed_ms=0; uint32_t completed_at_ms=0;
