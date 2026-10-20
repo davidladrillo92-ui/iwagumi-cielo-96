@@ -15,6 +15,7 @@ struct Target {
  const char* name; const char* service; const char* writeUuid;
  bool addressKnown=false;
  String address;
+ esp_ble_addr_type_t addressType=BLE_ADDR_TYPE_PUBLIC;
  BLEClient* client=nullptr;
  BLERemoteCharacteristic* writer=nullptr;
  bool manualEntered=false;
@@ -38,7 +39,8 @@ bool locate(Target& t) {
  for(int i=0;i<result.getCount();++i){
   BLEAdvertisedDevice d=result.getDevice(i);
   if(d.haveName() && bleNameMatches(d.getName().c_str(),t.name)){
-   t.address=String(d.getAddress().toString().c_str());t.addressKnown=true;found=true;break;
+   t.address=String(d.getAddress().toString().c_str());
+   t.addressType=d.getAddressType();t.addressKnown=true;found=true;break;
   }
  }
  scan->clearResults();
@@ -52,7 +54,7 @@ bool connect(Target& t,const char*&err){
  if(!t.client){err="BLE_CLIENT_CREATE";return false;}
  // connect(BLEAddress) on Arduino-ESP32 2.x; this may block, isolated from HTTP.
  BLEAddress address(std::string(t.address.c_str()));
- if(!t.client->connect(address)){
+ if(!t.client->connect(address,t.addressType)){
   err="BLE_CONNECT_FAILED";t.addressKnown=false;return false;
  }
  BLERemoteService* service=t.client->getService(BLEUUID(t.service));
@@ -114,9 +116,16 @@ void scanDiscover(){
  r.advertised=found.getCount();
  for(int i=0;i<found.getCount();++i){
   BLEAdvertisedDevice d=found.getDevice(i);
-  if(!d.haveName()){r.unnamed++;continue;}
-  r.named++;
-  const std::string name=d.getName();
+  const std::string name=d.haveName()?d.getName():std::string();
+  if(name.empty())r.unnamed++;else r.named++;
+  if(r.observed_count<8){
+   auto& rec=r.observed[r.observed_count++];
+   const char* label=name.empty()?"(sin nombre)":name.c_str();
+   strncpy(rec.name,label,sizeof(rec.name)-1);rec.name[sizeof(rec.name)-1]='\0';
+   rec.rssi=d.getRSSI();
+   rec.nus=d.isAdvertisingService(BLEUUID(codec::CH_SVC));
+  }
+  if(name.empty())continue;
   if(bleNameMatches(name.c_str(),codec::PV_NAME)){r.pez_found=true;r.pez_rssi=d.getRSSI();}
   if(bleNameMatches(name.c_str(),codec::CH_NAME)){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
  }
