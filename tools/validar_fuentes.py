@@ -20,8 +20,8 @@ assert 'bleReady=false; // Do not start BLE' in code
 assert code.index('configureRoutes();') < code.index('blePilotRequested=false;blePilotAttempted=true;')
 assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
 
-assert '<title>CIELO 9.6 R4.3.2 · Diagnóstico</title>' in actual
-assert 'CIELO 9.6 R4.3.2 · firmware de diagnóstico' in actual
+assert '<title>CIELO 9.6 R4.3.3 · Rescate</title>' in actual
+assert 'CIELO 9.6 R4.3.3 · firmware de pruebas' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
