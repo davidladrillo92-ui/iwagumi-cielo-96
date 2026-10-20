@@ -41,7 +41,7 @@ assert 'WiFi.softAP("CIELO96-RESCATE")' in code
 assert 'if(rescueOpen)return fail(403' in code
 assert 'statusPixel' in code and 'CIELO_LED_GPIO=35' in code
 assert 'bleReady=false; // Do not start BLE' in code
-assert code.index('configureRoutes();') < code.index('blePilotRequested=false;blePilotAttempted=true;')
+assert code.index('configureRoutes();') < code.index('bleReady=cielo96::ble_begin();')
 assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
 
 assert '<title>CIELO 9.6 R4.3.5 · Coexistencia</title>' in actual
