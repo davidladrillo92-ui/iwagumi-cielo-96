@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
 #include <Update.h>
 #include <time.h>
@@ -31,12 +32,29 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.3.2-DIAG";
+static constexpr const char* VERSION="9.6.0-R4.3.3-RESCATE";
 static WebServer srv(80);
 static Preferences prefs;
 static cielo96::ProfileImage profile;
 static cielo::ble::Scheduler queue(3500,250,2000);
 static bool bleReady=false, profileRecovery=false, wifiApOn=false;
+static bool blePilotRequested=false, blePilotAttempted=false, rescueOpen=false;
+static bool apProtected=false;
+static uint32_t rescueUntil=0, lastIndicatorAt=0;
+static constexpr uint8_t CIELO_LED_GPIO=35; // AtomS3 Lite C124: onboard WS2812C
+static Adafruit_NeoPixel statusPixel(1,CIELO_LED_GPIO,NEO_GRB+NEO_KHZ800);
+static void statusLedTick(){
+ const uint32_t now=millis();
+ if(now-lastIndicatorAt<600)return;
+ lastIndicatorAt=now;
+ uint32_t color=0;
+ if(rescueOpen)color=statusPixel.Color(15,0,20); // Violet: read-only rescue
+ else if(!wifiApOn)color=statusPixel.Color(17,5,0); // Amber: AP startup
+ else if(WiFi.status()!=WL_CONNECTED)color=statusPixel.Color(0,0,17); // Blue: private AP
+ else if(!bleReady)color=statusPixel.Color(0,17,17); // Cyan: Wi-Fi ready / BLE off
+ else color=statusPixel.Color(0,17,0); // Green: BLE worker initialized
+ statusPixel.setPixelColor(0,color);statusPixel.show();
+}
 static bool pezManual=false,chiManual=false,chiCieloNight=true,chiAutoPending=false;
 static uint32_t pezManualUntil=0,chiManualUntil=0;
 static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaRestarts=0;
@@ -257,10 +275,11 @@ static void diagnosticJson(){
  uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
- bool warning=badReset||!bleReady||!wifi||workerUnavailable||bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
+ bool warning=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||workerUnavailable||bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
  String j;j.reserve(7200);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
+ j+=",\"pilot\":{\"ble_start_requires_button\":true,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null,\"last_phase\":\"NO_INSTRUMENTADA\"";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null";
@@ -329,20 +348,35 @@ static bool tokenEqual(){
  prefs.getBytes("ota_sha",stored,32);uint8_t diff=0;
  for(unsigned i=0;i<32;i++)diff|=stored[i]^given[i];return diff==0;
 }
+// Pilot firmware: 3-7 seconds then release starts BLE only when web is available.
+// Holding >=8 sec enters temporary READ-ONLY rescue AP (no secret exposed).
 static void physicalButtonTask(){
- bool held=(digitalRead(ATOMS3_BUTTON_GPIO)==LOW);
- uint32_t now=millis();
- if(held && buttonDownAt==0)buttonDownAt=now;
- if(!held){buttonDownAt=0;return;}
- if((int32_t)(otaPhysicalUntil-now)<=0)physicalArmed=false;
- // Holding button for 5 s grants a short local-only OTA provisioning window.
- // NEVER starts OTA itself. Does not erase Wi-Fi settings. Reset/bootloader button is separate.
- if(!physicalArmed && now-buttonDownAt>=5000UL){
-  physicalArmed=true;otaPhysicalUntil=now+90000UL;
-  record("OTA_FISICA","Boton local 5 s: ventana autorizacion 90 s (OTA permanece bloqueada)");
+ const uint32_t now=millis();
+ const bool held=digitalRead(ATOMS3_BUTTON_GPIO)==LOW;
+ if(held && !buttonDownAt){buttonDownAt=now;physicalArmed=false;}
+ if(held && buttonDownAt && !rescueOpen && now-buttonDownAt>=8000UL){
+  rescueOpen=true;
+  rescueUntil=now+120000UL;
+  WiFi.softAPdisconnect(true);
+  wifiApOn=WiFi.softAP("CIELO96-RESCATE");
+  apProtected=false;
+  record("RESCATE_ABIERTO",wifiApOn?"AP sin clave 120s y API solo lectura":"Fallo al levantar AP");
+ }
+ if(!held && buttonDownAt){
+  const uint32_t heldMs=now-buttonDownAt;
+  buttonDownAt=0;
+  if(heldMs>=3000UL && heldMs<8000UL && !blePilotAttempted && !rescueOpen){
+   blePilotRequested=true;record("BLE_PILOTO_SOLICITADO","Pulsacion GPIO41, se inicia una unica prueba BLE");
+  }
+ }
+ if(rescueOpen && (int32_t)(now-rescueUntil)>=0){
+  WiFi.softAPdisconnect(true);
+  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
+  apProtected=wifiApOn;rescueOpen=false;
+  record("RESCATE_CERRADO","AP privado restaurado despues de 120s");
  }
 }
-static bool physicalOtaGrant(){return physicalArmed && (int32_t)(otaPhysicalUntil-millis())>0;}
+static bool physicalOtaGrant(){return false;} // OTA deshabilitada en firmware de rescate
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
@@ -395,27 +429,27 @@ static void configureRoutes(){
  srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
  srv.on("/api/service/report",HTTP_GET,diagnosticJson);
  srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
- srv.on("/api/clock",HTTP_POST,[]{unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
+ srv.on("/api/clock",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
    // epoch exceeds minute parser max, parse separately with strict digits
    String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
    for(unsigned i=0;i<s.length();i++)if(s[i]<'0'||s[i]>'9')return fail(400,"Epoch incorrecto");
    unsigned long long val=strtoull(s.c_str(),nullptr,10);if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
    struct timeval tv{(time_t)val,0};settimeofday(&tv,nullptr);record("HORA_SYNC","Reloj desde telefono");return ok();
   }return fail(400,"Epoch demasiado corto");});
- srv.on("/api/save",HTTP_POST,[]{updateCurve(true,false);});
- srv.on("/api/reset",HTTP_POST,[]{updateCurve(true,true);});
- srv.on("/api/chihiros/curve",HTTP_POST,[]{updateCurve(false,false);});
- srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{updateCurve(false,true);});
- srv.on("/api/manual",HTTP_POST,manualPv);
- srv.on("/api/chihiros/manual",HTTP_POST,manualCh);
- srv.on("/api/chihiros/stop",HTTP_POST,[]{chiCieloNight=false;chiManual=false;requestAuto();ok();});
- srv.on("/api/chihiros/evening/off",HTTP_POST,[]{chiCieloNight=false;chiManual=false;requestAuto();ok();});
- srv.on("/api/chihiros/evening/on",HTTP_POST,[]{chiCieloNight=true;chiManual=false;chiAutoPending=false;chiAutoAttempted=false;lastChDesired=false;ok();});
- srv.on("/api/chihiros/live/stop",HTTP_POST,[]{chiCieloNight=false;chiManual=false;requestAuto();ok();});
- srv.on("/api/wifi",HTTP_POST,configureWifi);
- srv.on("/api/wifi/forget",HTTP_POST,[]{prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
- srv.on("/api/ota/pair",HTTP_POST,otaPair);
- srv.on("/api/ota/upload",HTTP_POST,startOtaResponse,otaUpload);
+ srv.on("/api/save",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,false);});
+ srv.on("/api/reset",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,true);});
+ srv.on("/api/chihiros/curve",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,false);});
+ srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,true);});
+ srv.on("/api/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualPv();});
+ srv.on("/api/chihiros/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualCh();});
+ srv.on("/api/chihiros/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=false;chiManual=false;requestAuto();ok();});
+ srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=false;chiManual=false;requestAuto();ok();});
+ srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=true;chiManual=false;chiAutoPending=false;chiAutoAttempted=false;lastChDesired=false;ok();});
+ srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=false;chiManual=false;requestAuto();ok();});
+ srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
+ srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
+ srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
+ srv.on("/api/ota/upload",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");startOtaResponse();},otaUpload);
  const char*unsupported[]={"/api/chihiros/test","/api/storm/start","/api/storm/stop",
    "/api/chihiros/aurora931/apply","/api/chihiros/aurora931/restore",
    "/api/pez/cielo931/apply","/api/pez/cielo931/restore","/api/pez/cielo94/apply","/api/pez/cielo94/restore",
@@ -432,7 +466,8 @@ static void wifiTask(){
  lastWifiStatus=w;
  if(!wifiApOn && now-bootMs>5000){
   wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
-  record("AP_RECUPERACION",String("192.168.4.1; clave solo por USB; activo=")+String(wifiApOn));
+  apProtected=wifiApOn;
+  record("AP_RECUPERACION",String("192.168.4.1; WPA2; disponible=")+String(wifiApOn));
  }
  if(w==WL_CONNECTED)return;
  if(storedSSID.length() && now-lastWiFiAttempt>30000UL){
@@ -536,15 +571,19 @@ void setup(){
    prefs.putString("ap_secret",apPassword);
  }
  pinMode(ATOMS3_BUTTON_GPIO,INPUT_PULLUP);
+ statusPixel.begin();statusPixel.setBrightness(32);statusPixel.clear();statusPixel.show();
  WiFi.mode(WIFI_AP_STA);WiFi.setSleep(false);WiFi.setAutoReconnect(false);
  WiFi.setHostname("iwagumi-cielo96");
+ wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
+ apProtected=wifiApOn;
  if(storedSSID.length()){WiFi.begin(storedSSID.c_str(),storedPass.c_str());lastWiFiAttempt=millis();}
  configTime(0,0,"pool.ntp.org","time.google.com");
- bleReady=cielo96::ble_begin();
+ bleReady=false; // Do not start BLE until explicit physical authorization.
  record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" ("+resetReasonName(esp_reset_reason())+") BLE="+String(bleReady));
  if(abnormalReset(esp_reset_reason()))record("REINICIO_ANOMALO",resetReasonName(esp_reset_reason()));
  Serial.printf("WIFI de rescate si fuera necesaria: CIELO96-CONFIG | clave: %s\n",apPassword.c_str());
  configureRoutes();
+ record("WEB_PRIMERO","HTTP y AP de recuperación inicializados; Bluetooth en espera");
 }
 void loop(){
  if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
@@ -553,9 +592,15 @@ void loop(){
   record("ARRANQUE_ESTABLE","180 segundos sin reiniciar; NO implica que BLE funcione correctamente");
  }
  srv.handleClient();
- wifiTask();
- lightingTask();
- bleTick();
  physicalButtonTask();
+ wifiTask();
+ if(blePilotRequested && !blePilotAttempted && !rescueOpen){
+  blePilotRequested=false;blePilotAttempted=true;
+  record("BLE_PILOTO_INICIO","Se prueba Bluetooth con HTTP ya activo");
+  bleReady=cielo96::ble_begin();
+  record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
+ }
+ if(bleReady && !rescueOpen){lightingTask();bleTick();}
+ statusLedTick();
  delay(3);
 }
