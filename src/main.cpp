@@ -917,11 +917,18 @@ static void otaUpload(){
 }
 static void configureWifi(){
  String ssid=srv.arg("ssid"),pass=srv.arg("password");
- if(ssid.length()<1||ssid.length()>32||pass.length()>63)return fail(400,"SSID o password fuera de rango");
- if(prefs.putString("ssid",ssid)!=ssid.length())return fail(507,"No se pudo guardar la red");
- prefs.putString("wifi_pw",pass);storedSSID=ssid;storedPass=pass;
- record("WIFI_NUEVA","SSID actualizado (clave omitida)");
- lastWiFiAttempt=0;ok();
+ if(ssid.length()<1||ssid.length()>32||pass.length()<8||pass.length()>63)
+  return fail(400,"SSID o clave WPA2 fuera de rango");
+ if(prefs.putString("ssid",ssid)!=ssid.length() ||
+    prefs.putString("wifi_pw",pass)!=pass.length())
+  return fail(507,"No se pudo guardar la Wi-Fi completa");
+ storedSSID=ssid;storedPass=pass;
+ record("WIFI_NUEVA","Cambio solicitado; la clave no se expone en informes");
+ lastWiFiAttempt=millis()-31000UL;
+ // Antes solo almacenaba el SSID nuevo y quedaba conectado a la Wi-Fi vieja.
+ // Se mantiene AP cifrada de rescate, visible en 192.168.4.1.
+ WiFi.disconnect(false,false);
+ ok();
 }
 static void configureRoutes(){
  const char*keys[]={"X-Cielo-Key","X-Cielo-Sha256"};srv.collectHeaders(keys,2);
