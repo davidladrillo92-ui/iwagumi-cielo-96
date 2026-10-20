@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, dev/r4-3-3-arranque-seguro, dev/r4-3-4-reloj-trazas-panic, dev/r4-3-5-coexistencia-ble, dev/r4-4-0-laboratorio-integrado, dev/r4-4-1-descubrimiento-ble, dev/r4-4-2-auto-ble-nombre-pezverde, dev/cielo-10-centro-unificado, dev/cielo-10-rc2-limpieza-retorno-chihiros, dev/cielo-10-rc3-prueba-30-y-retorno, dev/cielo-10-rc4-natural-v4-ambas-luces]
+    branches: [main, dev/r4-3-3-arranque-seguro, dev/r4-3-4-reloj-trazas-panic, dev/r4-3-5-coexistencia-ble, dev/r4-4-0-laboratorio-integrado, dev/r4-4-1-descubrimiento-ble, dev/r4-4-2-auto-ble-nombre-pezverde, dev/cielo-10-centro-unificado, dev/cielo-10-rc2-limpieza-retorno-chihiros, dev/cielo-10-rc3-prueba-30-y-retorno, dev/cielo-10-rc4-natural-v4-ambas-luces, dev/cielo-11-24h-vivo]
     paths:
       - 'CIELO_SOURCE.zip'
       - 'src/**'
