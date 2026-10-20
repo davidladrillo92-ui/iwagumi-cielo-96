@@ -127,16 +127,18 @@
 <p class="note">Las órdenes GATT completadas no garantizan que la iluminación se haya aplicado. Guarda el informe para comparar mejoras y fallos.</p>
 </section>
 <section class="livePanel" id="legacyOta942">
-<strong>Actualización manual · archivo BIN</strong>
+<strong>Actualiza CIELO desde el iPhone · BIN local</strong>
 <p id="otaInstalledVersion">Versión instalada: consultando...</p>
-<p>Selecciona un BIN de confianza que hayas descargado previamente en el iPhone. Cuando validemos la función de recuperación y el acceso físico, podrás actualizar el ATOM desde aquí, solo por la red local.</p>
+<p>Esta función experimental exige una clave privada configurada una sola vez y pulsar el botón del ATOM entre 3 y 7 segundos antes de cada actualización. La ventana de autorización dura 90 segundos. Nunca se actualiza por Internet, ni desde el AP abierta de rescate.</p>
+<p class="note">Es una actualización A/B, pero el retorno automático ante un fallo de arranque todavía necesita pruebas físicas. Guarda tu respaldo USB y selecciona solamente un BIN de CIELO verificado.</p>
 <label style="display:block;margin:8px 0 4px" for="otaSecret">Clave privada de actualización</label>
 <input id="otaSecret" type="password" autocomplete="off" placeholder="Clave de actualización local" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256">
-<div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave</button></div>
+<label class="note" style="display:block;margin:10px 0"><input id="otaRemember" type="checkbox"/> Recordar esta clave en este iPhone (no recomendado si es compartido)</label>
+<div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave una vez</button></div>
 <label style="display:block;margin:14px 0 4px" for="otaFile">Archivo (.bin)</label>
 <input id="otaFile" type="file" accept=".bin,application/octet-stream" style="width:100%;color:#e7ded4">
 <div class="liveButtons" style="margin-top:12px"><button id="otaInstall" disabled>Instalar BIN</button></div>
-<p id="otaState">OTA manual bloqueada en esta versión experimental; la autenticación física no está validada.</p>
+<p id="otaState">Comprobando actualización local...</p>
 <p class="note">CIELO no consultará GitHub ni buscará actualizaciones automáticamente. No instales binarios experimentales sin comprobar origen y SHA-256.</p>
 </section>
 <details class="livePanel" id="stormPanel" style="display:none"><summary style="cursor:pointer;font-weight:600">Tormenta opcional · en pruebas</summary>
@@ -536,7 +538,7 @@ async function serviceRefresh(){
   if($('otaPair')){ $('otaPair').style.display=d.otaPaired?'none':''; $('otaPair').disabled=!d.otaEnabled; }
   if($('otaInstall'))$('otaInstall').disabled=!d.otaEnabled;
   $('otaState').textContent=d.otaBusy?'Instalando... bytes '+d.otaBytes:
-    !d.otaEnabled?'Actualización manual pendiente de validación':d.otaPaired?'Clave OTA configurada':'Configura una clave para instalar BIN';
+    !d.otaEnabled?'Actualizaciones OTA desactivadas':d.otaPaired?'Clave configurada · pulsa el botón ATOM 3–7 segundos. Ventana: '+(d.otaGrantSeconds||0)+' s':'Primero configura tu clave privada con el botón ATOM 3–7 segundos';
  }catch(e){toast('Diagnóstico no disponible: '+e.message);}
 }
 async function serviceCopy(onlyErrors){
@@ -561,23 +563,66 @@ async function otaPairUi(){
  if(!confirm('Configurar la clave de actualización local. Conserva tu respaldo USB. ¿Continuar?'))return;
  try{
   await api('/api/ota/pair',{key});
+  if($('otaRemember')?.checked)try{localStorage.setItem('cieloOtaKey',key)}catch(_){}
   toast('Clave OTA guardada');await serviceRefresh()
  }catch(e){toast(e.message)}
 }
+function sha256Local(data){
+ const rotr=(n,s)=>(n>>>s)|(n<<(32-s));
+ const h=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+ const k=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+ const raw=data instanceof Uint8Array?data:new Uint8Array(data),n=raw.length;
+ const total=Math.ceil((n+9)/64)*64,p=new Uint8Array(total);
+ p.set(raw);p[n]=128;
+ const hi=Math.floor(n*8/4294967296),lo=(n*8)>>>0;
+ const dv=new DataView(p.buffer);dv.setUint32(total-8,hi,false);dv.setUint32(total-4,lo,false);
+ const w=new Uint32Array(64);
+ for(let offset=0;offset<total;offset+=64){
+  for(let i=0;i<16;i++)w[i]=dv.getUint32(offset+i*4,false);
+  for(let i=16;i<64;i++){
+   const x=w[i-15],y=w[i-2];
+   const s0=rotr(x,7)^rotr(x,18)^(x>>>3),s1=rotr(y,17)^rotr(y,19)^(y>>>10);
+   w[i]=(w[i-16]+s0+w[i-7]+s1)>>>0;
+  }
+  let [a,b,c,d,e,f,g,hh]=h;
+  for(let i=0;i<64;i++){
+   const s1=rotr(e,6)^rotr(e,11)^rotr(e,25),ch=(e&f)^(~e&g);
+   const t1=(hh+s1+ch+k[i]+w[i])>>>0;
+   const s0=rotr(a,2)^rotr(a,13)^rotr(a,22),maj=(a&b)^(a&c)^(b&c);
+   const t2=(s0+maj)>>>0;
+   hh=g;g=f;f=e;e=(d+t1)>>>0;d=c;c=b;b=a;a=(t1+t2)>>>0;
+  }
+  for(const [i,v] of [a,b,c,d,e,f,g,hh].entries())h[i]=(h[i]+v)>>>0;
+ }
+ return h.map(v=>v.toString(16).padStart(8,'0')).join('');
+}
+async function sha256Firmware(file){
+ const a=await file.arrayBuffer();
+ if(globalThis.crypto?.subtle){
+  try{const hash=await crypto.subtle.digest('SHA-256',a);return Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('')}catch(_){}
+ }
+ return sha256Local(new Uint8Array(a)); // Safari por HTTP: sin WebCrypto en origen no seguro
+}
 async function otaInstallUi(){
  const file=$('otaFile').files?.[0],key=$('otaSecret').value;
- if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Elige un firmware BIN');
- if(key.length<12)return toast('Escribe la clave OTA configurada');
- if(!confirm('Vas a instalar firmware '+file.name+' ('+Math.round(file.size/1024)+' KB). No desconectes ATOM. La página dejará de responder al reiniciar. ¿Instalar?'))return;
+ if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Selecciona un BIN de CIELO');
+ if(file.size<500000||file.size>0x330000)return toast('BIN demasiado pequeño o grande para ATOMS3');
+ if(key.length<12)return toast('Introduce la clave que configuraste en CIELO');
+ if(!confirm('Vas a actualizar el ATOM con '+file.name+'. Mantén pulsado su botón 3–7 segundos antes de continuar. Es una función EXPERIMENTAL: conserva tu copia USB. ¿Continuar?'))return;
  $('otaInstall').disabled=true;
- $('otaState').textContent='Subiendo el BIN por Wi-Fi. No interrumpas la alimentación.';
+ const state=$('otaState');
  try{
+   state.textContent='Calculando SHA-256 del BIN en este iPhone...';
+   const sha=await sha256Firmware(file);
+   state.textContent='Comprobando autorización física y subiendo '+file.name+'...';
    const form=new FormData();form.append('firmware',file,file.name);
-   const response=await fetch('/api/ota/upload',{method:'POST',headers:{'X-Cielo-Key':key},body:form});
-   const txt=await response.text();
-   if(!response.ok)throw Error(txt||('HTTP '+response.status));
-   $('otaState').textContent=txt;toast('OTA preparada, reinicio próximo');
- }catch(e){$('otaState').textContent='ERROR: '+e.message;toast('OTA falló, sigue con firmware anterior si no reinició')}
+   if($('otaRemember')?.checked)try{localStorage.setItem('cieloOtaKey',key)}catch(_){}
+   const response=await fetch('/api/ota/upload',{method:'POST',headers:{'X-Cielo-Key':key,'X-Cielo-Sha256':sha},body:form});
+   const result=await response.text();
+   if(!response.ok)throw Error(result||('HTTP '+response.status));
+   state.textContent='BIN verificado e instalación iniciada. Espera al reinicio. No cortes la alimentación.';
+   toast('Firmware aceptado; comprobando reinicio.');
+ }catch(e){state.textContent='Actualización no completada: '+e.message;toast('No actualizada: '+e.message)}
  finally{$('otaInstall').disabled=false}
 }
 async function chiAuroraApply(){
@@ -741,6 +786,7 @@ $('diagView').onclick=diagViewUi;
 $('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1','_blank');
 $('serviceRefresh').onclick=serviceRefresh;
 $('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;
+try{const key=localStorage.getItem('cieloOtaKey');if(key){$('otaSecret').value=key;$('otaRemember').checked=true}}catch(_){};
 $('labStart').onclick=()=>labDo('/api/lab/start');
 $('labStop').onclick=()=>labDo('/api/lab/stop');
 $('labScan').onclick=()=>labDo('/api/lab/scan');
