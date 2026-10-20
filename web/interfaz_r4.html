@@ -593,7 +593,8 @@ function labPretty(d){
  'Mayor pausa del ciclo: '+d.loop_max_gap_ms+' ms',
  'Desconexiones Wi-Fi: '+d.wifi_drop_delta+' · errores BLE: '+d.ble_error_delta,
  'HTTP local: '+http.samples+' muestras · media '+http.avg_ms+' ms · máximo '+http.max_ms+' ms',
- 'Curvas simuladas sin BLE: '+tx.dry_run_checks+' · tramas PV/CH: '+tx.pv_tx_frames+'/'+tx.ch_tx_frames
+ 'Curvas simuladas sin BLE: '+tx.dry_run_checks+' · RGB Pez '+(tx.dry_run_pez_rgb||[]).join('/')+' a '+tx.dry_run_pez_brightness+' %',
+ 'RGB Chihiros previsto: '+(tx.dry_run_chihiros_rgb||[]).join('/')+' · tramas PV/CH: '+tx.pv_tx_frames+'/'+tx.ch_tx_frames
  ].join('\n');
  $('labTxState').textContent=tx.gatt_tx_armed?'ENVÍOS HABILITADOS · quedan '+tx.tx_window_remaining_sec+' s':'Envíos GATT bloqueados (predeterminado)';
 }
