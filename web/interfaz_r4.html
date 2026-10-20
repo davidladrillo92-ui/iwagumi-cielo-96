@@ -719,7 +719,8 @@ let labProbeBusy=false;
 function labPretty(d){ /* Pruebas históricas ocultas: resumen en el único Informe Maestro. */ }
 async function labRefresh(){
  if(!isLive())return;
- try{labPretty(await api('/api/lab/status'))}catch(e){if($('cieloLinks'))$('cieloLinks').textContent='Sin datos Bluetooth: '+e.message}
+ try{labPretty(await api('/api/lab/status'))}
+ catch(e){if($('labGuidedState'))$('labGuidedState').textContent='Última comprobación sin datos: '+e.message}
 }
 async function releaseLight(device){
  try{
