@@ -40,6 +40,8 @@ assert 'lab.lastScan.observed_count' in code and 'nearby' in code
 assert 'res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto)' in code
 assert 'CH_AUTO_ERROR' in code and 'CH_AUTO_NO_ENVIADO' in code
 assert 'CH_AUTO_INSEGURO' in code
+assert 'CH_AUTO_MODE_UNVERIFIED' in bleworker
+assert 'if(!put(t,frame,size,err))return false;\n  t.manualEntered=false' not in bleworker
 assert 'AUTO Chihiros bloqueado' in code
 assert 'cielo96::ble_probe_request(index)' in code
 assert 'cielo96::ble_probe_result(probe)' in code
