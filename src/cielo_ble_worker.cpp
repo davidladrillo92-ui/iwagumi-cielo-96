@@ -1,5 +1,6 @@
 #include "cielo_ble_worker.h"
 #include "cielo_codec.h"
+#include "cielo_ble_match.h"
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEScan.h>
@@ -14,6 +15,7 @@ struct Target {
  const char* name; const char* service; const char* writeUuid;
  bool addressKnown=false;
  String address;
+ esp_ble_addr_type_t addressType=BLE_ADDR_TYPE_PUBLIC;
  BLEClient* client=nullptr;
  BLERemoteCharacteristic* writer=nullptr;
  bool manualEntered=false;
@@ -32,12 +34,13 @@ bool locate(Target& t) {
  BLEScan* scan=BLEDevice::getScan();
  scan->setActiveScan(true);
  scan->setInterval(150);scan->setWindow(75);
- BLEScanResults result=scan->start(3,false);
+ BLEScanResults result=scan->start(5,false);
  bool found=false;
  for(int i=0;i<result.getCount();++i){
   BLEAdvertisedDevice d=result.getDevice(i);
-  if(d.haveName() && String(d.getName().c_str())==String(t.name)){
-   t.address=String(d.getAddress().toString().c_str());t.addressKnown=true;found=true;break;
+  if(d.haveName() && bleNameMatches(d.getName().c_str(),t.name)){
+   t.address=String(d.getAddress().toString().c_str());
+   t.addressType=d.getAddressType();t.addressKnown=true;found=true;break;
   }
  }
  scan->clearResults();
@@ -51,7 +54,7 @@ bool connect(Target& t,const char*&err){
  if(!t.client){err="BLE_CLIENT_CREATE";return false;}
  // connect(BLEAddress) on Arduino-ESP32 2.x; this may block, isolated from HTTP.
  BLEAddress address(std::string(t.address.c_str()));
- if(!t.client->connect(address)){
+ if(!t.client->connect(address,t.addressType)){
   err="BLE_CONNECT_FAILED";t.addressKnown=false;return false;
  }
  BLERemoteService* service=t.client->getService(BLEUUID(t.service));
@@ -100,21 +103,31 @@ bool sendCh(const cielo::ble::Command& c,const char*&err){
  }
  return true;
 }
-void scanPassive(){
+void scanDiscover(){
  BleScanResult r{};
  uint32_t start=millis();
  BLEScan* scan=BLEDevice::getScan();
- scan->setActiveScan(false);
- scan->setInterval(180);
- scan->setWindow(70);
- BLEScanResults found=scan->start(3,false);
+ // Active scan requests scan-response packets where controllers often advertise their full name.
+ // This remains discovery-only: does not connect or write a single GATT byte.
+ scan->setActiveScan(true);
+ scan->setInterval(160);
+ scan->setWindow(80);
+ BLEScanResults found=scan->start(5,false);
  r.advertised=found.getCount();
  for(int i=0;i<found.getCount();++i){
   BLEAdvertisedDevice d=found.getDevice(i);
-  if(!d.haveName())continue;
-  String name(d.getName().c_str());
-  if(name==codec::PV_NAME){r.pez_found=true;r.pez_rssi=d.getRSSI();}
-  if(name==codec::CH_NAME){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
+  const std::string name=d.haveName()?d.getName():std::string();
+  if(name.empty())r.unnamed++;else r.named++;
+  if(r.observed_count<8){
+   auto& rec=r.observed[r.observed_count++];
+   const char* label=name.empty()?"(sin nombre)":name.c_str();
+   strncpy(rec.name,label,sizeof(rec.name)-1);rec.name[sizeof(rec.name)-1]='\0';
+   rec.rssi=d.getRSSI();
+   rec.nus=d.isAdvertisingService(BLEUUID(codec::CH_SVC));
+  }
+  if(name.empty())continue;
+  if(bleNameMatches(name.c_str(),codec::PV_NAME)){r.pez_found=true;r.pez_rssi=d.getRSSI();}
+  if(bleNameMatches(name.c_str(),codec::CH_NAME)){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
  }
  scan->clearResults();
  r.elapsed_ms=millis()-start;
@@ -129,14 +142,14 @@ void task(void*){
  for(;;){
   uint8_t scanToken=0;
   if(xQueueReceive(scanRequests,&scanToken,0)==pdTRUE){
-   scanPassive();lastHeartbeat=millis();
+   scanDiscover();lastHeartbeat=millis();
   }
   cielo::ble::Command c{};
   // Block without consuming CPU; heartbeat updates every second when idle.
   if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){lastHeartbeat=millis();continue;}
   uint32_t started=millis();writesInCurrentOperation=0;const char*err="OK";
   bool success=(c.device==cielo::ble::Device::PezVerde)?sendPez(c,err):sendCh(c,err);
-  BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);
+  BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);res.action=static_cast<uint8_t>(c.action);
   res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);
   // Single reader: if response queue is full, drop oldest after noting failure upstream.
   if(xQueueSend(responses,&res,0)!=pdTRUE){BleResult discard;xQueueReceive(responses,&discard,0);xQueueSend(responses,&res,0);}
