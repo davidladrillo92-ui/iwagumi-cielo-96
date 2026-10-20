@@ -149,7 +149,7 @@ void task(void*){
   if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){lastHeartbeat=millis();continue;}
   uint32_t started=millis();writesInCurrentOperation=0;const char*err="OK";
   bool success=(c.device==cielo::ble::Device::PezVerde)?sendPez(c,err):sendCh(c,err);
-  BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);
+  BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);res.action=static_cast<uint8_t>(c.action);
   res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);
   // Single reader: if response queue is full, drop oldest after noting failure upstream.
   if(xQueueSend(responses,&res,0)!=pdTRUE){BleResult discard;xQueueReceive(responses,&discard,0);xQueueSend(responses,&res,0);}
