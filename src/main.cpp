@@ -526,8 +526,12 @@ static void submitCh(cielo::ChiValue c,uint32_t ttl=90000){
 }
 static void requestAuto(){
  if(!labTxEnabled()){lab.txBlocked++;record("LAB_TX_BLOQUEADA","AUTO Chihiros requiere autorizacion");return;}
- chiAutoPending=true;chiAutoAttempted=true;
- if(!queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::RestoreAuto,0,0,0,0,millis(),90000))record("AUTO_RECHAZADO","Comando AUTO protegido");
+ chiAutoAttempted=true;
+ if(queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::RestoreAuto,0,0,0,0,millis(),90000)){
+  chiAutoPending=true;
+ }else{
+  chiAutoPending=false;record("AUTO_RECHAZADO","No se pudo encolar AUTO; NO restaurado");
+ }
 }
 static void manualPv(){
  if(!labTxEnabled() || srv.arg("lab_manual")!="1")return fail(423,"Laboratorio: habilita 90 segundos de transmisiones manuales");
@@ -764,8 +768,13 @@ static void bleTick(){
   queue.complete(res.sequence,res.success,now);bleResultCount++;
   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
   if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}
-  if(!res.success){bleResultErrors++;lastBleError=String(res.device?"CH ":"PV ")+String(res.reason);record("BLE_ERROR",lastBleError);}
-  else if(res.device==1 && chiAutoPending){chiAutoPending=false;record("CH_AUTO","GATT completado, efecto optico no verificado");}
+  bool autoResult=(res.device==1 && res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto));
+  if(!res.success){
+   bleResultErrors++;lastBleError=String(res.device?"CH ":"PV ")+String(res.reason);record("BLE_ERROR",lastBleError);
+   if(autoResult){chiAutoPending=false;record("CH_AUTO_ERROR","AUTO no restaurado: fallo GATT");}
+  }else if(autoResult){
+   chiAutoPending=false;record("CH_AUTO","GATT completado, efecto optico no verificado");
+  }
  }
  queue.tick(now);
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
@@ -773,6 +782,9 @@ static void bleTick(){
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
   if(!labTxEnabled()){
+    if(cmd.device==cielo::ble::Device::Chihiros && cmd.action==cielo::ble::Action::RestoreAuto){
+     chiAutoPending=false;record("CH_AUTO_NO_ENVIADO","AUTO bloqueado; accion fisica pendiente");
+    }
     queue.complete(cmd.sequence,false,now);
     lab.txBlocked++;record("LAB_TX_BLOQUEADA","Cola BLE abortada: autorizacion caducada");
   }else if(!cielo96::ble_dispatch(cmd)){
