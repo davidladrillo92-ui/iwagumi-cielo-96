@@ -21,7 +21,7 @@ struct Target {
 };
 Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
                    {codec::CH_NAME,codec::CH_SVC,codec::CH_TX}};
-QueueHandle_t requests=nullptr,responses=nullptr;
+QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr;
 volatile uint32_t lastHeartbeat=0;
 uint16_t chMessageId=1;
 uint8_t writesInCurrentOperation=0;
@@ -100,10 +100,37 @@ bool sendCh(const cielo::ble::Command& c,const char*&err){
  }
  return true;
 }
+void scanPassive(){
+ BleScanResult r{};
+ uint32_t start=millis();
+ BLEScan* scan=BLEDevice::getScan();
+ scan->setActiveScan(false);
+ scan->setInterval(180);
+ scan->setWindow(70);
+ BLEScanResults found=scan->start(3,false);
+ r.advertised=found.getCount();
+ for(int i=0;i<found.getCount();++i){
+  BLEAdvertisedDevice d=found.getDevice(i);
+  if(!d.haveName())continue;
+  String name(d.getName().c_str());
+  if(name==codec::PV_NAME){r.pez_found=true;r.pez_rssi=d.getRSSI();}
+  if(name==codec::CH_NAME){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
+ }
+ scan->clearResults();
+ r.elapsed_ms=millis()-start;
+ r.completed_at_ms=millis();
+ if(xQueueSend(scanResponses,&r,0)!=pdTRUE){
+  BleScanResult discarded{};xQueueReceive(scanResponses,&discarded,0);xQueueSend(scanResponses,&r,0);
+ }
+}
 void task(void*){
  BLEDevice::init("IWAGUMI-CIELO-96");
  lastHeartbeat=millis();
  for(;;){
+  uint8_t scanToken=0;
+  if(xQueueReceive(scanRequests,&scanToken,0)==pdTRUE){
+   scanPassive();lastHeartbeat=millis();
+  }
   cielo::ble::Command c{};
   // Block without consuming CPU; heartbeat updates every second when idle.
   if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){lastHeartbeat=millis();continue;}
@@ -120,9 +147,12 @@ void task(void*){
 bool ble_begin(){
  if(requests)return true;
  requests=xQueueCreate(2,sizeof(cielo::ble::Command));responses=xQueueCreate(4,sizeof(BleResult));
- if(!requests || !responses)return false;
+ scanRequests=xQueueCreate(1,sizeof(uint8_t));scanResponses=xQueueCreate(2,sizeof(BleScanResult));
+ if(!requests || !responses || !scanRequests || !scanResponses)return false;
  return xTaskCreatePinnedToCore(task,"cielo_ble",16384,nullptr,1,nullptr,0)==pdPASS;
 }
+bool ble_scan_request(){uint8_t token=1;return scanRequests && xQueueSend(scanRequests,&token,0)==pdTRUE;}
+bool ble_scan_result(BleScanResult& out){return scanResponses && xQueueReceive(scanResponses,&out,0)==pdTRUE;}
 bool ble_dispatch(const cielo::ble::Command& c){return requests && xQueueSend(requests,&c,0)==pdTRUE;}
 bool ble_result(BleResult& r){return responses && xQueueReceive(responses,&r,0)==pdTRUE;}
 uint32_t ble_last_heartbeat(){return lastHeartbeat;}
