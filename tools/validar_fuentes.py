@@ -53,7 +53,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '10.0.0-RC1-CENTRO' in code
+assert '10.0.1-RC2-CENTRO-LIMPIO' in code
 assert 'ble_release_request(index)' in code and '/api/ble/release' in code
 assert 'releaseIdleLinks()' in bleworker and 'BLE_IDLE_RELEASE_MS=5000UL' in bleworker
 assert 'ble_link_status(linkIndex)' in code
@@ -96,16 +96,27 @@ assert 'X-Cielo-Sha256' in code and 'otaDigestOut' in code
 assert 'if(rescueOpen)return fail(403' in code
 assert 'Update.begin' in code and 'Update.end(true)' in code
 
-assert '<title>CIELO 10 · Centro unificado</title>' in actual
+assert '<title>CIELO 10 RC2 · Centro simplificado</title>' in actual
 assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
-for identifier in ('labStart','labScan','labBrowser','labArm','labProbePv','labProbeCh','labCh10','labCh20','labCh35','labReport','labMetrics'):
+for identifier in ('labGuided','cieloLinks','releaseCh','releasePv','restoreCustomTest','restoreCustomState','diagView','diagDownload','otaInstall'):
  assert ('id="'+identifier+'"') in actual,identifier
+for removed in ('labStart','labScan','labBrowser','labArm','labProbePv','labProbeCh','labCh10','labCh20','labCh35','labReport','labMetrics'):
+ assert ('id="'+removed+'"') not in actual,removed
+# Causa R4 GET/POST: metodo POST se envia con {}.
+assert "await api('/api/lab/start',{});" in actual
+assert "await api('/api/lab/scan',{});" in actual
+assert "await api('/api/lab/stop',{});" in actual
+assert "id=\"cielo95Diagnostics\"" in actual
+assert actual.count('id="cielo95Diagnostics"')==1
+assert actual.count('id="diagDownload"')==1
+assert actual.count('id="labGuided"')==1
+assert 'id="viewLab"' in actual and 'id="viewLight"' in actual and 'id="viewCurves"' in actual
 assert "n==='lab'?'Lab'" in actual
 assert 'id="viewService"' not in actual and 'data-view="service"' not in actual
 assert 'id="cieloLinks"' in actual and 'id="labGuided"' in actual
 assert 'id="releaseCh"' in actual and 'id="releasePv"' in actual
-assert 'id="curveChEvening"' in actual
-assert 'function labGuided()' in actual and 'function previewNatural' in actual
+assert 'id="curveChEvening"' not in actual
+assert 'function labGuided()' in actual and 'function previewNatural' not in actual
 assert 'function releaseLight' in actual
 assert 'window.open(\'/api/diagnostico/maestro?download=1\'' in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
@@ -117,7 +128,18 @@ try:
  subprocess.run(['node','--check',js_path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 finally:
  Path(js_path).unlink(missing_ok=True)
-assert 'CIELO 10 · conexiones automáticas' in actual
+assert 'CIELO 10 RC2 · Centro simplificado' in actual
+assert 'function testMyChihirosCurve()' in actual
+assert '/api/chihiros/my-curve-test' in actual and '/api/chihiros/my-curve-test' in code
+assert 'PROBAR_CURVA_MY_CHIHIROS' in actual and 'PROBAR_CURVA_MY_CHIHIROS' in code
+assert 'ble_custom_resume_result' in code and 'ch_custom_curve_resume' in bleworker
+assert 'customResumeLast' in code and 'chihiros_my_curve' in code
+assert 'ota_enabled\\":false' not in code
+# Cache de direccion en desconexion voluntaria evita escaneo de 5s por cada prueba.
+release_body=bleworker.split('void releaseTarget(uint8_t device,bool userRequested){',1)[1].split('void releaseIdleLinks(){',1)[0]
+assert 't.addressKnown=false' not in release_body
+assert 't.addressKnown=false' in bleworker.split('bool connect(Target& t,const char*&err){',1)[1]
+
 # La SHA-256 JavaScript debe coincidir con OpenSSL/Node: prueba obligatoria
 # porque Safari HTTP no expone crypto.subtle en un origen no seguro.
 sha_js=actual.split('function sha256Local(data){',1)[1].split('async function sha256Firmware(',1)[0]
@@ -135,7 +157,7 @@ console.log('SHA256 UI verificado con Node');
 subprocess.run(['node','-e',sha_code+'\n'+vectors],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
-              '/api/chihiros/manual','/api/ble/release','/api/lab/preview','/api/ota/upload',
+              '/api/chihiros/manual','/api/ble/release','/api/chihiros/my-curve-test','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
  assert route in actual and route in (r/'src/main.cpp').read_text(),route
 flash=Path('/mnt/data/FLASH_ATOM_8MB_COMPLETA_PRIVADA.bin')
