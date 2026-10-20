@@ -31,7 +31,14 @@ assert 'Cola BLE abortada: autorizacion caducada' in code
 bleworker=(r/'src/cielo_ble_worker.cpp').read_text()
 assert 'scanDiscover()' in bleworker and 'scan->setActiveScan(true)' in bleworker
 assert 'bleNameMatches' in bleworker and 'cielo_ble_match.h' in bleworker
-assert 'std::string name=d.getName();' in bleworker
+assert 'const std::string name=d.haveName()?d.getName():std::string();' in bleworker
+assert 't.addressType=d.getAddressType()' in bleworker
+assert 't.client->connect(address,t.addressType)' in bleworker
+assert 'rec.nus=d.isAdvertisingService(BLEUUID(codec::CH_SVC));' in bleworker
+assert 'r.observed_count<8' in bleworker
+assert 'lab.lastScan.observed_count' in code and '"nearby"' in code
+assert 'res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto)' in code
+assert 'CH_AUTO_ERROR' in code and 'CH_AUTO_NO_ENVIADO' in code
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
 assert '9.6.0-R4.4.1-BLE-DISCOVERY' in code
