@@ -162,6 +162,11 @@ static bool cieloAlwaysOn=false;
 static uint32_t cieloLastNightSample=0;
 static uint32_t cieloDaySamples=0,cieloNightSamples=0;
 static uint32_t cieloLastSuccessfulPvAt=0,cieloLastSuccessfulChAt=0;
+struct CieloTrendSample {uint32_t epoch=0,pv=0,ch=0,pvErrors=0,chErrors=0,heap=0;};
+static CieloTrendSample cieloTrend[96]{};
+static uint8_t cieloTrendCount=0,cieloTrendHead=0;
+static uint32_t cieloTrendLast=0;
+static void cieloTrendTick();
 static bool cieloChReturnPending=false,cieloChAwaitResponse=false;
 static bool cieloWatchdogTripped=false;
 static uint8_t cieloChConsecutiveFailures=0,cieloPvConsecutiveFailures=0,cieloReturnTries=0;
@@ -265,6 +270,21 @@ static void jsonSend(int code,const String& s){++httpCount;srv.sendHeader("Cache
 static void fail(int code,const char*msg){jsonSend(code,String("{\"ok\":false,\"error\":")+jsonQuote(msg)+"}");}
 static void ok(){jsonSend(200,"{\"ok\":true}");}
 static bool timeOK(){return time(nullptr)>1700000000L;}
+static void cieloTrendTick(){
+ if(!cieloAlwaysOn || !timeOK())return;
+ uint32_t now=millis();
+ if(cieloTrendLast && now-cieloTrendLast<900000UL)return;
+ cieloTrendLast=now;
+ auto &t=cieloTrend[cieloTrendHead];t.epoch=uint32_t(time(nullptr));
+ t.pv=cieloPvConfirmed;t.ch=cieloChConfirmed;
+ t.pvErrors=devices[0].errors;t.chErrors=devices[1].errors;
+ t.heap=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+ cieloTrendHead=(cieloTrendHead+1)%96;
+ if(cieloTrendCount<96)cieloTrendCount++;
+ time_t ep=time(nullptr);struct tm local{};localtime_r(&ep,&local);
+ const int minutes=local.tm_hour*60+local.tm_min;
+ if(minutes<870 || minutes>=1380)cieloNightSamples++;else cieloDaySamples++;
+}
 static int minuteOfDay(){time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);return x.tm_hour*60+x.tm_min;}
 static String dateTime(){
  if(!timeOK())return "Hora pendiente NTP";
@@ -1429,6 +1449,7 @@ void loop(){
  // Programador local 24h: sobrevive a caidas de Internet, no requiere Safari.
  // Pero el interruptor V4 es volátil: tras reinicio se exige reactivarlo.
  lightingTask();
+ cieloTrendTick();
  labTick();
  tracePhase(TracePhase::Led);statusLedTick();
  tracePhase(TracePhase::Idle);delay(3);
