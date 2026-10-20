@@ -76,7 +76,7 @@ assert 'bleReady=false; // Do not start BLE' in code
 assert code.index('configureRoutes();') < code.index('bleReady=cielo96::ble_begin();')
 assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
 
-assert '<title>CIELO 9.6 R4.4.1 · Descubrimiento BLE</title>' in actual
+assert '<title>CIELO 9.6 R4.4.2 · Auto BLE</title>' in actual
 assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
 for identifier in ('labStart','labScan','labBrowser','labArm','labAuto','labReport','labMetrics'):
  assert ('id="'+identifier+'"') in actual,identifier
@@ -90,7 +90,7 @@ try:
  subprocess.run(['node','--check',js_path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 finally:
  Path(js_path).unlink(missing_ok=True)
-assert 'CIELO 9.6 R4.4.1 · descubrimiento BLE' in actual
+assert 'CIELO 9.6 R4.4.2 · BLE automático' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
