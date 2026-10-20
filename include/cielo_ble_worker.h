@@ -10,6 +10,9 @@ struct BleScanResult {
  bool pez_found=false, chihiros_found=false;
  int16_t pez_rssi=-127, chihiros_rssi=-127;
  uint16_t advertised=0, named=0, unnamed=0;
+ struct NearbyDevice {char name[32]{};int16_t rssi=-127;bool nus=false;};
+ NearbyDevice observed[8]{};
+ uint8_t observed_count=0;
 };
 bool ble_scan_request();
 bool ble_scan_result(BleScanResult& out);
