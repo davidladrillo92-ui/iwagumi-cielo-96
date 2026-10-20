@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="10.0.3-RC4-NATURAL-V4-EN-VIVO";
+static constexpr const char* VERSION="11.0.0-RC1-CONTINUO-24H";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -158,6 +158,10 @@ static void statusLedTick(){
 static bool pezManual=false,chiManual=false,chiCieloNight=false,chiAutoPending=false;
 // Modo ACTIVADO EXPLICITAMENTE. Tras reinicio exige pulsar otra vez.
 static bool cieloPvRun=false,cieloChRun=false,cieloChWasDriven=false;
+static bool cieloAlwaysOn=false;
+static uint32_t cieloLastNightSample=0;
+static uint32_t cieloDaySamples=0,cieloNightSamples=0;
+static uint32_t cieloLastSuccessfulPvAt=0,cieloLastSuccessfulChAt=0;
 static bool cieloChReturnPending=false,cieloChAwaitResponse=false;
 static bool cieloWatchdogTripped=false;
 static uint8_t cieloChConsecutiveFailures=0,cieloPvConsecutiveFailures=0,cieloReturnTries=0;
@@ -389,7 +393,11 @@ static String cieloModeJson(){
  j+=",\"ch_last_requested\":["+String(prevCh.r)+","+String(prevCh.g)+","+String(prevCh.b)+"]";
  j+=",\"pv_last_requested_age_sec\":"+String(lastPvDesiredAt?(millis()-lastPvDesiredAt)/1000UL:0);
  j+=",\"ch_last_requested_age_sec\":"+String(lastChDesiredAt?(millis()-lastChDesiredAt)/1000UL:0);
- j+=",\"ch_window_now\":"+String(timeOK()&&minuteOfDay()>=870&&minuteOfDay()<1380?"true":"false");
+ j+=",\"ch_window_now\":"+String(timeOK()?"true":"false");
+ j+=",\"always_on\":"+String(cieloAlwaysOn?"true":"false");
+ j+=",\"pv_online_recent\":"+String(cieloPvRun&&cieloLastSuccessfulPvAt&&millis()-cieloLastSuccessfulPvAt<650000UL?"true":"false");
+ j+=",\"ch_online_recent\":"+String(cieloChRun&&cieloLastSuccessfulChAt&&millis()-cieloLastSuccessfulChAt<650000UL?"true":"false");
+ j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
  j+=",\"return_stored_after_reboot\":"+String(prefs.getBool("v4_ch_takeover",false)?"true":"false");
  j+=",\"note\":\"La recuperacion 0x03 requiere BLE operativo y energia del ATOM\"}";
  return j;
@@ -400,6 +408,9 @@ static void statusJson(){
  j="{\"firmware\":\""+String(VERSION)+"\",\"ble\":"+String(bleReady?"true":"false")+",\"clockValid\":"+String(timeOK()?"true":"false");
  j+=",\"clock\":"+jsonQuote(dateTime())+",\"wifi\":"+(w?String("true"):String("false"));
  j+=",\"ip\":\"192.168.4.1\",\"homeIp\":"+jsonQuote(w?WiFi.localIP().toString():String(""));
+ j+=",\"homeSsid\":"+jsonQuote(w?WiFi.SSID():storedSSID);
+ j+=",\"wifiRssi\":"+String(w?WiFi.RSSI():0);
+ j+=",\"deviceClockEpoch\":"+String(uint32_t(time(nullptr)));
  j+=",\"wifiStatus\":"+jsonQuote(w?"Router conectado":"No conectado")+",\"wifiConnecting\":false,\"wifiStage\":"+jsonQuote(w?"CONECTADA":"SIN_RED");
  j+=",\"manual\":"+String(pezManual?"true":"false")+",\"power\":"+String(p.brightness>0?"true":"false");
  j+=",\"rgb\":["+String(p.r)+","+String(p.g)+","+String(p.b)+"],\"brightness\":"+String(p.brightness);
