@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="10.0.1-RC2-CENTRO-LIMPIO";
+static constexpr const char* VERSION="10.0.2-RC3-PRUEBA-30-RETORNO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -121,6 +121,20 @@ static bool customResumePending=false;
 static uint32_t customResumeRequested=0,customResumeOk=0,customResumeFailed=0;
 static String customResumeLast="Sin probar";
 static uint32_t customResumeLastMs=0;
+// Ensayo guiado: 0=reposo, 1=enviando 30, 2=GATT manual OK, 3=fallo manual,
+// 4=enviando curva guardada, 5=GATT retorno OK, 6=fallo retorno, 7=caducado.
+// El exito optico SOLO puede confirmarlo el propietario.
+static uint8_t contrastStage=0;
+static uint32_t contrastStartedAt=0,contrastManualAt=0;
+static bool contrastObserved=false;
+static const char* contrastStageName(){
+ switch(contrastStage){
+  case 1:return "enviando_30";case 2:return "esperando_confirmacion_visual";
+  case 3:return "error_manual";case 4:return "restaurando_curva";
+  case 5:return "retorno_gatt_ok_verificar_luz";case 6:return "error_retorno";
+  case 7:return "ensayo_caducado";default:return "sin_prueba";
+ }
+}
 static bool labTxEnabled(){
  return lab.txArmed && (int32_t)(lab.txUntil-millis())>0 &&
         bleReady && !rescueOpen && wifiCoexistReady();
@@ -439,6 +453,12 @@ static String labJson(){
   j+=",\"last_disconnect_ms\":"+String(link.last_disconnect_ms)+"}";
  }
  j+="}";
+ j+=",\"chihiros_contrast\":{\"stage\":"+jsonQuote(contrastStageName());
+ j+=",\"expected_before\":[70,65,60],\"test_rgb\":[30,30,30]";
+ j+=",\"elapsed_sec\":"+String(contrastStartedAt?(age-contrastStartedAt)/1000UL:0);
+ j+=",\"manual_gatt_completed\":"+String(contrastStage>=2&&contrastStage!=3?"true":"false");
+ j+=",\"contrast_observed_by_user\":"+String(contrastObserved?"true":"false");
+ j+=",\"optical_restoration_confirmed\":false}";
  j+=",\"chihiros_my_curve\":{\"experimental\":true,\"confirmed_optically\":false";
  j+=",\"pending\":"+String(customResumePending?"true":"false");
  j+=",\"requests\":"+String(customResumeOk+customResumeFailed+(customResumePending?1:0));
@@ -463,13 +483,29 @@ static void labTick(){
  while(cielo96::ble_custom_resume_result(custom)){
   customResumePending=false;customResumeLastMs=now;
   customResumeLast=String(custom.reason)+" "+String(custom.duration_ms)+" ms; verificacion visual pendiente";
-  if(custom.success){customResumeOk++;record("CH_CURVA_MYCH_GATT_OK",customResumeLast);}
-  else {customResumeFailed++;record("CH_CURVA_MYCH_FALLO",customResumeLast);}
+  if(custom.success){
+   customResumeOk++;if(contrastStage==4)contrastStage=5;
+   record("CH_CURVA_MYCH_GATT_OK",customResumeLast);
+  }else{
+   customResumeFailed++;if(contrastStage==4)contrastStage=6;
+   record("CH_CURVA_MYCH_FALLO",customResumeLast);
+  }
  }
  if(customResumePending && now-customResumeRequested>24000UL){
   customResumePending=false;customResumeFailed++;
   customResumeLast="Sin respuesta de la tarea BLE en 24 s; no repetir automaticamente";
+  if(contrastStage==4)contrastStage=6;
   record("CH_CURVA_MYCH_TIMEOUT",customResumeLast);
+ }
+ if(contrastStage==1 && now-contrastStartedAt>30000UL){
+  contrastStage=3;
+  lab.txArmed=false;
+  record("CH_CONTRASTE_TIMEOUT","30/30/30 no confirmado por tarea BLE; control manual desde My Chihiros");
+ }
+ if(contrastStage==2 && now-contrastManualAt>75000UL){
+  contrastStage=7;lab.txArmed=false;
+  cielo96::ble_release_request(1);
+  record("CH_CONTRASTE_CADUCADO","No se solicito retorno a curva en 75s; recuperar desde My Chihiros");
  }
  if(lab.loopLast && now-lab.loopLast>lab.loopMaxGapMs)lab.loopMaxGapMs=now-lab.loopLast;
  lab.loopLast=now;
@@ -807,14 +843,44 @@ static void configureRoutes(){
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
+ srv.on("/api/chihiros/contrast/start",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(srv.arg("confirm")!="ENSAYO_30_30_30")return fail(403,"Confirmacion necesaria");
+  if(!bleReady||!wifiCoexistReady()||!timeOK())return fail(423,"Bluetooth o reloj sin preparar");
+  if(queue.busy()||customResumePending||lab.scanPending||lab.probePending||
+     contrastStage==1||contrastStage==4)return fail(409,"Espera a que termine el enlace anterior");
+  lab.txArmed=true;lab.txUntil=millis()+LAB_TX_WINDOW_MS;lab.txArmCount++;
+  if(!queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,
+                   30,30,30,0,millis(),45000)){
+   lab.txArmed=false;return fail(503,"No se pudo enviar el contraste 30");
+  }
+  // La programacion diaria de CIELO se desactiva durante este ensayo: no
+  // se debe superponer a la curva que administra My Chihiros.
+  chiCieloNight=false;chiManual=true;chiManualUntil=millis()+120000UL;
+  contrastStage=1;contrastObserved=false;contrastStartedAt=millis();contrastManualAt=0;
+  record("CH_CONTRASTE_INICIO","Se solicita 30/30/30 y se espera confirmacion visual del usuario");
+  ok();
+ });
+ srv.on("/api/chihiros/contrast/cancel",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(queue.busy()||contrastStage==1||contrastStage==4)
+   return fail(409,"Espera a que termine el envío Bluetooth antes de cancelar");
+  lab.txArmed=false;chiManual=false;
+  if(contrastStage==1||contrastStage==2)contrastStage=7;
+  if(!queue.busy())cielo96::ble_release_request(1);
+  record("CH_CONTRASTE_ABORTADO","Ensayo cancelado: recuperar desde My Chihiros si es necesario");
+  ok();
+ });
  srv.on("/api/chihiros/my-curve-test",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(!bleReady || !labTxEnabled())return fail(423,"Bluetooth no preparado o ensayo sin autorizacion de 90 segundos");
   if(srv.arg("confirm")!="PROBAR_CURVA_MY_CHIHIROS")return fail(403,"Se requiere confirmacion explicita");
+  if(contrastStage!=2)return fail(409,"Primero envia 30/30/30 y confirma que la operacion GATT termine");
   if(customResumePending||lab.scanPending||lab.probePending||queue.busy())
    return fail(409,"Bluetooth ocupado: espera a terminar");
   if(!cielo96::ble_custom_resume_request())return fail(503,"No se pudo programar ensayo seguro");
   customResumePending=true;customResumeRequested=millis();
+  contrastStage=4;contrastObserved=true;
   chiManual=false;chiAutoPending=false;
   record("CH_CURVA_MYCH_ENSAYO","0x05 [03 FF FF] seleccion curva personalizada; no modifica los puntos; NO probado opticamente");
   ok();
@@ -969,6 +1035,14 @@ static void bleTick(){
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
   queue.complete(res.sequence,res.success,now);bleResultCount++;
+  if(contrastStage==1 && res.device==1 &&
+     res.action==static_cast<uint8_t>(cielo::ble::Action::Apply)){
+   contrastStage=res.success?2:3;
+   contrastManualAt=now;
+   record(res.success?"CH_CONTRASTE_30_GATT_OK":"CH_CONTRASTE_30_GATT_FALLO",
+     String("30/30/30: ")+String(res.reason)+" "+String(res.duration_ms)+"ms; cambio visual por verificar");
+   if(!res.success)lab.txArmed=false;
+  }
   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
   if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}
   bool autoResult=(res.device==1 && res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto));
