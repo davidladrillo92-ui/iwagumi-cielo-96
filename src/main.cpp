@@ -422,6 +422,18 @@ static String cieloModeJson(){
  j+=",\"note\":\"La recuperacion 0x03 requiere BLE operativo y energia del ATOM\"}";
  return j;
 }
+static String cieloTrendJson(){
+ String j;j.reserve(9000);
+ j="{\"interval_min\":15,\"capacity\":96,\"samples\":"+String(cieloTrendCount);
+ j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
+ j+=",\"history\":[";
+ for(uint8_t n=0;n<cieloTrendCount;n++){
+  const auto &v=cieloTrend[(cieloTrendHead+96-cieloTrendCount+n)%96];
+  if(n)j+=",";
+  j+="["+String(v.epoch)+","+String(v.pv)+","+String(v.ch)+","+String(v.pvErrors)+","+String(v.chErrors)+","+String(v.heap)+"]";
+ }
+ j+="]}";return j;
+}
 static void statusJson(){
  auto p=desiredPv();auto c=desiredCh();bool w=WiFi.status()==WL_CONNECTED;
  String j;j.reserve(4500);
@@ -664,7 +676,7 @@ static void diagnosticJson(){
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
  bool warning=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||workerUnavailable||bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
- String j;j.reserve(11500);
+ String j;j.reserve(22000);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
  j+=",\"pilot\":{\"ble_start_requires_button\":false,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
@@ -716,6 +728,7 @@ static void diagnosticJson(){
   localtime_r(&currentEpoch,&clockLocal);
   strftime(clockOffset,sizeof(clockOffset),"%z",&clockLocal);
  }
+ j+=",\"daily_monitoring\":"+cieloTrendJson();
  j+=",\"clock_diagnostics\":{\"epoch\":"+String((uint32_t)currentEpoch);
  j+=",\"valid\":"+String(timeOK()?"true":"false");
  j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
@@ -1107,6 +1120,29 @@ static void configureRoutes(){
  srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; usa Laboratorio para AUTO manual");});
  srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; activacion pendiente de pruebas opticas");});
  srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Usa Laboratorio con autorizacion para AUTO manual");});
+ srv.on("/api/wifi/scan",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(queue.busy()||otaBusy)return fail(409,"Espera al final de la transmision o actualizacion");
+  WiFi.scanDelete();
+  const int result=WiFi.scanNetworks(true,false);
+  if(result==-2)return fail(503,"No se pudo iniciar la busqueda Wi-Fi");
+  record("WIFI_BUSQUEDA","Escaneo asincrono a peticion del usuario, no modifica red actual");
+  ok();
+ });
+ srv.on("/api/wifi/networks",HTTP_GET,[]{
+  const int count=WiFi.scanComplete();
+  String j="{\"pending\":"+String(count==-1?"true":"false")+",\"ssid\":"+jsonQuote(WiFi.SSID());
+  j+=",\"ip\":"+jsonQuote(WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():"");
+  j+=",\"recovery_ap\":\"CIELO96-CONFIG\",\"recovery_ip\":\"192.168.4.1\",\"networks\":[";
+  if(count>0){
+   const int limit=count>16?16:count;
+   for(int n=0;n<limit;n++){
+    if(n)j+=",";
+    j+="{\"ssid\":"+jsonQuote(WiFi.SSID(n))+",\"rssi\":"+String(WiFi.RSSI(n))+"}";
+   }
+  }
+  j+="]}";jsonSend(200,j);
+ });
  srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
