@@ -22,9 +22,21 @@ int main(){
  assert(len==9 && memcmp(b,example,9)==0);
  for(int i=0;i<512;i++){
   assert(codec::ch_manual(i%3,uint8_t(i%101),id,b,sizeof(b),len));
-  assert(b[3]!=0x5a&&b[4]!=0x5a&&b[len-1]!=0x5a);
+  assert(b[3]!=0x5a&&b[4]!=0x5a);
   assert(codec::ch_xor(b,len-1)==b[len-1]);
  }
+ // Los niveles 90 (0x5A) deben pasar inalterados por la trama.
+ const uint8_t level90[]={0,90};
+ assert(codec::ch_safe_frame(0x5a,0x07,level90,2,id,b,sizeof(b),len));
+ assert(b[7]==0x5a && codec::ch_xor(b,len-1)==b[len-1]);
+ // Una trama con checksum 0x5A es valida: no debe ser rechazada.
+ bool has5a=false;
+ for(unsigned k=0;k<3000&&!has5a;k++){
+   const uint8_t pv[]={uint8_t(k&0xff)};
+   assert(codec::ch_safe_frame(0x5a,0x04,pv,1,id,b,sizeof(b),len));
+   if(b[len-1]==0x5a){has5a=true;assert(codec::ch_xor(b,len-1)==0x5a);}
+ }
+ assert(has5a);
  assert(codec::ch_auto(id,b,sizeof(b),len));assert(b[5]==0x05&&b[6]==18&&len==10);
  ProfileImage p{};p.pvCount=cielo::pezverde_count;p.chCount=cielo::chihiros_count;
  memcpy(p.pv,cielo::pezverde,sizeof(cielo::pezverde));memcpy(p.ch,cielo::chihiros,sizeof(cielo::chihiros));

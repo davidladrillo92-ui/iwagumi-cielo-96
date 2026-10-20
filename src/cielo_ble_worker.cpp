@@ -23,7 +23,27 @@ struct Target {
 };
 Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
                    {codec::CH_NAME,codec::CH_SVC,codec::CH_TX}};
-QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr;
+QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr,releaseRequests=nullptr;
+struct SharedLink { volatile bool connected=false;volatile bool released=false;volatile uint32_t releases=0;volatile uint32_t lastDisconnect=0;};
+SharedLink shared[2]{};
+uint32_t linkTouched[2]{};
+static constexpr uint32_t BLE_IDLE_RELEASE_MS=5000UL;
+void releaseTarget(uint8_t device,bool userRequested){
+ Target& t=targets[device];
+ if(t.client && t.client->isConnected())t.client->disconnect();
+ t.writer=nullptr;t.manualEntered=false;t.addressKnown=false;t.pvOn=false;
+ shared[device].connected=false;
+ shared[device].released=userRequested;
+ shared[device].releases++;
+ shared[device].lastDisconnect=millis();
+ linkTouched[device]=0;
+}
+void releaseIdleLinks(){
+ uint32_t now=millis();
+ for(uint8_t k=0;k<2;k++)
+  if(linkTouched[k] && now-linkTouched[k]>=BLE_IDLE_RELEASE_MS)
+   releaseTarget(k,false);
+}
 volatile uint32_t lastHeartbeat=0;
 uint16_t chMessageId=1;
 uint8_t writesInCurrentOperation=0;
@@ -47,7 +67,10 @@ bool locate(Target& t) {
  return found;
 }
 bool connect(Target& t,const char*&err){
- if(t.client && t.client->isConnected() && t.writer)return true;
+ if(t.client && t.client->isConnected() && t.writer){
+  shared[&t==&targets[0]?0:1].connected=true;
+  return true;
+ }
  t.writer=nullptr;t.manualEntered=false;
  if(!locate(t)){err="BLE_DEVICE_NOT_FOUND";return false;}
  if(!t.client)t.client=BLEDevice::createClient();
@@ -63,6 +86,8 @@ bool connect(Target& t,const char*&err){
  if(!t.writer || !(t.writer->canWrite()||t.writer->canWriteNoResponse())){
   err="GATT_CHARACTERISTIC_MISSING";t.client->disconnect();t.writer=nullptr;return false;
  }
+ shared[&t==&targets[0]?0:1].connected=true;
+ shared[&t==&targets[0]?0:1].released=false;
  return true;
 }
 bool put(Target& t,const uint8_t* data,size_t n,const char*&err){
@@ -170,8 +195,7 @@ void probeGATT(uint8_t device){
   }
  }
  // Se suelta siempre la conexion; ni escritura ni suscripcion de notificaciones.
- if(t.client && t.client->isConnected())t.client->disconnect();
- t.writer=nullptr;t.manualEntered=false;t.addressKnown=false;t.pvOn=false;
+ releaseTarget(device,false);
  strncpy(r.reason,reason,sizeof(r.reason)-1);
  r.elapsed_ms=millis()-start;
  if(xQueueSend(probeResponses,&r,0)!=pdTRUE){
@@ -183,6 +207,11 @@ void task(void*){
  lastHeartbeat=millis();
  for(;;){
   uint8_t probeToken=0;
+  uint8_t releaseToken=0;
+  while(xQueueReceive(releaseRequests,&releaseToken,0)==pdTRUE){
+   if(releaseToken<2)releaseTarget(releaseToken,true);
+  }
+  releaseIdleLinks();
   if(xQueueReceive(probeRequests,&probeToken,0)==pdTRUE){
    probeGATT(probeToken);lastHeartbeat=millis();
   }
@@ -200,6 +229,7 @@ void task(void*){
   // Single reader: if response queue is full, drop oldest after noting failure upstream.
   if(xQueueSend(responses,&res,0)!=pdTRUE){BleResult discard;xQueueReceive(responses,&discard,0);xQueueSend(responses,&res,0);}
   lastHeartbeat=millis();
+  linkTouched[static_cast<uint8_t>(c.device)==1?1:0]=millis();
  }
 }
 }
@@ -208,8 +238,21 @@ bool ble_begin(){
  requests=xQueueCreate(2,sizeof(cielo::ble::Command));responses=xQueueCreate(4,sizeof(BleResult));
  scanRequests=xQueueCreate(1,sizeof(uint8_t));scanResponses=xQueueCreate(2,sizeof(BleScanResult));
  probeRequests=xQueueCreate(1,sizeof(uint8_t));probeResponses=xQueueCreate(2,sizeof(BleProbeResult));
- if(!requests || !responses || !scanRequests || !scanResponses || !probeRequests || !probeResponses)return false;
+ releaseRequests=xQueueCreate(2,sizeof(uint8_t));
+ if(!requests || !responses || !scanRequests || !scanResponses || !probeRequests || !probeResponses || !releaseRequests)return false;
  return xTaskCreatePinnedToCore(task,"cielo_ble",16384,nullptr,1,nullptr,0)==pdPASS;
+}
+bool ble_release_request(uint8_t device){
+ return device<2 && releaseRequests && xQueueSend(releaseRequests,&device,0)==pdTRUE;
+}
+BleLinkStatus ble_link_status(uint8_t device){
+ BleLinkStatus r{};
+ if(device>1)return r;
+ r.connected=shared[device].connected;
+ r.released_to_app=shared[device].released;
+ r.release_count=shared[device].releases;
+ r.last_disconnect_ms=shared[device].lastDisconnect;
+ return r;
 }
 bool ble_probe_request(uint8_t device){
  return device<2 && probeRequests && xQueueSend(probeRequests,&device,0)==pdTRUE;

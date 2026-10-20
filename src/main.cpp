@@ -31,10 +31,10 @@
 #define CIELO_WIFI_PASSWORD ""
 #endif
 #ifndef CIELO_ENABLE_OTA
-#define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
+#define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.4.2-AUTO-BLE-PV";
+static constexpr const char* VERSION="10.0.0-RC1-CENTRO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -149,6 +149,10 @@ static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
 static bool otaBusy=false,otaAllowed=false,otaSuccess=false,otaError=false;
+static char otaExpectedSha[65]{};
+static mbedtls_sha256_context otaDigest;
+static bool otaDigestStarted=false;
+static uint8_t otaDigestOut[32]{};
 static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin actualizaciones";
 static String storedSSID,storedPass,apPassword;
 static uint32_t bootMs=0;
@@ -410,6 +414,16 @@ static String labJson(){
   j+=",\"reason\":"+jsonQuote(String(probe.reason))+"}";
  }
  j+="]}";
+ j+=",\"links\":{\"pez_verde\":{";
+ for(uint8_t linkIndex=0;linkIndex<2;linkIndex++){
+  const auto link=cielo96::ble_link_status(linkIndex);
+  if(linkIndex)j+=",\"chihiros\":{";
+  j+="\"connected\":"+String(link.connected?"true":"false");
+  j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
+  j+=",\"release_count\":"+String(link.release_count);
+  j+=",\"last_disconnect_ms\":"+String(link.last_disconnect_ms)+"}";
+ }
+ j+="}";
  j+=",\"lighting\":{\"scheduler_enabled\":false,\"gatt_tx_armed\":"+String(labTxEnabled()?"true":"false");
  j+=",\"tx_window_remaining_sec\":"+String(labTxEnabled()?(lab.txUntil-age)/1000UL:0);
  j+=",\"tx_arm_count\":"+String(lab.txArmCount)+",\"tx_blocked\":"+String(lab.txBlocked);
@@ -509,6 +523,14 @@ static void diagnosticJson(){
  j+=",\"tx_frames\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+"},\"chihiros\":{\"cielo_night_enabled\":"+String(chiCieloNight?"true":"false");
  j+=",\"ble_active\":"+String(bleReady?"true":"false")+",\"auto_restore_pending\":"+String(chiAutoPending?"true":"false")+",\"tx_frames\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+"}}";
  j+=",\"bluetooth\":{\"worker_heartbeat_age_ms\":"+String(millis()-cielo96::ble_last_heartbeat());
+ for(uint8_t linkIndex=0;linkIndex<2;linkIndex++){
+  const auto link=cielo96::ble_link_status(linkIndex);
+  j+=",\"link_";
+  j+=linkIndex?"chihiros":"pez_verde";
+  j+="\":{\"connected\":"+String(link.connected?"true":"false");
+  j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
+  j+=",\"release_count\":"+String(link.release_count)+"}";
+ }
  j+=",\"queued\":"+String(m.submitted)+",\"superseded\":"+String(m.superseded)+",\"failed\":"+String(m.failed);
  j+=",\"timeouts\":"+String(m.soft_timeouts)+",\"retries\":"+String(m.retries)+",\"max_call_ms\":"+String(bleDurationMax);
  j+=",\"slow_calls\":"+String(bleSlowCount);
@@ -604,8 +626,13 @@ static void physicalButtonTask(){
  if(!held && buttonDownAt){
   const uint32_t heldMs=now-buttonDownAt;
   buttonDownAt=0;
-  if(heldMs>=3000UL && heldMs<8000UL && !blePilotAttempted && !rescueOpen){
-   blePilotRequested=true;record("BLE_PILOTO_SOLICITADO","Pulsacion GPIO41, se inicia una unica prueba BLE");
+  if(heldMs>=3000UL && heldMs<8000UL && !rescueOpen){
+   if(!blePilotAttempted){
+    blePilotRequested=true;record("BLE_PILOTO_SOLICITADO","BLE activado manualmente");
+   }else if(WiFi.status()==WL_CONNECTED){
+    otaPhysicalUntil=now+90000UL;
+    record("OTA_VENTANA_FISICA","90 segundos para carga privada desde Bambu; requiere clave");
+   }
   }
  }
  if(rescueOpen && (int32_t)(now-rescueUntil)>=0){
@@ -616,7 +643,11 @@ static void physicalButtonTask(){
   record("RESCATE_CERRADO","AP privado restaurado despues de 120s");
  }
 }
-static bool physicalOtaGrant(){return false;} // OTA deshabilitada en firmware de rescate
+static bool physicalOtaGrant(){
+ // Mantiene OTA inaccesible en AP abierta de rescate y sin Bambu.
+ return CIELO_ENABLE_OTA && !rescueOpen && WiFi.status()==WL_CONNECTED &&
+        otaPhysicalUntil && (int32_t)(otaPhysicalUntil-millis())>0;
+}
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
@@ -624,6 +655,14 @@ static void otaPair(){
  String s=srv.arg("key");if(s.length()<12||s.length()>96)return fail(400,"Clave OTA de 12 a 96 caracteres");
  uint8_t digest[32];if(!sha256String(s,digest)||prefs.putBytes("ota_sha",digest,32)!=32)return fail(507,"No se pudo guardar la clave");
  record("OTA_EMPAREJADA","Clave hasheada SHA256. No se registra en texto");ok();
+}
+static bool hashLooksValid(const String& h){
+ if(h.length()!=64)return false;
+ for(size_t i=0;i<h.length();i++)if(!isxdigit(static_cast<unsigned char>(h[i])))return false;
+ return true;
+}
+static void otaDigestStop(){
+ if(otaDigestStarted){mbedtls_sha256_free(&otaDigest);otaDigestStarted=false;}
 }
 static void startOtaResponse(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA local desactivada por seguridad");
@@ -636,23 +675,60 @@ static void startOtaResponse(){
 static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
-  otaAllowed=tokenEqual() && physicalOtaGrant();otaSuccess=false;otaError=false;otaBytes=0;
-  if(!physicalOtaGrant())record("OTA_RECHAZADA","Falta confirmacion fisica del boton");
-  if(!otaAllowed){lastOtaError="Sin clave correcta y autorizacion fisica";otaError=true;return;}
-  if(!upload.filename.endsWith(".bin")||!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){
-   lastOtaError="BIN invalido o sin particion OTA disponible";otaError=true;return;
+  otaAllowed=tokenEqual() && physicalOtaGrant() && currentBootMarkedHealthy &&
+             !labTxEnabled() && !queue.busy() && !otaBusy;
+  otaSuccess=false;otaError=false;otaBytes=0;otaDigestStop();
+  if(!otaAllowed){lastOtaError="Requiere clave y permiso de 90s del boton ATOM";otaError=true;return;}
+  const String expected=srv.header("X-Cielo-Sha256");
+  if(!hashLooksValid(expected) || !upload.filename.endsWith(".bin")){
+   lastOtaError="BIN o SHA256 del navegador no valido";otaError=true;return;
   }
-  otaBusy=true;record("OTA_START","Carga manual autenticada");
+  strncpy(otaExpectedSha,expected.c_str(),64);otaExpectedSha[64]='\0';
+  const esp_partition_t* target=esp_ota_get_next_update_partition(nullptr);
+  if(!target || target->size<1048576 || target->size>0x330000 ||
+     !Update.begin(target->size,U_FLASH)){
+   lastOtaError="Particion OTA no compatible";otaError=true;return;
+  }
+  mbedtls_sha256_init(&otaDigest);
+  if(mbedtls_sha256_starts_ret(&otaDigest,0)!=0){
+   lastOtaError="No se pudo iniciar SHA256";otaError=true;Update.abort();mbedtls_sha256_free(&otaDigest);return;
+  }
+  otaDigestStarted=true;
+  otaBusy=true;record("OTA_START","BIN manual, SHA256 y autorizacion fisica");
  }else if(upload.status==UPLOAD_FILE_WRITE){
   if(!otaAllowed||otaError)return;
-  if(Update.write(upload.buf,upload.currentSize)!=upload.currentSize){lastOtaError="Error de escritura OTA";otaError=true;Update.abort();}
-  else otaBytes+=upload.currentSize;
+  const esp_partition_t* target=esp_ota_get_next_update_partition(nullptr);
+  if(!target || otaBytes+upload.currentSize>target->size ||
+    mbedtls_sha256_update_ret(&otaDigest,upload.buf,upload.currentSize)!=0 ||
+    Update.write(upload.buf,upload.currentSize)!=upload.currentSize){
+   lastOtaError="Escritura OTA interrumpida o supera la particion";otaError=true;Update.abort();otaDigestStop();
+  }else otaBytes+=upload.currentSize;
  }else if(upload.status==UPLOAD_FILE_END){
-  if(!otaAllowed||otaError)return;
-  if(!Update.end(true)){lastOtaError="Firmware incompleto o incorrecto";otaError=true;Update.abort();}
-  else{otaSuccess=true;lastOtaError="OTA verificada, reinicio pendiente";record("OTA_OK",String("bytes=")+String(otaBytes));}
+  if(!otaAllowed||otaError){otaBusy=false;otaDigestStop();return;}
+  if(!otaDigestStarted || mbedtls_sha256_finish_ret(&otaDigest,otaDigestOut)!=0){
+   otaError=true;lastOtaError="SHA256 no disponible";Update.abort();otaDigestStop();otaBusy=false;return;
+  }
+  otaDigestStop();
+  static const char hex[]="0123456789abcdef";
+  char actual[65];for(unsigned i=0;i<32;i++){actual[i*2]=hex[otaDigestOut[i]>>4];actual[i*2+1]=hex[otaDigestOut[i]&15];}
+  actual[64]='\0';
+  if(strcasecmp(actual,otaExpectedSha)!=0 || otaBytes<500000){
+   otaError=true;lastOtaError="Hash o tamano de firmware no coinciden";Update.abort();
+  }else if(!Update.end(true)){
+   lastOtaError="BIN no validado como firmware ESP32-S3";otaError=true;Update.abort();
+  }else{
+   // Pista para regreso automatico ante reinicios tempranos repetidos. No
+   // garantiza rescate de una imagen que ni siquiera llegue a ejecutar setup().
+   prefs.putString("ota_prev",otaRunningPartition);
+   prefs.putUChar("ota_attempts",0);
+   otaSuccess=true;lastOtaError="SHA256 coincide y Update acepta el BIN";
+   otaPhysicalUntil=0;
+   record("OTA_OK",String("bytes=")+String(otaBytes)+" validado");
+  }
   otaBusy=false;
- }else if(upload.status==UPLOAD_FILE_ABORTED){otaError=true;otaBusy=false;lastOtaError="OTA abortada";Update.abort();}
+ }else if(upload.status==UPLOAD_FILE_ABORTED){
+  otaError=true;otaBusy=false;lastOtaError="OTA abortada";Update.abort();otaDigestStop();
+ }
 }
 static void configureWifi(){
  String ssid=srv.arg("ssid"),pass=srv.arg("password");
@@ -663,7 +739,7 @@ static void configureWifi(){
  lastWiFiAttempt=0;ok();
 }
 static void configureRoutes(){
- const char*keys[]={"X-Cielo-Key"};srv.collectHeaders(keys,1);
+ const char*keys[]={"X-Cielo-Key","X-Cielo-Sha256"};srv.collectHeaders(keys,2);
  srv.on("/",HTTP_GET,[]{++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
  srv.on("/api/status",HTTP_GET,statusJson);
  srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
@@ -698,6 +774,41 @@ static void configureRoutes(){
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
+ srv.on("/api/ble/release",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(!bleReady)return fail(423,"Bluetooth aun no inicializado");
+  if(queue.busy()||lab.probePending||lab.scanPending)return fail(409,"Espera a que termine la operacion Bluetooth");
+  const String device=srv.arg("device");
+  if(device!="chihiros"&&device!="pez_verde")return fail(400,"Elige una pantalla valida");
+  const uint8_t index=device=="chihiros"?1:0;
+  if(!cielo96::ble_release_request(index))return fail(503,"No se pudo solicitar la liberacion");
+  record("BLE_CEDER",device+" liberacion solicitada sin ordenes RGB");
+  ok();
+ });
+ srv.on("/api/lab/preview",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(!labTxEnabled()||srv.arg("confirm")!="ENSAYO_CURVA")return fail(423,"Autoriza primero el ensayo de curva (90 s)");
+  if(!timeOK()||!cielo96::profileValid(profile))return fail(503,"Hora o curva sin validar");
+  const String screen=srv.arg("screen");
+  const String moment=srv.arg("moment");
+  int minute=-1;
+  if(moment=="amanecer")minute=900;
+  else if(moment=="mediodia")minute=1040;
+  else if(moment=="atardecer")minute=1340;
+  if(minute<0)return fail(400,"Selecciona amanecer, mediodia o atardecer");
+  if(screen=="pez_verde"){
+   auto v=cielo::at(profile.pv,profile.pvCount,minute);
+   pezManual=true;pezManualUntil=millis()+20000UL;
+   submitPv(v,20000);
+   record("CURVA_PREVIA_PV",moment+" RGB "+String(v.r)+"/"+String(v.g)+"/"+String(v.b));
+  }else if(screen=="chihiros"){
+   auto v=cielo::at(profile.ch,profile.chCount,minute);
+   chiManual=true;chiManualUntil=millis()+8000UL;
+   submitCh(v,8000);
+   record("CURVA_PREVIA_CH",moment+" RGB "+String(v.r)+"/"+String(v.g)+"/"+String(v.b));
+  }else return fail(400,"Pantalla no valida");
+  ok();
+ });
  srv.on("/api/lab/tx/arm",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   if(srv.arg("confirm")!="HABILITAR_MANUAL")return fail(403,"Confirmacion explicita requerida");
@@ -718,7 +829,7 @@ static void configureRoutes(){
   if(maximum>lab.browserMaxMs)lab.browserMaxMs=maximum;
   record("LAB_HTTP","Latencia desde navegador media "+String(avg)+" ms max "+String(maximum)+" ms");ok();
  });
- srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
+ srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaGrantSeconds\":"+String(physicalOtaGrant()?(otaPhysicalUntil-millis())/1000UL:0)+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
  srv.on("/api/clock",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
    // epoch exceeds minute parser max, parse separately with strict digits
    String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
@@ -742,7 +853,10 @@ static void configureRoutes(){
  srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
- srv.on("/api/ota/upload",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");startOtaResponse();},otaUpload);
+ srv.on("/api/ota/upload",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  startOtaResponse();
+ },otaUpload);
  const char*unsupported[]={"/api/chihiros/test","/api/storm/start","/api/storm/stop",
    "/api/chihiros/aurora931/apply","/api/chihiros/aurora931/restore",
    "/api/pez/cielo931/apply","/api/pez/cielo931/restore","/api/pez/cielo94/apply","/api/pez/cielo94/restore",
@@ -855,6 +969,22 @@ void setup(){
  prefs.putUInt("boots",previousBootCount+1);
  prefs.putBool("clean",false);
  const esp_partition_t *running=esp_ota_get_running_partition();
+ const String previousOtaApp=prefs.getString("ota_prev","");
+ if(running && (previousOtaApp=="app0"||previousOtaApp=="app1") &&
+    previousOtaApp!=String(running->label)){
+  const uint8_t attempts=prefs.getUChar("ota_attempts",0)+1;
+  prefs.putUChar("ota_attempts",attempts);
+  Serial.printf("CIELO OTA candidato: intento de arranque %u; version %s\n",attempts,VERSION);
+  if(attempts>=3){
+   const esp_partition_subtype_t back=previousOtaApp=="app0"?
+    ESP_PARTITION_SUBTYPE_APP_OTA_0:ESP_PARTITION_SUBTYPE_APP_OTA_1;
+   const esp_partition_t *safe=esp_partition_find_first(ESP_PARTITION_TYPE_APP,back,nullptr);
+   if(safe && esp_ota_set_boot_partition(safe)==ESP_OK){
+    Serial.printf("CIELO OTA: 3 arranques sin validar; volver a %s\n",previousOtaApp.c_str());
+    delay(150);ESP.restart();
+   }
+  }
+ }
  const esp_partition_t *next=esp_ota_get_next_update_partition(nullptr);
  otaRunningPartition=running?running->label:"desconocida";
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
@@ -917,6 +1047,10 @@ void loop(){
  if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
   currentBootMarkedHealthy=true;
   prefs.putBool("clean",true);
+  if(prefs.getString("ota_prev","").length()){
+   prefs.remove("ota_prev");prefs.putUChar("ota_attempts",0);
+   record("OTA_ARRANQUE_VALIDADO","Nuevo firmware activo tras 180 segundos; cambios confirmados");
+  }
   record("ARRANQUE_ESTABLE","180 segundos sin reiniciar; NO implica que BLE funcione correctamente");
  }
  tracePhase(TracePhase::Http);srv.handleClient();

@@ -53,7 +53,12 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '9.6.0-R4.4.2-AUTO-BLE-PV' in code
+assert '10.0.0-RC1-CENTRO' in code
+assert 'ble_release_request(index)' in code and '/api/ble/release' in code
+assert 'releaseIdleLinks()' in bleworker and 'BLE_IDLE_RELEASE_MS=5000UL' in bleworker
+assert 'ble_link_status(linkIndex)' in code
+assert '/api/lab/preview' in code and 'CURVA_PREVIA_CH' in code
+assert 'chihiros_auto_verified' in code and 'CH_AUTO_MODE_UNVERIFIED' in bleworker
 assert 'BLE_AUTO_SOLICITADO' in code and 'millis()-bootMs>=30000UL' in code
 assert 'ble_start_requires_button\\\\":false' in code or 'ble_start_requires_button\\":false' in code
 assert 'if(!labTxEnabled())' in code
@@ -86,13 +91,23 @@ assert 'if(rescueOpen)return fail(403' in code
 assert 'statusPixel' in code and 'CIELO_LED_GPIO=35' in code
 assert 'bleReady=false; // Do not start BLE' in code
 assert code.index('configureRoutes();') < code.index('bleReady=cielo96::ble_begin();')
-assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
+assert 'CIELO_ENABLE_OTA 1' in code and 'physicalOtaGrant()' in code
+assert 'X-Cielo-Sha256' in code and 'otaDigestOut' in code
+assert 'if(rescueOpen)return fail(403' in code
+assert 'Update.begin' in code and 'Update.end(true)' in code
 
-assert '<title>CIELO 9.6 R4.4.2 · Auto BLE</title>' in actual
+assert '<title>CIELO 10 · Centro unificado</title>' in actual
 assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
 for identifier in ('labStart','labScan','labBrowser','labArm','labProbePv','labProbeCh','labCh10','labCh20','labCh35','labReport','labMetrics'):
  assert ('id="'+identifier+'"') in actual,identifier
 assert "n==='lab'?'Lab'" in actual
+assert 'id="viewService"' not in actual and 'data-view="service"' not in actual
+assert 'id="cieloLinks"' in actual and 'id="labGuided"' in actual
+assert 'id="releaseCh"' in actual and 'id="releasePv"' in actual
+assert 'id="curveChEvening"' in actual
+assert 'function labGuided()' in actual and 'function previewNatural' in actual
+assert 'function releaseLight' in actual
+assert 'window.open(\'/api/diagnostico/maestro?download=1\'' in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
 import tempfile
 with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as js:
@@ -102,9 +117,25 @@ try:
  subprocess.run(['node','--check',js_path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 finally:
  Path(js_path).unlink(missing_ok=True)
-assert 'CIELO 9.6 R4.4.2 · BLE automático' in actual
+assert 'CIELO 10 · conexiones automáticas' in actual
+# La SHA-256 JavaScript debe coincidir con OpenSSL/Node: prueba obligatoria
+# porque Safari HTTP no expone crypto.subtle en un origen no seguro.
+sha_js=actual.split('function sha256Local(data){',1)[1].split('async function sha256Firmware(',1)[0]
+sha_code='function sha256Local(data){'+sha_js
+vectors=r"""
+const crypto=require('crypto');
+for(const s of ['', 'abc', 'CIELO-10', 'Hola\u00e1', '0'.repeat(100000)]){
+ const b=Buffer.from(s,'utf8');
+ const ref=crypto.createHash('sha256').update(b).digest('hex');
+ const got=sha256Local(b);
+ if(ref!==got){throw Error('SHA256 web mismatch '+s.slice(0,10)+' '+got+' != '+ref)}
+}
+console.log('SHA256 UI verificado con Node');
+"""
+subprocess.run(['node','-e',sha_code+'\n'+vectors],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
-              '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
+              '/api/chihiros/manual','/api/ble/release','/api/lab/preview','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
  assert route in actual and route in (r/'src/main.cpp').read_text(),route
 flash=Path('/mnt/data/FLASH_ATOM_8MB_COMPLETA_PRIVADA.bin')
