@@ -1122,6 +1122,17 @@ static void lightingTask(){
  if(chiManual && (int32_t)(now-chiManualUntil)>=0)chiManual=false;
  // Las verificaciones se hacen incluso si CIELO no controla las luces.
  if(!cieloPvRun && !cieloChRun && !cieloChWasDriven)return;
+ // Si la tarea propietaria BLE deja de responder, dejar de programar RGB.
+ // La orden de retorno se pedira y se completara solo si el trabajador revive.
+ if(bleReady && !cieloWatchdogTripped &&
+    now-cielo96::ble_last_heartbeat()>45000UL){
+  cieloWatchdogTripped=true;cieloPvRun=false;cieloChRun=false;
+  queue.cancel_pending(cielo::ble::Device::PezVerde);
+  if(cieloChWasDriven)cieloRequestReturn("Watchdog BLE 45s: parada preventiva y retorno pendiente");
+  cieloFallbacks++;
+  record("V4_WATCHDOG_PAUSA","BLE no responde: no se garantiza retorno hasta recuperar radio");
+  return;
+ }
  if(now-lastScheduleAt<30000UL)return;lastScheduleAt=now;
  if(!timeOK() || !cielo96::profileValid(profile)){
   if(cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
