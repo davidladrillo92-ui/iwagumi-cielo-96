@@ -587,6 +587,7 @@ function labPretty(d){
  'Reloj: '+b(c.clock)+' · integridad de curvas: '+b(c.profile_crc),
  'BLE: '+(c.ble_worker?'Inicializado':'Aún sin iniciar')+' · búsqueda: '+(sc.pending?'en marcha':sc.completed+' completada(s)')+' · modo '+(sc.active_scan?'activo':'pasivo'),
  'Detectados '+(sc.advertisements??'—')+' dispositivos · con nombre '+(sc.named_advertisements??'—')+' · anónimos '+(sc.anonymous_advertisements??'—'),
+ 'Muestra de anuncios: '+((sc.nearby||[]).length?(sc.nearby||[]).map(d=>d.name+' ('+d.rssi+' dBm'+(d.nordic_uart?', NUS':'')+')').join(' · '):'ninguna'),
  'Pez Verde: '+(sc.completed?(sc.found_pez_verde?'Encontrada ('+sc.pez_rssi+' dBm)':'No detectada'):'Sin buscar'),
  'Chihiros: '+(sc.completed?(sc.found_chihiros?'Encontrada ('+sc.chihiros_rssi+' dBm)':'No detectada'):'Sin buscar'),
  'RSSI Bambu min/max: '+(d.samples?d.rssi_min+' / '+d.rssi_max+' dBm':'Pendiente'),
