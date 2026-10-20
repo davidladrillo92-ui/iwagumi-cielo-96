@@ -23,7 +23,7 @@ struct Target {
 };
 Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
                    {codec::CH_NAME,codec::CH_SVC,codec::CH_TX}};
-QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr;
+QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr;
 volatile uint32_t lastHeartbeat=0;
 uint16_t chMessageId=1;
 uint8_t writesInCurrentOperation=0;
@@ -136,10 +136,50 @@ void scanDiscover(){
   BleScanResult discarded{};xQueueReceive(scanResponses,&discarded,0);xQueueSend(scanResponses,&r,0);
  }
 }
+void probeGATT(uint8_t device){
+ BleProbeResult r{};r.device=device;const uint32_t start=millis();
+ Target& t=targets[device==1?1:0];const char* reason="OK";
+ if(!locate(t)){
+  reason="BLE_DEVICE_NOT_FOUND";
+ }else{
+  if(!t.client)t.client=BLEDevice::createClient();
+  if(!t.client){reason="BLE_CLIENT_CREATE";}
+  else {
+   BLEAddress address(std::string(t.address.c_str()));
+   if(!t.client->connect(address,t.addressType)){
+    reason="BLE_CONNECT_FAILED";
+   }else{
+    BLERemoteService* svc=t.client->getService(BLEUUID(t.service));
+    if(!svc)reason="GATT_SERVICE_MISSING";
+    else {
+     r.service=true;
+     BLERemoteCharacteristic* characteristic=svc->getCharacteristic(BLEUUID(t.writeUuid));
+     if(!characteristic || !(characteristic->canWrite()||characteristic->canWriteNoResponse())){
+      reason="GATT_CHARACTERISTIC_MISSING";
+     }else{
+      r.characteristic=true;r.success=true;
+     }
+    }
+   }
+  }
+ }
+ // Se suelta siempre la conexion; ni escritura ni suscripcion de notificaciones.
+ if(t.client && t.client->isConnected())t.client->disconnect();
+ t.writer=nullptr;t.manualEntered=false;t.addressKnown=false;t.pvOn=false;
+ strncpy(r.reason,reason,sizeof(r.reason)-1);
+ r.elapsed_ms=millis()-start;
+ if(xQueueSend(probeResponses,&r,0)!=pdTRUE){
+  BleProbeResult old{};xQueueReceive(probeResponses,&old,0);xQueueSend(probeResponses,&r,0);
+ }
+}
 void task(void*){
  BLEDevice::init("IWAGUMI-CIELO-96");
  lastHeartbeat=millis();
  for(;;){
+  uint8_t probeToken=0;
+  if(xQueueReceive(probeRequests,&probeToken,0)==pdTRUE){
+   probeGATT(probeToken);lastHeartbeat=millis();
+  }
   uint8_t scanToken=0;
   if(xQueueReceive(scanRequests,&scanToken,0)==pdTRUE){
    scanDiscover();lastHeartbeat=millis();
@@ -161,8 +201,15 @@ bool ble_begin(){
  if(requests)return true;
  requests=xQueueCreate(2,sizeof(cielo::ble::Command));responses=xQueueCreate(4,sizeof(BleResult));
  scanRequests=xQueueCreate(1,sizeof(uint8_t));scanResponses=xQueueCreate(2,sizeof(BleScanResult));
- if(!requests || !responses || !scanRequests || !scanResponses)return false;
+ probeRequests=xQueueCreate(1,sizeof(uint8_t));probeResponses=xQueueCreate(2,sizeof(BleProbeResult));
+ if(!requests || !responses || !scanRequests || !scanResponses || !probeRequests || !probeResponses)return false;
  return xTaskCreatePinnedToCore(task,"cielo_ble",16384,nullptr,1,nullptr,0)==pdPASS;
+}
+bool ble_probe_request(uint8_t device){
+ return device<2 && probeRequests && xQueueSend(probeRequests,&device,0)==pdTRUE;
+}
+bool ble_probe_result(BleProbeResult& out){
+ return probeResponses && xQueueReceive(probeResponses,&out,0)==pdTRUE;
 }
 bool ble_scan_request(){uint8_t token=1;return scanRequests && xQueueSend(scanRequests,&token,0)==pdTRUE;}
 bool ble_scan_result(BleScanResult& out){return scanResponses && xQueueReceive(scanResponses,&out,0)==pdTRUE;}
