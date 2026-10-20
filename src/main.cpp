@@ -1102,7 +1102,7 @@ static void wifiTask(){
  }
 
 }
-static static void cieloRequestReturn(const char* reason){
+static void cieloRequestReturn(const char* reason){
  // Apartar inmediatamente TODAS las órdenes CH pendientes, aun cuando hay una
  // operacion BLE iniciada que debe terminar antes de mandar el selector 0x03.
  queue.cancel_pending(cielo::ble::Device::Chihiros);
