@@ -517,11 +517,38 @@ static void labTick(){
    customResumeFailed++;if(contrastStage==4)contrastStage=6;
    record("CH_CURVA_MYCH_FALLO",customResumeLast);
   }
+  if(cieloChAwaitResponse){
+   cieloChAwaitResponse=false;
+   if(custom.success){
+    cieloReturnOk++;cieloChWasDriven=false;lastChDesired=false;
+    cieloReturnTries=0;cieloChReturnPending=false;
+    cieloReturnReason="Curva personalizada My Chihiros: GATT OK (efecto optico no medido)";
+    record("V4_RETORNO_GATT_OK",cieloReturnReason);
+   }else{
+    cieloReturnFailed++;
+    if(cieloReturnTries<2){
+     cieloChReturnPending=true;cieloReturnRetryAt=now+8000UL;
+     record("V4_RETORNO_REINTENTO","Fallo 0x03; reintento unico despues de 8 segundos");
+    }else{
+     cieloChReturnPending=false;
+     cieloReturnReason="Retorno My Chihiros fallo 2 veces; usar My Chihiros";
+     record("V4_RETORNO_FALLO",cieloReturnReason);
+    }
+   }
+  }
  }
  if(customResumePending && now-customResumeRequested>24000UL){
   customResumePending=false;customResumeFailed++;
   customResumeLast="Sin respuesta de la tarea BLE en 24 s; no repetir automaticamente";
   if(contrastStage==4)contrastStage=6;
+  if(cieloChAwaitResponse){
+   cieloChAwaitResponse=false;cieloReturnFailed++;
+   if(cieloReturnTries<2){
+    cieloChReturnPending=true;cieloReturnRetryAt=now+8000UL;
+   }else{
+    cieloChReturnPending=false;cieloReturnReason="Retorno 0x03 agotado, utiliza My Chihiros";
+   }
+  }
   record("CH_CURVA_MYCH_TIMEOUT",customResumeLast);
  }
  if(contrastStage==1 && now-contrastStartedAt>30000UL){
