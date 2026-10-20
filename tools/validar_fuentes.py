@@ -16,7 +16,24 @@ assert 'configTzTime(CIELO_TZ' in code and 'configTime(0,0' not in code
 assert 'WiFi.setSleep(false)' not in code
 assert 'WiFi.setSleep(true)' in code and 'wifiCoexistReady()' in code
 assert 'BLE_COEX_BLOQUEADO' in code and 'wifi_modem_sleep' in code
-assert code.index('if(!sleepSet || !wifiCoexistReady())') < code.index('bleReady=cielo96::ble_begin();')
+assert 'COEX_AVISO' not in code and 'esp_wifi_set_ps(WIFI_PS_MIN_MODEM)' in code
+assert 'lightingTask();' not in code # arranque BLE no programa luces
+assert 'static bool labTxEnabled()' in code
+for guarded in ('static void submitPv(', 'static void submitCh(', 'static void requestAuto('):
+    section=code[code.index(guarded):code.index('}',code.index(guarded))]
+    assert 'if(!labTxEnabled())' in section,guarded
+assert 'lab_manual' in code and 'LAB_TX_BLOQUEADA' in code
+assert 'ble_scan_request()' in code and 'ble_scan_result(result)' in code
+assert 'lab.running' in code and 'profileValid(profile)' in code
+assert 'j+=",\\\"lab\\\":"+labJson();' in code
+assert 'LAB_TX_WINDOW_MS=90000UL' in code
+assert 'Cola BLE abortada: autorizacion caducada' in code
+bleworker=(r/'src/cielo_ble_worker.cpp').read_text()
+assert 'scanPassive()' in bleworker and 'scan->setActiveScan(false)' in bleworker
+assert 'BLEDevice::init(' in bleworker
+assert 'sendPez(c,err):sendCh(c,err)' in bleworker
+assert 'scanPassive();lastHeartbeat=millis();' in bleworker
+assert code.index('if(!wifiCoexistReady())WiFi.setSleep(true);') < code.index('bleReady=cielo96::ble_begin();')
 assert 'RTC_NOINIT_ATTR' in code and 'previous_reset_phase_valid' in code
 assert 'phone_sync_this_boot' in code and 'utc_offset' in code
 # Comprobar el cambio invierno/verano de la regla TZ sin depender de la hora del runner.
@@ -44,8 +61,21 @@ assert 'bleReady=false; // Do not start BLE' in code
 assert code.index('configureRoutes();') < code.index('bleReady=cielo96::ble_begin();')
 assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
 
-assert '<title>CIELO 9.6 R4.3.5 · Coexistencia</title>' in actual
-assert 'CIELO 9.6 R4.3.5 · firmware de pruebas' in actual
+assert '<title>CIELO 9.6 R4.4 · Laboratorio</title>' in actual
+assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
+for identifier in ('labStart','labScan','labBrowser','labArm','labAuto','labReport','labMetrics'):
+ assert ('id="'+identifier+'"') in actual,identifier
+assert "n==='lab'?'Lab'" in actual
+# JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
+import tempfile
+with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as js:
+ js.write(actual.split('<script>',1)[1].split('</script>',1)[0])
+ js_path=js.name
+try:
+ subprocess.run(['node','--check',js_path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+finally:
+ Path(js_path).unlink(missing_ok=True)
+assert 'CIELO 9.6 R4.4 · laboratorio experimental' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):

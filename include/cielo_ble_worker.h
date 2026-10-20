@@ -4,6 +4,15 @@
 namespace cielo96 {
 // Una sola tarea BLE propietaria del stack, aislada del servidor web.
 struct BleResult {uint32_t sequence; bool success;uint32_t duration_ms;uint8_t device;uint8_t write_calls;char reason[50];};
+// Descubrimiento BLE pasivo: no conecta ni escribe en las pantallas.
+struct BleScanResult {
+ uint32_t elapsed_ms=0; uint32_t completed_at_ms=0;
+ bool pez_found=false, chihiros_found=false;
+ int16_t pez_rssi=-127, chihiros_rssi=-127;
+ uint16_t advertised=0;
+};
+bool ble_scan_request();
+bool ble_scan_result(BleScanResult& out);
 bool ble_begin();
 bool ble_dispatch(const cielo::ble::Command& c);
 bool ble_result(BleResult& out);
