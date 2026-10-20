@@ -233,9 +233,27 @@ function sheet(html){$('modalBody').innerHTML=html;$('modal').classList.add('ope
 function input(id,label,value,max){return `<div class="field"><label for="${id}">${label}</label><input type="number" id="${id}" inputmode="numeric" step="1" min="0" max="${max}" value="${value}"></div>`}
 let picked='chi';
 function lampSheet(which){picked=which;let arr=vAt(state[which],state.preview??currentClock());let isPez=which==='pez';let base=isPez?arr:[...arr];sheet(`<h2 class="sheet-title">${isPez?'Pez Verde':'Chihiros'}</h2><p class="sheet-sub">${isPez?'Luz ambiente':'Luz principal'} · ${isPez?'RGB 255':'RGB 100'}</p><div class="fields ${isPez?'':'three'}">${input('r','Rojo',base[0],isPez?255:100)}${input('g','Verde',base[1],isPez?255:100)}${input('b','Azul',base[2],isPez?255:100)}${isPez?input('bright','Brillo',base[3],100):''}</div><div class="actions"><button id="previewButton" class="btn">Probar ${isPez?'20':'8'} s</button><button id="restoreButton" class="btn sub">Ceder conexión</button></div><p class="note" style="margin-top:18px">${isPez?'No hay retorno automático en laboratorio: utiliza la aplicación Pez Verde.':'CIELO no restaura AUTO: libera la conexion y recupera tu curva desde My Chihiros.'}</p>`);$('previewButton').onclick=()=>preview(which);$('restoreButton').onclick=()=>restore(which)}
-async function preview(which){if(state.busy)return;let isPez=which==='pez';let m=isPez?255:100,fields=['r','g','b',...(isPez?['bright']:[])];let a=fields.map(id=>{let v=$ (id).value.trim();return /^\d+$/.test(v)?Number(v):NaN});if(a.some((v,i)=>!Number.isInteger(v)||v<0||v>(i===3?100:m))){toast('Revisa los valores');return}if(!state.connected){toast('Conecta el iPhone a Iwagumi-RGB');return}if(!confirm(`Probar ${which==='chi'?'Chihiros':'Pez Verde'} durante ${isPez?20:8} segundos. ¿Continuar?`))return;state.busy=true;try{if(isPez)await api('/api/manual',{r:a[0],g:a[1],b:a[2],bright:a[3],confirm:'daytime',source:'sim'});else await api('/api/chihiros/manual',{r:a[0],g:a[1],b:a[2],confirm:'anyhour'});toast('Prueba enviada');close();await sync()}catch(e){toast(e.message)}finally{state.busy=false}}
-async function restore(which){if(!state.connected){toast('Sin conexión con ATOM');return}state.busy=true;try{await api(which==='pez'?'/api/manual':'/api/chihiros/stop',which==='pez'?{mode:'auto'}:{});toast('AUTO solicitado');close();await sync()}catch(e){toast(e.message)}finally{state.busy=false}}
-async function restoreAll(){if(!state.connected){toast('Sin conexión');return}if(!confirm('Terminar pruebas y devolver Chihiros al programa de My Chihiros y Pez Verde al del ATOM. No se borran las curvas. ¿Continuar?'))return;try{await api('/api/manual',{mode:'auto'});await api('/api/chihiros/stop',{});toast('AUTO solicitado');await sync()}catch(e){toast(e.message)}}
+async function preview(which){if(state.busy)return;let isPez=which==='pez';let m=isPez?255:100,fields=['r','g','b',...(isPez?['bright']:[])];let a=fields.map(id=>{let v=$ (id).value.trim();return /^\d+$/.test(v)?Number(v):NaN});if(a.some((v,i)=>!Number.isInteger(v)||v<0||v>(i===3?100:m))){toast('Revisa los valores');return}if(!state.connected){toast('Conecta el iPhone a la red Bambu o CIELO96-CONFIG');return}if(!confirm(`Probar ${which==='chi'?'Chihiros':'Pez Verde'} manualmente. Primero autoriza envíos 90 s en Centro; después necesitarás recuperar tu programación desde su aplicación. ¿Continuar?`))return;state.busy=true;try{if(isPez)await api('/api/manual',{r:a[0],g:a[1],b:a[2],bright:a[3],lab_manual:'1'});else await api('/api/chihiros/manual',{r:a[0],g:a[1],b:a[2],lab_manual:'1'});toast('Prueba enviada');close();await sync()}catch(e){toast(e.message)}finally{state.busy=false}}
+async function restore(which){
+ if(!state.connected){toast('Sin conexión con ATOM');return}
+ state.busy=true;
+ try{
+  await api('/api/ble/release',{device:which==='pez'?'pez_verde':'chihiros'});
+  toast('Conexion liberada. Recupera tu programa desde la app original.');
+  close();await sync()
+ }catch(e){toast(e.message)}finally{state.busy=false}
+}
+async function restoreAll(){
+ if(!state.connected){toast('Sin conexión');return}
+ if(!confirm('Ceder conexiones Bluetooth sin cambiar la programacion. Despues usa My Chihiros para volver a su curva. ¿Continuar?'))return;
+ try{
+  await api('/api/lab/tx/disarm',{});
+  await api('/api/ble/release',{device:'chihiros'});
+  await api('/api/ble/release',{device:'pez_verde'});
+  toast('Conexiones libres; ninguna orden AUTO enviada.');
+  await sync()
+ }catch(e){toast(e.message)}
+}
 function sceneChoose(name){let times={dawn:900,day:1100,dusk:1340,moon:1400};state.preview=times[name];state.scrub=times[name];$('scrub').value=state.scrub;document.querySelectorAll('.scene').forEach(b=>b.classList.toggle('active',b.dataset.scene===name));render();toast('Vista previa · sin cambios en las luces')}
 function wifiSetup(){
  const d=state.status;
@@ -604,7 +622,7 @@ async function runChTest(n){
 }
 async function chLiveDisableUi(){
  if(!state.connected)return toast('Sin conexión');
- try{await api('/api/chihiros/live/stop',{});toast('Volviendo a AUTO de My Chihiros');await sync()}
+ try{await api('/api/ble/release',{device:'chihiros'});toast('Chihiros liberada: recupera tu curva en My Chihiros');await sync()}
  catch(e){toast(e.message)}
 }
 
