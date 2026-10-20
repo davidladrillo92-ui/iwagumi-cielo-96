@@ -109,6 +109,8 @@ for removed in ('labStart','labScan','labBrowser','labArm','labProbePv','labProb
 assert "await api('/api/lab/start',{});" in actual
 assert "await api('/api/lab/scan',{});" in actual
 assert "await api('/api/lab/stop',{});" in actual
+assert "$('labState')" not in actual
+assert "function labPretty(d)" in actual and "$('cieloLinks')" in actual
 assert "id=\"cielo95Diagnostics\"" in actual
 assert actual.count('id="cielo95Diagnostics"')==1
 assert actual.count('id="diagDownload"')==1
