@@ -27,6 +27,9 @@ assert 'ble_scan_request()' in code and 'ble_scan_result(result)' in code
 assert 'lab.running' in code and 'profileValid(profile)' in code
 assert 'j+=",\\\"lab\\\":"+labJson();' in code
 assert 'LAB_TX_WINDOW_MS=90000UL' in code
+assert 'parseBoundedUInt(srv.arg("avg"),avg,60000)' in code
+assert 'parseBoundedUInt(srv.arg("max"),maximum,60000)' in code
+assert 'positiveInt(srv.arg("avg"),avg)' not in code
 assert 'Cola BLE abortada: autorizacion caducada' in code
 bleworker=(r/'src/cielo_ble_worker.cpp').read_text()
 assert 'scanDiscover()' in bleworker and 'scan->setActiveScan(true)' in bleworker
