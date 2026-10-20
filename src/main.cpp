@@ -352,7 +352,7 @@ static String labJson(){
  const bool clockOK=time(nullptr)>1700000000L;
  const bool profOK=cielo96::profileValid(profile);
  const uint32_t age=millis();
- String j;j.reserve(1250);
+ String j;j.reserve(2600);
  j="{\"schema\":\"cielo-lab-v1\",\"running\":"+String(lab.running?"true":"false");
  j+=",\"session_elapsed_sec\":"+String(lab.running?(age-lab.started)/1000UL:0);
  j+=",\"samples\":"+String(lab.samples)+",\"sample_interval_ms\":15000";
@@ -382,7 +382,16 @@ static String labJson(){
  j+=",\"advertisements\":"+String(lab.lastScan.advertised);
  j+=",\"named_advertisements\":"+String(lab.lastScan.named);
  j+=",\"anonymous_advertisements\":"+String(lab.lastScan.unnamed);
- j+=",\"active_scan\":true,\"scan_duration_requested_sec\":5}";
+ j+=",\"active_scan\":true,\"scan_duration_requested_sec\":5";
+ j+=",\"nearby\":[";
+ for(uint8_t i=0;i<lab.lastScan.observed_count;i++){
+  const auto& entry=lab.lastScan.observed[i];
+  if(i)j+=",";
+  j+="{\"name\":"+jsonQuote(String(entry.name));
+  j+=",\"rssi\":"+String(entry.rssi);
+  j+=",\"nordic_uart\":"+String(entry.nus?"true":"false")+"}";
+ }
+ j+="]}";
  j+=",\"lighting\":{\"scheduler_enabled\":false,\"gatt_tx_armed\":"+String(labTxEnabled()?"true":"false");
  j+=",\"tx_window_remaining_sec\":"+String(labTxEnabled()?(lab.txUntil-age)/1000UL:0);
  j+=",\"tx_arm_count\":"+String(lab.txArmCount)+",\"tx_blocked\":"+String(lab.txBlocked);
@@ -450,7 +459,7 @@ static void diagnosticJson(){
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
  bool warning=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||workerUnavailable||bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
- String j;j.reserve(9500);
+ String j;j.reserve(11500);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
  j+=",\"pilot\":{\"ble_start_requires_button\":true,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
