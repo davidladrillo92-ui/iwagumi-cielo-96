@@ -299,6 +299,17 @@ static bool positiveInt(const String&s,unsigned& n){
  for(size_t i=0;i<s.length();i++){char c=s[i];if(c<'0'||c>'9')return false;x=x*10+(c-'0');if(x>1440)return false;}
  n=x;return true;
 }
+// Los valores de latencia HTTP no son minutos: permitir hasta 60 segundos sin
+// reinterpretar mediciones reales como fallos de ruta/entrada de usuario.
+static bool parseBoundedUInt(const String&s,unsigned&n,unsigned maxValue){
+ if(s.isEmpty()||s.length()>8)return false;
+ uint32_t x=0;
+ for(size_t i=0;i<s.length();i++){
+  char ch=s[i];if(ch<'0'||ch>'9')return false;
+  x=x*10+(ch-'0');if(x>maxValue)return false;
+ }
+ n=x;return true;
+}
 static bool parsePoints(const String&serialized,bool isPv,cielo96::ProfileImage&out){
  if(serialized.isEmpty() || serialized.length()>1700)return false;
  unsigned cols=isPv?5:4,count=0;
@@ -856,9 +867,9 @@ static void configureRoutes(){
  srv.on("/api/lab/browser-sample",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   unsigned count=0,avg=0,maximum=0;
-  if(!positiveInt(srv.arg("count"),count)||count>40||count<1||
-     !positiveInt(srv.arg("avg"),avg)||avg>15000||
-     !positiveInt(srv.arg("max"),maximum)||maximum>15000)return fail(400,"Muestra de latencia incorrecta");
+  if(!parseBoundedUInt(srv.arg("count"),count,40)||count<1||
+     !parseBoundedUInt(srv.arg("avg"),avg,60000)||
+     !parseBoundedUInt(srv.arg("max"),maximum,60000))return fail(400,"Muestra de latencia incorrecta");
   lab.browserSamples+=count;lab.browserAvgMs=avg;
   if(maximum>lab.browserMaxMs)lab.browserMaxMs=maximum;
   record("LAB_HTTP","Latencia desde navegador media "+String(avg)+" ms max "+String(maximum)+" ms");ok();
