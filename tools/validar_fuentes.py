@@ -118,8 +118,24 @@ try:
 finally:
  Path(js_path).unlink(missing_ok=True)
 assert 'CIELO 10 · conexiones automáticas' in actual
+# La SHA-256 JavaScript debe coincidir con OpenSSL/Node: prueba obligatoria
+# porque Safari HTTP no expone crypto.subtle en un origen no seguro.
+sha_js=actual.split('function sha256Local(data){',1)[1].split('async function sha256Firmware(',1)[0]
+sha_code='function sha256Local(data){'+sha_js
+vectors=r"""
+const crypto=require('crypto');
+for(const s of ['', 'abc', 'CIELO-10', 'Hola\u00e1', '0'.repeat(100000)]){
+ const b=Buffer.from(s,'utf8');
+ const ref=crypto.createHash('sha256').update(b).digest('hex');
+ const got=sha256Local(b);
+ if(ref!==got){throw Error('SHA256 web mismatch '+s.slice(0,10)+' '+got+' != '+ref)}
+}
+console.log('SHA256 UI verificado con Node');
+"""
+subprocess.run(['node','-e',sha_code+'\n'+vectors],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
-              '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
+              '/api/chihiros/manual','/api/ble/release','/api/lab/preview','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
  assert route in actual and route in (r/'src/main.cpp').read_text(),route
 flash=Path('/mnt/data/FLASH_ATOM_8MB_COMPLETA_PRIVADA.bin')
