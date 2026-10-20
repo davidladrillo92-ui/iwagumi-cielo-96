@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="10.0.3-RC4-NATURAL-V4-EN-VIVO";
+static constexpr const char* VERSION="11.0.0-RC1-CONTINUO-24H";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -158,6 +158,15 @@ static void statusLedTick(){
 static bool pezManual=false,chiManual=false,chiCieloNight=false,chiAutoPending=false;
 // Modo ACTIVADO EXPLICITAMENTE. Tras reinicio exige pulsar otra vez.
 static bool cieloPvRun=false,cieloChRun=false,cieloChWasDriven=false;
+static bool cieloAlwaysOn=false,cieloResumePending=false;
+static uint32_t cieloLastNightSample=0;
+static uint32_t cieloDaySamples=0,cieloNightSamples=0;
+static uint32_t cieloLastSuccessfulPvAt=0,cieloLastSuccessfulChAt=0;
+struct CieloTrendSample {uint32_t epoch=0,pv=0,ch=0,pvErrors=0,chErrors=0,heap=0;};
+static CieloTrendSample cieloTrend[96]{};
+static uint8_t cieloTrendCount=0,cieloTrendHead=0;
+static uint32_t cieloTrendLast=0;
+static void cieloTrendTick();
 static bool cieloChReturnPending=false,cieloChAwaitResponse=false;
 static bool cieloWatchdogTripped=false;
 static uint8_t cieloChConsecutiveFailures=0,cieloPvConsecutiveFailures=0,cieloReturnTries=0;
@@ -261,6 +270,21 @@ static void jsonSend(int code,const String& s){++httpCount;srv.sendHeader("Cache
 static void fail(int code,const char*msg){jsonSend(code,String("{\"ok\":false,\"error\":")+jsonQuote(msg)+"}");}
 static void ok(){jsonSend(200,"{\"ok\":true}");}
 static bool timeOK(){return time(nullptr)>1700000000L;}
+static void cieloTrendTick(){
+ if(!cieloAlwaysOn || !timeOK())return;
+ uint32_t now=millis();
+ if(cieloTrendLast && now-cieloTrendLast<900000UL)return;
+ cieloTrendLast=now;
+ auto &t=cieloTrend[cieloTrendHead];t.epoch=uint32_t(time(nullptr));
+ t.pv=cieloPvConfirmed;t.ch=cieloChConfirmed;
+ t.pvErrors=devices[0].errors;t.chErrors=devices[1].errors;
+ t.heap=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+ cieloTrendHead=(cieloTrendHead+1)%96;
+ if(cieloTrendCount<96)cieloTrendCount++;
+ time_t ep=time(nullptr);struct tm local{};localtime_r(&ep,&local);
+ const int minutes=local.tm_hour*60+local.tm_min;
+ if(minutes<870 || minutes>=1380)cieloNightSamples++;else cieloDaySamples++;
+}
 static int minuteOfDay(){time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);return x.tm_hour*60+x.tm_min;}
 static String dateTime(){
  if(!timeOK())return "Hora pendiente NTP";
@@ -389,10 +413,26 @@ static String cieloModeJson(){
  j+=",\"ch_last_requested\":["+String(prevCh.r)+","+String(prevCh.g)+","+String(prevCh.b)+"]";
  j+=",\"pv_last_requested_age_sec\":"+String(lastPvDesiredAt?(millis()-lastPvDesiredAt)/1000UL:0);
  j+=",\"ch_last_requested_age_sec\":"+String(lastChDesiredAt?(millis()-lastChDesiredAt)/1000UL:0);
- j+=",\"ch_window_now\":"+String(timeOK()&&minuteOfDay()>=870&&minuteOfDay()<1380?"true":"false");
+ j+=",\"ch_window_now\":"+String(timeOK()?"true":"false");
+ j+=",\"always_on\":"+String(cieloAlwaysOn?"true":"false");
+ j+=",\"pv_online_recent\":"+String(cieloPvRun&&cieloLastSuccessfulPvAt&&millis()-cieloLastSuccessfulPvAt<650000UL?"true":"false");
+ j+=",\"ch_online_recent\":"+String(cieloChRun&&cieloLastSuccessfulChAt&&millis()-cieloLastSuccessfulChAt<650000UL?"true":"false");
+ j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
  j+=",\"return_stored_after_reboot\":"+String(prefs.getBool("v4_ch_takeover",false)?"true":"false");
  j+=",\"note\":\"La recuperacion 0x03 requiere BLE operativo y energia del ATOM\"}";
  return j;
+}
+static String cieloTrendJson(){
+ String j;j.reserve(9000);
+ j="{\"interval_min\":15,\"capacity\":96,\"samples\":"+String(cieloTrendCount);
+ j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
+ j+=",\"history\":[";
+ for(uint8_t n=0;n<cieloTrendCount;n++){
+  const auto &v=cieloTrend[(cieloTrendHead+96-cieloTrendCount+n)%96];
+  if(n)j+=",";
+  j+="["+String(v.epoch)+","+String(v.pv)+","+String(v.ch)+","+String(v.pvErrors)+","+String(v.chErrors)+","+String(v.heap)+"]";
+ }
+ j+="]}";return j;
 }
 static void statusJson(){
  auto p=desiredPv();auto c=desiredCh();bool w=WiFi.status()==WL_CONNECTED;
@@ -400,6 +440,9 @@ static void statusJson(){
  j="{\"firmware\":\""+String(VERSION)+"\",\"ble\":"+String(bleReady?"true":"false")+",\"clockValid\":"+String(timeOK()?"true":"false");
  j+=",\"clock\":"+jsonQuote(dateTime())+",\"wifi\":"+(w?String("true"):String("false"));
  j+=",\"ip\":\"192.168.4.1\",\"homeIp\":"+jsonQuote(w?WiFi.localIP().toString():String(""));
+ j+=",\"homeSsid\":"+jsonQuote(w?WiFi.SSID():storedSSID);
+ j+=",\"wifiRssi\":"+String(w?WiFi.RSSI():0);
+ j+=",\"deviceClockEpoch\":"+String(uint32_t(time(nullptr)));
  j+=",\"wifiStatus\":"+jsonQuote(w?"Router conectado":"No conectado")+",\"wifiConnecting\":false,\"wifiStage\":"+jsonQuote(w?"CONECTADA":"SIN_RED");
  j+=",\"manual\":"+String(pezManual?"true":"false")+",\"power\":"+String(p.brightness>0?"true":"false");
  j+=",\"rgb\":["+String(p.r)+","+String(p.g)+","+String(p.b)+"],\"brightness\":"+String(p.brightness);
@@ -632,10 +675,18 @@ static void diagnosticJson(){
  uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
- bool warning=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||workerUnavailable||bleResultErrors||bleSlowCount||profileRecovery||m.soft_timeouts||otaError||!timeOK();
- String j;j.reserve(11500);
+ bool critical=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
+  workerUnavailable||bleResultErrors||profileRecovery||otaError||!timeOK();
+ bool historical=m.soft_timeouts||bleSlowCount||savedFailures;
+ String j;j.reserve(22000);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
- j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
+ j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+
+  jsonQuote(critical?"incidencia_actual":historical?"avisos_historicos":"sin_avisos_actuales");
+ j+=",\"alerts\":{\"current_critical\":"+String(critical?"true":"false");
+ j+=",\"historical_soft_timeouts\":"+String(m.soft_timeouts);
+ j+=",\"historical_slow_calls\":"+String(bleSlowCount);
+ j+=",\"historical_persistent_faults\":"+String(savedFailures);
+ j+=",\"meaning\":\"Los avisos historicos no significan que la luz haya fallado ahora\"}";
  j+=",\"pilot\":{\"ble_start_requires_button\":false,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
@@ -685,6 +736,7 @@ static void diagnosticJson(){
   localtime_r(&currentEpoch,&clockLocal);
   strftime(clockOffset,sizeof(clockOffset),"%z",&clockLocal);
  }
+ j+=",\"daily_monitoring\":"+cieloTrendJson();
  j+=",\"clock_diagnostics\":{\"epoch\":"+String((uint32_t)currentEpoch);
  j+=",\"valid\":"+String(timeOK()?"true":"false");
  j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
@@ -865,11 +917,18 @@ static void otaUpload(){
 }
 static void configureWifi(){
  String ssid=srv.arg("ssid"),pass=srv.arg("password");
- if(ssid.length()<1||ssid.length()>32||pass.length()>63)return fail(400,"SSID o password fuera de rango");
- if(prefs.putString("ssid",ssid)!=ssid.length())return fail(507,"No se pudo guardar la red");
- prefs.putString("wifi_pw",pass);storedSSID=ssid;storedPass=pass;
- record("WIFI_NUEVA","SSID actualizado (clave omitida)");
- lastWiFiAttempt=0;ok();
+ if(ssid.length()<1||ssid.length()>32||pass.length()<8||pass.length()>63)
+  return fail(400,"SSID o clave WPA2 fuera de rango");
+ if(prefs.putString("ssid",ssid)!=ssid.length() ||
+    prefs.putString("wifi_pw",pass)!=pass.length())
+  return fail(507,"No se pudo guardar la Wi-Fi completa");
+ storedSSID=ssid;storedPass=pass;
+ record("WIFI_NUEVA","Cambio solicitado; la clave no se expone en informes");
+ lastWiFiAttempt=millis()-31000UL;
+ // Antes solo almacenaba el SSID nuevo y quedaba conectado a la Wi-Fi vieja.
+ // Se mantiene AP cifrada de rescate, visible en 192.168.4.1.
+ WiFi.disconnect(false,false);
+ ok();
 }
 static void configureRoutes(){
  const char*keys[]={"X-Cielo-Key","X-Cielo-Sha256"};srv.collectHeaders(keys,2);
@@ -920,12 +979,15 @@ static void configureRoutes(){
    return fail(409,"Existe otra operacion o prueba: termina y repite");
   if(!prefs.putBool("v4_ch_takeover",true))
    return fail(507,"No se pudo proteger el retorno de My Chihiros en NVS");
+  if(!prefs.putBool("v5_always",true))
+   return fail(507,"No se pudo guardar el control continuo en NVS");
+  cieloAlwaysOn=true;cieloResumePending=false;
   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
   cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   cieloStartedAt=millis();lastPvDesired=false;lastChDesired=false;
   lastScheduleAt=millis()-30000UL;
   pezManual=false;chiManual=false;
-  record("V4_ACTIVADA","Natural V4 en vivo: PV 27 puntos, CH 21 puntos, CH vuelve a My Chihiros a las 23:00");
+  record("V5_24H_ACTIVADA","Curvas activas 24h: PV 27, CH 21, RGB cero nocturno, heartbeat 5min");
   ok();
  });
  srv.on("/api/cielo/v4/return",HTTP_POST,[]{
@@ -935,15 +997,15 @@ static void configureRoutes(){
   if(customResumePending||lab.scanPending||lab.probePending||
      contrastStage==1||contrastStage==2||contrastStage==4)
    return fail(409,"Espera a que finalice el ensayo previo");
-  cieloChRun=false;
-  cieloRequestReturn("Boton: volver a curva personalizada My Chihiros");
+  cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
+  cieloRequestReturn("Emergencia: volver a My Chihiros");
   record("V4_BOTON_MYCHIHIROS","Pez Verde sigue usando Natural V4 si estaba activa");
   ok();
  });
  srv.on("/api/cielo/v4/pause",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
   if(srv.arg("confirm")!="PAUSAR_TODO")return fail(403,"Confirma pausa de ambas pantallas");
-  cieloPvRun=false;cieloChRun=false;
+  cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(bleReady)cieloRequestReturn("Pausa total: devolver Chihiros a My Chihiros");
   else {queue.cancel_pending(cielo::ble::Device::Chihiros);record("V4_SIN_BLE","No se puede restaurar Chihiros sin BLE; requiere My Chihiros");}
@@ -1073,6 +1135,29 @@ static void configureRoutes(){
  srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; usa Laboratorio para AUTO manual");});
  srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; activacion pendiente de pruebas opticas");});
  srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Usa Laboratorio con autorizacion para AUTO manual");});
+ srv.on("/api/wifi/scan",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(queue.busy()||otaBusy)return fail(409,"Espera al final de la transmision o actualizacion");
+  WiFi.scanDelete();
+  const int result=WiFi.scanNetworks(true,false);
+  if(result==-2)return fail(503,"No se pudo iniciar la busqueda Wi-Fi");
+  record("WIFI_BUSQUEDA","Escaneo asincrono a peticion del usuario, no modifica red actual");
+  ok();
+ });
+ srv.on("/api/wifi/networks",HTTP_GET,[]{
+  const int count=WiFi.scanComplete();
+  String j="{\"pending\":"+String(count==-1?"true":"false")+",\"ssid\":"+jsonQuote(WiFi.SSID());
+  j+=",\"ip\":"+jsonQuote(WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():"");
+  j+=",\"recovery_ap\":\"CIELO96-CONFIG\",\"recovery_ip\":\"192.168.4.1\",\"networks\":[";
+  if(count>0){
+   const int limit=count>16?16:count;
+   for(int n=0;n<limit;n++){
+    if(n)j+=",";
+    j+="{\"ssid\":"+jsonQuote(WiFi.SSID(n))+",\"rssi\":"+String(WiFi.RSSI(n))+"}";
+   }
+  }
+  j+="]}";jsonSend(200,j);
+ });
  srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
@@ -1149,13 +1234,13 @@ static void lightingTask(){
  }
  if(!bleReady || !wifiCoexistReady() || rescueOpen)return;
  const int minute=minuteOfDay();
- const bool chWindow=(minute>=870 && minute<1380); // Natural V4 14:30-23:00
+ const bool chWindow=true; // CIELO controla 24h, incluido RGB 0/0/0
  // 27 puntos PV, 21 CH. Interpolacion lineal ya probada en cielo_engine.h.
  // Refresco a lo sumo 1 vez cada 30s; con curva estable heartbeat cada 5min.
  if(cieloPvRun && !pezManual && !lab.txArmed && !queue.pending(cielo::ble::Device::PezVerde)){
   const auto v=desiredPv();
   const bool changed=!lastPvDesired||memcmp(&v,&prevPv,sizeof(v))!=0;
-  const bool heartbeat=now-lastPvDesiredAt>(v.brightness?300000UL:900000UL);
+  const bool heartbeat=now-lastPvDesiredAt>300000UL; // cada 5min incluso con brillo cero
   if(changed||heartbeat){
    if(queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,
                    v.r,v.g,v.b,v.brightness,now,90000UL)){
@@ -1181,10 +1266,7 @@ static void lightingTask(){
     prevCh=v;lastChDesired=true;lastChDesiredAt=now;cieloChOrders++;
    }
   }
- }else if(!chWindow && cieloChWasDriven &&
-           !cieloChReturnPending && !cieloChAwaitResponse){
-  cieloRequestReturn("23:00: finalizar Natural V4 Chihiros; Pez Verde continua");
- }
+ } // Sin cambio automatico a My Chihiros por horario.
 }
 static void bleTick(){
  uint32_t now=millis();cielo96::BleResult res{};
@@ -1200,7 +1282,7 @@ static void bleTick(){
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
      (cieloPvRun||cieloChRun||cieloChWasDriven)){
    if(res.device==0 && cieloPvRun){
-    if(res.success){cieloPvConfirmed++;cieloPvConsecutiveFailures=0;}
+    if(res.success){cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;}
     else if(++cieloPvConsecutiveFailures>=3){
      cieloPvRun=false;queue.cancel_pending(cielo::ble::Device::PezVerde);
      cieloFallbacks++;record("V4_PV_FALLO","3 fallos GATT: pausar Pez Verde, queda en ultimo estado conocido");
@@ -1208,7 +1290,7 @@ static void bleTick(){
    }
    if(res.device==1 && (cieloChRun||cieloChWasDriven)){
     if(res.success){
-     cieloChConfirmed++;cieloChWasDriven=true;cieloChConsecutiveFailures=0;
+     cieloChConfirmed++;cieloChWasDriven=true;cieloChConsecutiveFailures=0;cieloLastSuccessfulChAt=now;
     }else if(++cieloChConsecutiveFailures>=2){
      cieloChRun=false;cieloFallbacks++;
      cieloRequestReturn("2 errores BLE de Chihiros; recuperacion de My Chihiros");
@@ -1253,7 +1335,7 @@ static void bleTick(){
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
   const bool schedulerPV=cieloPvRun&&cmd.device==cielo::ble::Device::PezVerde&&cmd.action==cielo::ble::Action::Apply;
-  const bool schedulerCH=cieloChRun&&timeOK()&&minuteOfDay()>=870&&minuteOfDay()<1380&&
+  const bool schedulerCH=cieloChRun&&timeOK()&&
     cmd.device==cielo::ble::Device::Chihiros&&cmd.action==cielo::ble::Action::Apply;
   if(!labTxEnabled()&&!schedulerPV&&!schedulerCH){
     if(cmd.device==cielo::ble::Device::Chihiros && cmd.action==cielo::ble::Action::RestoreAuto){
@@ -1306,6 +1388,8 @@ void setup(){
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
  tracePhase(TracePhase::Profile);
  loadProfile();
+ cieloAlwaysOn=prefs.getBool("v5_always",false);
+ cieloResumePending=cieloAlwaysOn;
  if(prefs.getBool("v4_ch_takeover",false)){
   // Al reiniciar: NO reactivar el programador; solo devolver el control
   // personalizado a My Chihiros despues de establecer Bluetooth.
@@ -1376,7 +1460,8 @@ void loop(){
    prefs.remove("ota_prev");prefs.putUChar("ota_attempts",0);
    record("OTA_ARRANQUE_VALIDADO","Nuevo firmware activo tras 180 segundos; cambios confirmados");
   }
-  record("ARRANQUE_ESTABLE","180 segundos sin reiniciar; NO implica que BLE funcione correctamente");
+  record("ARRANQUE_ESTABLE","180 segundos sin reiniciar");
+
  }
  tracePhase(TracePhase::Http);srv.handleClient();
  tracePhase(TracePhase::Button);physicalButtonTask();
@@ -1407,9 +1492,19 @@ void loop(){
  // Invariante R4.4: iniciar Bluetooth NO habilita el programador de luces.
  // Pruebas de curvas se ejecutan solo en RAM en labTick().
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
- // Programador local 24h: sobrevive a caidas de Internet, no requiere Safari.
- // Pero el interruptor V4 es volátil: tras reinicio se exige reactivarlo.
+ // Reanudar el modo guardado cuando BLE, perfil, hora y recuperación estén listos.
+ if(cieloResumePending && cieloAlwaysOn && currentBootMarkedHealthy &&
+    bleReady && timeOK() && wifiCoexistReady() && !rescueOpen &&
+    cielo96::profileValid(profile) && !customResumePending &&
+    !cieloChReturnPending && !cieloChAwaitResponse && !queue.busy()){
+  cieloResumePending=false;cieloPvRun=true;cieloChRun=true;
+  cieloWatchdogTripped=false;cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
+  lastPvDesired=false;lastChDesired=false;
+  cieloStartedAt=millis();lastScheduleAt=millis()-30000UL;
+  record("V5_AUTO_REANUDADO","Ambas curvas reanudadas tras comprobar hora, WiFi y Bluetooth");
+ }
  lightingTask();
+ cieloTrendTick();
  labTick();
  tracePhase(TracePhase::Led);statusLedTick();
  tracePhase(TracePhase::Idle);delay(3);
