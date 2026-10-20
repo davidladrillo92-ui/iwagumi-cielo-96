@@ -27,7 +27,7 @@ assert 'queue.cancel_pending(cielo::ble::Device::Chihiros)' in code
 assert 'cielo96::ble_custom_resume_request()' in code
 assert 'cieloReturnTries<2' in code and 'V4_RETORNO_GATT_OK' in code
 assert 'V4_PV_FALLO' in code and 'V4_ACTIVADA' in code
-assert 'cieloChRun && timeOK()' in code
+assert 'cieloChRun&&timeOK()' in code
 assert '/api/cielo/v4/start' in code and '/api/cielo/v4/return' in code and '/api/cielo/v4/pause' in code
 assert '!cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse' in code
 
