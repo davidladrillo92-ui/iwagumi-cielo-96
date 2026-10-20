@@ -19,7 +19,7 @@ assert 'BLE_COEX_BLOQUEADO' in code and 'wifi_modem_sleep' in code
 assert 'COEX_AVISO' not in code and 'esp_wifi_set_ps(WIFI_PS_MIN_MODEM)' in code
 assert 'lightingTask();' not in code # arranque BLE no programa luces
 assert 'static bool labTxEnabled()' in code
-for guarded in ('static void submitPv(', 'static void submitCh(', 'static void requestAuto('):
+for guarded in ('static void submitPv(', 'static void submitCh('):
     section=code[code.index(guarded):code.index('}',code.index(guarded))]
     assert 'if(!labTxEnabled())' in section,guarded
 assert 'lab_manual' in code and 'LAB_TX_BLOQUEADA' in code
@@ -39,6 +39,16 @@ assert 'r.observed_count<8' in bleworker
 assert 'lab.lastScan.observed_count' in code and 'nearby' in code
 assert 'res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto)' in code
 assert 'CH_AUTO_ERROR' in code and 'CH_AUTO_NO_ENVIADO' in code
+assert 'CH_AUTO_INSEGURO' in code
+assert 'AUTO Chihiros bloqueado' in code
+assert 'cielo96::ble_probe_request(index)' in code
+assert 'cielo96::ble_probe_result(probe)' in code
+assert 'gatt_probe' in code
+assert 'probeGATT(uint8_t device)' in bleworker
+assert 'if(t.client && t.client->isConnected())t.client->disconnect();' in bleworker
+assert 'ble_probe_request(uint8_t device)' in bleworker
+assert 'No se envio comando AUTO' not in code
+assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
 assert '9.6.0-R4.4.2-AUTO-BLE-PV' in code
@@ -78,7 +88,7 @@ assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
 
 assert '<title>CIELO 9.6 R4.4.2 · Auto BLE</title>' in actual
 assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
-for identifier in ('labStart','labScan','labBrowser','labArm','labAuto','labReport','labMetrics'):
+for identifier in ('labStart','labScan','labBrowser','labArm','labProbePv','labProbeCh','labCh10','labCh20','labCh35','labReport','labMetrics'):
  assert ('id="'+identifier+'"') in actual,identifier
 assert "n==='lab'?'Lab'" in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
