@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.4.2-AUTO-BLE-PV";
+static constexpr const char* VERSION="10.0.0-RC1-CENTRO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -410,6 +410,16 @@ static String labJson(){
   j+=",\"reason\":"+jsonQuote(String(probe.reason))+"}";
  }
  j+="]}";
+ j+=",\"links\":{\"pez_verde\":{";
+ for(uint8_t linkIndex=0;linkIndex<2;linkIndex++){
+  const auto link=cielo96::ble_link_status(linkIndex);
+  if(linkIndex)j+=",\"chihiros\":{";
+  j+="\"connected\":"+String(link.connected?"true":"false");
+  j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
+  j+=",\"release_count\":"+String(link.release_count);
+  j+=",\"last_disconnect_ms\":"+String(link.last_disconnect_ms)+"}";
+ }
+ j+="}";
  j+=",\"lighting\":{\"scheduler_enabled\":false,\"gatt_tx_armed\":"+String(labTxEnabled()?"true":"false");
  j+=",\"tx_window_remaining_sec\":"+String(labTxEnabled()?(lab.txUntil-age)/1000UL:0);
  j+=",\"tx_arm_count\":"+String(lab.txArmCount)+",\"tx_blocked\":"+String(lab.txBlocked);
@@ -509,6 +519,14 @@ static void diagnosticJson(){
  j+=",\"tx_frames\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+"},\"chihiros\":{\"cielo_night_enabled\":"+String(chiCieloNight?"true":"false");
  j+=",\"ble_active\":"+String(bleReady?"true":"false")+",\"auto_restore_pending\":"+String(chiAutoPending?"true":"false")+",\"tx_frames\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+"}}";
  j+=",\"bluetooth\":{\"worker_heartbeat_age_ms\":"+String(millis()-cielo96::ble_last_heartbeat());
+ for(uint8_t linkIndex=0;linkIndex<2;linkIndex++){
+  const auto link=cielo96::ble_link_status(linkIndex);
+  j+=",\"link_";
+  j+=linkIndex?"chihiros":"pez_verde";
+  j+="\":{\"connected\":"+String(link.connected?"true":"false");
+  j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
+  j+=",\"release_count\":"+String(link.release_count)+"}";
+ }
  j+=",\"queued\":"+String(m.submitted)+",\"superseded\":"+String(m.superseded)+",\"failed\":"+String(m.failed);
  j+=",\"timeouts\":"+String(m.soft_timeouts)+",\"retries\":"+String(m.retries)+",\"max_call_ms\":"+String(bleDurationMax);
  j+=",\"slow_calls\":"+String(bleSlowCount);
@@ -697,6 +715,41 @@ static void configureRoutes(){
   if(!cielo96::ble_probe_request(index)){lab.probeRejected++;return fail(503,"Cola de GATT ocupada");}
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
+ });
+ srv.on("/api/ble/release",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(!bleReady)return fail(423,"Bluetooth aun no inicializado");
+  if(queue.busy()||lab.probePending||lab.scanPending)return fail(409,"Espera a que termine la operacion Bluetooth");
+  const String device=srv.arg("device");
+  if(device!="chihiros"&&device!="pez_verde")return fail(400,"Elige una pantalla valida");
+  const uint8_t index=device=="chihiros"?1:0;
+  if(!cielo96::ble_release_request(index))return fail(503,"No se pudo solicitar la liberacion");
+  record("BLE_CEDER",device+" liberacion solicitada sin ordenes RGB");
+  ok();
+ });
+ srv.on("/api/lab/preview",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(!labTxEnabled()||srv.arg("confirm")!="ENSAYO_CURVA")return fail(423,"Autoriza primero el ensayo de curva (90 s)");
+  if(!timeOK()||!cielo96::profileValid(profile))return fail(503,"Hora o curva sin validar");
+  const String screen=srv.arg("screen");
+  const String moment=srv.arg("moment");
+  int minute=-1;
+  if(moment=="amanecer")minute=900;
+  else if(moment=="mediodia")minute=1040;
+  else if(moment=="atardecer")minute=1340;
+  if(minute<0)return fail(400,"Selecciona amanecer, mediodia o atardecer");
+  if(screen=="pez_verde"){
+   auto v=cielo::at(profile.pv,profile.pvCount,minute);
+   pezManual=true;pezManualUntil=millis()+20000UL;
+   submitPv(v,20000);
+   record("CURVA_PREVIA_PV",moment+" RGB "+String(v.r)+"/"+String(v.g)+"/"+String(v.b));
+  }else if(screen=="chihiros"){
+   auto v=cielo::at(profile.ch,profile.chCount,minute);
+   chiManual=true;chiManualUntil=millis()+8000UL;
+   submitCh(v,8000);
+   record("CURVA_PREVIA_CH",moment+" RGB "+String(v.r)+"/"+String(v.g)+"/"+String(v.b));
+  }else return fail(400,"Pantalla no valida");
+  ok();
  });
  srv.on("/api/lab/tx/arm",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
