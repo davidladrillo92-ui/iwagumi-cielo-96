@@ -56,7 +56,16 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '10.0.1-RC2-CENTRO-LIMPIO' in code
+assert '10.0.2-RC3-PRUEBA-30-RETORNO' in code
+assert 'CH_CONTRASTE_INICIO' in code
+assert 'CH_CONTRASTE_30_GATT_OK' in code
+assert 'CH_CONTRASTE_CADUCADO' in code
+assert 'chihiros_contrast' in code and '/api/chihiros/contrast/start' in code
+assert 'contrastStage!=2' in code and 'contrastStage=4' in code
+assert 'chiCieloNight=false;chiManual=true' in code
+assert 'if(queue.busy()||contrastStage==1||contrastStage==4)' in code
+assert "30,30,30,0,millis(),45000" in code
+
 assert 'ble_release_request(index)' in code and '/api/ble/release' in code
 assert 'releaseIdleLinks()' in bleworker and 'BLE_IDLE_RELEASE_MS=5000UL' in bleworker
 assert 'ble_link_status(linkIndex)' in code
@@ -99,9 +108,9 @@ assert 'X-Cielo-Sha256' in code and 'otaDigestOut' in code
 assert 'if(rescueOpen)return fail(403' in code
 assert 'Update.begin' in code and 'Update.end(true)' in code
 
-assert '<title>CIELO 10 RC2 · Centro simplificado</title>' in actual
+assert '<title>CIELO 10 RC3 · Contraste y retorno</title>' in actual
 assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
-for identifier in ('labGuided','cieloLinks','releaseCh','releasePv','restoreCustomTest','restoreCustomState','diagView','diagDownload','otaInstall'):
+for identifier in ('labGuided','cieloLinks','releaseCh','releasePv','restoreCustomTest','restoreCustomState','contrast30','contrastCancel','contrastState','diagView','diagDownload','otaInstall'):
  assert ('id="'+identifier+'"') in actual,identifier
 for removed in ('labStart','labScan','labBrowser','labArm','labProbePv','labProbeCh','labCh10','labCh20','labCh35','labReport','labMetrics'):
  assert ('id="'+removed+'"') not in actual,removed
@@ -133,7 +142,13 @@ try:
  subprocess.run(['node','--check',js_path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 finally:
  Path(js_path).unlink(missing_ok=True)
-assert 'CIELO 10 RC2 · Centro simplificado' in actual
+assert 'CIELO 10 RC3 · Contraste y retorno' in actual
+assert "await api('/api/chihiros/contrast/start',{confirm:'ENSAYO_30_30_30'})" in actual
+assert "await api('/api/chihiros/my-curve-test',{confirm:'PROBAR_CURVA_MY_CHIHIROS'})" in actual
+assert "$('restoreCustomTest').disabled=ctr.stage!=='esperando_confirmacion_visual'" in actual
+assert 'function testMyChihirosCurve()' in actual
+assert 'async function contrast30()' in actual
+
 assert 'function testMyChihirosCurve()' in actual
 assert '/api/chihiros/my-curve-test' in actual and '/api/chihiros/my-curve-test' in code
 assert 'PROBAR_CURVA_MY_CHIHIROS' in actual and 'PROBAR_CURVA_MY_CHIHIROS' in code
