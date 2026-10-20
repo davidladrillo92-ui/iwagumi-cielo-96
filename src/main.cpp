@@ -800,7 +800,8 @@ static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
   otaAllowed=tokenEqual() && physicalOtaGrant() && currentBootMarkedHealthy &&
-             !labTxEnabled() && !queue.busy() && !otaBusy;
+             !labTxEnabled() && !queue.busy() && !otaBusy &&
+             !cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse;
   otaSuccess=false;otaError=false;otaBytes=0;otaDigestStop();
   if(!otaAllowed){lastOtaError="Requiere clave y permiso de 90s del boton ATOM";otaError=true;return;}
   const String expected=srv.header("X-Cielo-Sha256");
@@ -1370,6 +1371,9 @@ void loop(){
  // Invariante R4.4: iniciar Bluetooth NO habilita el programador de luces.
  // Pruebas de curvas se ejecutan solo en RAM en labTick().
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
+ // Programador local 24h: sobrevive a caidas de Internet, no requiere Safari.
+ // Pero el interruptor V4 es volátil: tras reinicio se exige reactivarlo.
+ lightingTask();
  labTick();
  tracePhase(TracePhase::Led);statusLedTick();
  tracePhase(TracePhase::Idle);delay(3);
