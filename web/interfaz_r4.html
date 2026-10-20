@@ -177,7 +177,7 @@ function render(){
  if($('chi931Status'))$('chi931Status').textContent=d?.chi931Active?'Curva Aurora 9.3.1 guardada en ATOM · activa CIELO para verla.':'Curva anterior sin sobrescribir; puedes aplicar el nuevo diseño.';
  if($('chi931On'))$('chi931On').disabled=!!d?.chi931Active||!!d?.chContinuous||!!d?.chActive||!state.connected;
  if($('chi931Off'))$('chi931Off').disabled=!d?.chi931Backup||!!d?.chContinuous||!!d?.chActive||!state.connected;
- const v4=d?.cieloV4||{};
+ /* Estado ya disponible en v4. */
  if($('chNightStatus'))$('chNightStatus').textContent=
   v4.return_pending?'Recuperando My Chihiros…':
   v4.chihiros_active&&v4.pez_verde_active?'CIELO controla las dos luces 24 horas':
