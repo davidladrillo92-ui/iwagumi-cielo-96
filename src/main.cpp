@@ -1122,6 +1122,25 @@ static void bleTick(){
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
   queue.complete(res.sequence,res.success,now);bleResultCount++;
+  // Los resultados de la curva Natural V4 no son ACK ópticos.
+  if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
+     (cieloPvRun||cieloChRun||cieloChWasDriven)){
+   if(res.device==0 && cieloPvRun){
+    if(res.success){cieloPvConfirmed++;cieloPvConsecutiveFailures=0;}
+    else if(++cieloPvConsecutiveFailures>=3){
+     cieloPvRun=false;queue.cancel_pending(cielo::ble::Device::PezVerde);
+     cieloFallbacks++;record("V4_PV_FALLO","3 fallos GATT: pausar Pez Verde, queda en ultimo estado conocido");
+    }
+   }
+   if(res.device==1 && (cieloChRun||cieloChWasDriven)){
+    if(res.success){
+     cieloChConfirmed++;cieloChWasDriven=true;cieloChConsecutiveFailures=0;
+    }else if(++cieloChConsecutiveFailures>=2){
+     cieloChRun=false;cieloFallbacks++;
+     cieloRequestReturn("2 errores BLE de Chihiros; recuperacion de My Chihiros");
+    }
+   }
+  }
   if(contrastStage==1 && res.device==1 &&
      res.action==static_cast<uint8_t>(cielo::ble::Action::Apply)){
    contrastStage=res.success?2:3;
@@ -1143,9 +1162,26 @@ static void bleTick(){
  queue.tick(now);
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Web sigue activo; tarea BLE no liberada artificialmente");}
+ // Selector My Chihiros 0x03 tiene prioridad sobre cualquier nueva orden RGB.
+ if(cieloChReturnPending && !queue.busy() && !customResumePending &&
+    !lab.scanPending && !lab.probePending &&
+    (int32_t)(now-cieloReturnRetryAt)>=0){
+   if(cielo96::ble_custom_resume_request()){
+    cieloChReturnPending=false;cieloChAwaitResponse=true;
+    customResumePending=true;customResumeRequested=now;cieloReturnTries++;
+    record("V4_RETORNO_ENVIANDO",String("Intento ")+String(cieloReturnTries)+" modo personalizado 0x03");
+   }else{
+    cieloReturnRetryAt=now+2500UL;
+   }
+ }
+ if(cieloChReturnPending||cieloChAwaitResponse||customResumePending||
+    lab.scanPending||lab.probePending)return;
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
-  if(!labTxEnabled()){
+  const bool schedulerPV=cieloPvRun&&cmd.device==cielo::ble::Device::PezVerde&&cmd.action==cielo::ble::Action::Apply;
+  const bool schedulerCH=cieloChRun&&timeOK()&&minuteOfDay()>=870&&minuteOfDay()<1380&&
+    cmd.device==cielo::ble::Device::Chihiros&&cmd.action==cielo::ble::Action::Apply;
+  if(!labTxEnabled()&&!schedulerPV&&!schedulerCH){
     if(cmd.device==cielo::ble::Device::Chihiros && cmd.action==cielo::ble::Action::RestoreAuto){
      chiAutoPending=false;record("CH_AUTO_NO_ENVIADO","AUTO bloqueado; accion fisica pendiente");
     }
