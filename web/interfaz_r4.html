@@ -107,8 +107,8 @@
 <script>
 'use strict';
 const $=s=>document.getElementById(s),clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),pad=n=>String(n).padStart(2,'0'),fmt=t=>(t===1440?'24:00':pad(Math.floor(t/60)%24)+':'+pad(Math.floor(t%60)));
-const CHI=[[870,0,0,0],[880,4,3,1],[890,9,7,2],[900,18,14,5],[910,30,25,10],[920,51,45,29],[930,65,60,55],[940,70,65,60],[1310,70,65,60],[1320,65,60,55],[1330,61,50,29],[1340,56,41,15],[1350,48,27,8],[1360,37,15,2],[1370,22,5,0],[1380,1,1,2],[1440,0,0,0]];
-const PEZ=[[870,210,0,145,0],[875,210,0,145,2],[885,255,0,140,7],[895,255,12,120,13],[905,255,45,110,19],[915,255,100,78,25],[925,255,174,145,25],[935,240,238,230,20],[940,240,238,230,20],[1270,240,238,230,20],[1285,255,218,145,30],[1300,255,164,31,38],[1315,255,104,3,46],[1325,255,85,0,50],[1335,255,49,3,46],[1345,255,17,20,40],[1355,225,6,30,28],[1365,172,5,45,18],[1370,190,16,85,12],[1375,255,72,36,5],[1377,218,112,80,4],[1379,155,142,160,2],[1380,130,156,187,1],[1390,130,156,187,1],[1430,130,156,187,1],[1439,130,156,187,1],[1440,130,156,187,0]];
+const CHI=[[870,0,0,0],[875,1,1,1],[880,2,2,2],[890,7,7,7],[900,18,18,18],[910,30,29,28],[920,44,42,40],[930,57,54,51],[940,70,65,60],[1270,70,65,60],[1290,68,64,60],[1310,63,60,57],[1330,54,53,52],[1340,47,47,46],[1350,40,40,40],[1360,29,29,29],[1365,22,22,22],[1370,15,15,15],[1375,7,7,7],[1380,0,0,0],[1440,0,0,0]];
+const PEZ=[[870,210,0,145,0],[875,225,130,145,1],[885,240,135,145,4],[895,250,130,120,9],[905,255,130,110,15],[915,255,145,110,22],[925,255,174,145,25],[935,240,238,230,20],[940,240,238,230,20],[1270,240,238,230,20],[1285,255,218,145,30],[1300,255,164,31,38],[1315,255,104,3,46],[1325,255,85,0,50],[1335,255,49,3,46],[1345,255,17,20,40],[1355,225,6,30,28],[1365,205,18,47,22],[1370,198,26,57,19],[1375,194,35,66,16],[1380,190,45,75,14],[1385,187,55,85,12],[1390,184,70,95,10],[1395,178,87,109,8],[1405,151,128,154,4],[1430,130,156,187,1],[1440,130,156,187,0]];
 const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false,status:null,view:'light',curve:'both',scrub:1340,preview:null,busy:false,updated:0,dirty:{chi:false,pez:false},editWhich:'pez',editIndex:0};
 let toastTimer;
 function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3600)}
@@ -165,7 +165,7 @@ function render(){
  $('curveChiPct').textContent=Math.max(...vv)+'%';
  $('curvePezRgb').textContent='R '+pp[0]+' · G '+pp[1]+' · B '+pp[2];
  $('curvePezPct').textContent=pp[3]+'%';
- $('editMessage').textContent=state.curve==='both'?'Selecciona una luz. Añade o edita puntos y pulsa Guardar.':state.curve==='chi'?'Chihiros · Guarda el perfil y pulsa Probar curva CIELO para ensayarlo 90 s.':'Pez Verde · Guardar actualiza su curva automática.';
+ $('editMessage').textContent=state.curve==='both'?'Selecciona una luz. Añade o edita puntos y pulsa Guardar.':state.curve==='chi'?'Chihiros · Al guardar, CIELO aplicará los nuevos puntos durante su control 24 h.':'Pez Verde · Al guardar, CIELO aplicará los nuevos puntos en los siguientes envíos.';
  if($('stormStatus'))$('stormStatus').textContent=d?.storm?'Tormenta en marcha · '+(d.stormLeft||0)+' s restantes':d?.stormStatus||'Lista para iniciar';
  if($('stormMetrics'))$('stormMetrics').textContent='Chihiros · '+(d?.stormChiWrites||0)+' lotes | Pez Verde · '+(d?.stormPezWrites||0)+' lotes | Reconexiones CH · '+(d?.stormChiReconnections||0)+' | Fallos CH/PV · '+(d?.stormChiFailures||0)+'/'+(d?.stormPezFailures||0)+' | Separación BLE máxima CH · '+((d?.stormChiMaxGapMs||0)/1000).toFixed(1)+' s | Relámpagos · '+(d?.stormLightning||0)+'/2';
  if($('stormRestore'))$('stormRestore').textContent=d?.storm?'Prueba en curso; restauraciones aún no necesarias':d?.stormPendingRestore?'Restauración pendiente: Chihiros AUTO '+(d.stormChiAutoSent?'enviado':'pendiente')+' · Pez Verde '+(d.stormPezRestored?'orden normal enviada':'pendiente'):(d?.stormChiAutoSent||d?.stormPezRestored)?'Restauración software: CH AUTO '+(d.stormChiAutoSent?'enviado':'pendiente')+' · PV '+(d.stormPezRestored?'reenviado':'pendiente')+'. Comprueba físicamente ambas luces.':'Último informe disponible en el botón.';
@@ -694,18 +694,7 @@ async function chLiveDisableUi(){
 }
 
 let labProbeBusy=false;
-function labPretty(d){
- const links=d.links||{},c=d.checks||{},cur=d.chihiros_my_curve||{};
- const status=t=>t?.connected?'ocupada por CIELO':'libre';
- $('cieloLinks').textContent='Pez Verde: '+status(links.pez_verde)+' · Chihiros: '+status(links.chihiros)+' · red '+(c.wifi?'conectada':'sin Wi-Fi')+' · BLE '+(c.ble_worker?'activo':'pendiente');
- const ctr=d.chihiros_contrast||{};
- $('restoreCustomTest').disabled=ctr.stage!=='esperando_confirmacion_visual';
- $('contrast30').disabled=ctr.stage==='enviando_30'||ctr.stage==='restaurando_curva';
- $('contrastState').textContent='Estado de prueba: '+(ctr.stage||'sin_prueba')+
-  (ctr.stage==='esperando_confirmacion_visual'?' · observa la bajada de luz y pulsa paso 2 antes de 75 segundos':'');
- $('restoreCustomState').textContent=cur.pending?'Seleccionando curva personalizada de My Chihiros…':
-   (cur.last_result||'No se ha enviado ninguna orden AUTO de escenas. El resultado visual se comprueba a simple vista.');
-}
+function labPretty(d){ /* Pruebas históricas ocultas: resumen en el único Informe Maestro. */ }
 async function labRefresh(){
  if(!isLive())return;
  try{labPretty(await api('/api/lab/status'))}catch(e){if($('cieloLinks'))$('cieloLinks').textContent='Sin datos Bluetooth: '+e.message}
@@ -815,12 +804,13 @@ $('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1',
 $('serviceRefresh').onclick=serviceRefresh;
 $('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;
 try{const key=localStorage.getItem('cieloOtaKey');if(key){$('otaSecret').value=key;$('otaRemember').checked=true}}catch(_){};
-$('releaseCh').onclick=()=>releaseLight('chihiros');
-$('releasePv').onclick=()=>releaseLight('pez_verde');
 $('labGuided').onclick=labGuided;
-$('restoreCustomTest').onclick=testMyChihirosCurve;
-$('contrast30').onclick=contrast30;
-$('contrastCancel').onclick=cancelContrast;
-$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(!state.preview){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000);setInterval(()=>{if(state.view==='lab')labRefresh()},10000)}
+$('chart').onclick=e=>{
+ const rect=$('chart').getBoundingClientRect();
+ const x=((e.clientX-rect.left)/rect.width*338-5)/327;
+ state.scrub=Math.max(0,Math.min(1440,Math.round(x*1440)));
+ state.preview=state.scrub;$('scrub').value=state.scrub;render();
+};
+$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(state.preview===null){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000);setInterval(()=>{if(state.view==='lab')labRefresh()},10000)}
 window.addEventListener('DOMContentLoaded',init);
 </script></body></html>
