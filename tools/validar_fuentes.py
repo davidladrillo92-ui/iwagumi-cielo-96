@@ -74,7 +74,7 @@ try:
  subprocess.run(['node','--check',js_path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 finally:
  Path(js_path).unlink(missing_ok=True)
-assert 'CIELO 9.6 R4.3.5 · firmware de pruebas' in actual
+assert 'CIELO 9.6 R4.4 · laboratorio experimental' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
