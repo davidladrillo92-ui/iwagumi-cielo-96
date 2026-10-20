@@ -108,6 +108,9 @@ struct LabState {
  bool txArmed=false;
  uint32_t txUntil=0,txArmCount=0,txBlocked=0;
  uint32_t dryRunChecks=0;
+ uint32_t dryRunChecksum=0;
+ uint8_t pvSimR=0,pvSimG=0,pvSimB=0,pvSimBrightness=0;
+ uint8_t chSimR=0,chSimG=0,chSimB=0;
 };
 static LabState lab;
 static constexpr uint32_t LAB_TX_WINDOW_MS=90000UL;
@@ -381,6 +384,10 @@ static String labJson(){
  j+=",\"tx_window_remaining_sec\":"+String(labTxEnabled()?(lab.txUntil-age)/1000UL:0);
  j+=",\"tx_arm_count\":"+String(lab.txArmCount)+",\"tx_blocked\":"+String(lab.txBlocked);
  j+=",\"dry_run_checks\":"+String(lab.dryRunChecks);
+ j+=",\"dry_run_checksum\":"+String(lab.dryRunChecksum);
+ j+=",\"dry_run_pez_rgb\":["+String(lab.pvSimR)+","+String(lab.pvSimG)+","+String(lab.pvSimB)+"]";
+ j+=",\"dry_run_pez_brightness\":"+String(lab.pvSimBrightness);
+ j+=",\"dry_run_chihiros_rgb\":["+String(lab.chSimR)+","+String(lab.chSimG)+","+String(lab.chSimB)+"]";
  j+=",\"pv_tx_frames\":"+String(devices[0].write_calls);
  j+=",\"ch_tx_frames\":"+String(devices[1].write_calls)+"}}";
  return j;
@@ -415,9 +422,16 @@ static void labTick(){
  const uint32_t block=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  if(heap<lab.heapMin)lab.heapMin=heap;
  if(block<lab.heapLargestMin)lab.heapLargestMin=block;
- lab.dryRunChecks++; // Evaluar curvas en RAM; NO envia ordenes BLE.
- cielo::at(profile.pv,profile.pvCount,minuteOfDay());
- cielo::at(profile.ch,profile.chCount,minuteOfDay());
+ // Evaluacion real de ambas curvas en RAM; los resultados se guardan como
+ // prueba verificable, pero NUNCA se trasladan a la cola GATT.
+ if(timeOK()){
+  const auto pv=cielo::at(profile.pv,profile.pvCount,minuteOfDay());
+  const auto ch=cielo::at(profile.ch,profile.chCount,minuteOfDay());
+  lab.pvSimR=pv.r;lab.pvSimG=pv.g;lab.pvSimB=pv.b;lab.pvSimBrightness=pv.brightness;
+  lab.chSimR=ch.r;lab.chSimG=ch.g;lab.chSimB=ch.b;
+  lab.dryRunChecksum^=(uint32_t(pv.r)<<24)^(uint32_t(pv.brightness)<<16)^(uint32_t(ch.r)<<8)^uint32_t(ch.b);
+  lab.dryRunChecks++;
+ }
 }
 static void labStart(){
  lab=LabState{};
