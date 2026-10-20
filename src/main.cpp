@@ -675,7 +675,8 @@ static void startOtaResponse(){
 static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
-  otaAllowed=tokenEqual() && physicalOtaGrant() && !otaBusy;
+  otaAllowed=tokenEqual() && physicalOtaGrant() && currentBootMarkedHealthy &&
+             !labTxEnabled() && !queue.busy() && !otaBusy;
   otaSuccess=false;otaError=false;otaBytes=0;otaDigestStop();
   if(!otaAllowed){lastOtaError="Requiere clave y permiso de 90s del boton ATOM";otaError=true;return;}
   const String expected=srv.header("X-Cielo-Sha256");
@@ -716,6 +717,10 @@ static void otaUpload(){
   }else if(!Update.end(true)){
    lastOtaError="BIN no validado como firmware ESP32-S3";otaError=true;Update.abort();
   }else{
+   // Pista para regreso automatico ante reinicios tempranos repetidos. No
+   // garantiza rescate de una imagen que ni siquiera llegue a ejecutar setup().
+   prefs.putString("ota_prev",otaRunningPartition);
+   prefs.putUChar("ota_attempts",0);
    otaSuccess=true;lastOtaError="SHA256 coincide y Update acepta el BIN";
    otaPhysicalUntil=0;
    record("OTA_OK",String("bytes=")+String(otaBytes)+" validado");
@@ -964,6 +969,22 @@ void setup(){
  prefs.putUInt("boots",previousBootCount+1);
  prefs.putBool("clean",false);
  const esp_partition_t *running=esp_ota_get_running_partition();
+ const String previousOtaApp=prefs.getString("ota_prev","");
+ if(running && (previousOtaApp=="app0"||previousOtaApp=="app1") &&
+    previousOtaApp!=String(running->label)){
+  const uint8_t attempts=prefs.getUChar("ota_attempts",0)+1;
+  prefs.putUChar("ota_attempts",attempts);
+  Serial.printf("CIELO OTA candidato: intento de arranque %u; version %s\n",attempts,VERSION);
+  if(attempts>=3){
+   const esp_partition_subtype_t back=previousOtaApp=="app0"?
+    ESP_PARTITION_SUBTYPE_APP_OTA_0:ESP_PARTITION_SUBTYPE_APP_OTA_1;
+   const esp_partition_t *safe=esp_partition_find_first(ESP_PARTITION_TYPE_APP,back,nullptr);
+   if(safe && esp_ota_set_boot_partition(safe)==ESP_OK){
+    Serial.printf("CIELO OTA: 3 arranques sin validar; volver a %s\n",previousOtaApp.c_str());
+    delay(150);ESP.restart();
+   }
+  }
+ }
  const esp_partition_t *next=esp_ota_get_next_update_partition(nullptr);
  otaRunningPartition=running?running->label:"desconocida";
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
@@ -1026,6 +1047,10 @@ void loop(){
  if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
   currentBootMarkedHealthy=true;
   prefs.putBool("clean",true);
+  if(prefs.getString("ota_prev","").length()){
+   prefs.remove("ota_prev");prefs.putUChar("ota_attempts",0);
+   record("OTA_ARRANQUE_VALIDADO","Nuevo firmware activo tras 180 segundos; cambios confirmados");
+  }
   record("ARRANQUE_ESTABLE","180 segundos sin reiniciar; NO implica que BLE funcione correctamente");
  }
  tracePhase(TracePhase::Http);srv.handleClient();
