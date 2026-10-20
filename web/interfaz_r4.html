@@ -112,15 +112,27 @@
 <p class="note">Bluetooth se inicia automáticamente tras 30 segundos con Bambu conectado. El botón de 3–7 segundos sigue disponible de respaldo. Escaneo activo de 5 segundos, sin conexión GATT. Busca Chihiros por prefijo DYSL60 (por ejemplo DYSL60D1B0E18A7253). Si otra aplicación ya está conectada a una pantalla, puede no anunciarse.</p>
 </section>
 <section class="livePanel">
-<strong>Banco GATT · pruebas ópticas autorizadas</strong>
+<strong>Banco GATT · conexión sin escritura</strong>
+<p class="note">Comprueba conexión, servicio y característica de escritura. No transmite cambios de luz; al terminar libera la conexión. Puede interrumpir temporalmente el enlace de My Chihiros, por eso hazlo con las aplicaciones originales cerradas.</p>
+<div class="labButtons">
+<button id="labProbePv">Verificar GATT Pez Verde (sin escribir)</button>
+<button id="labProbeCh">Verificar GATT Chihiros (sin escribir)</button>
+</div>
+<p id="labProbeState" class="note">Sin sondas GATT todavía.</p>
+</section>
+<section class="livePanel">
+<strong>Banco óptico · pruebas manuales autorizadas</strong>
 <div class="labDanger"><p class="note" style="color:#f3d1b7;margin:0">Al enviar órdenes, puede cambiar la luz REAL del acuario. No se activa con la batería de observación ni al encender Bluetooth. Antes de probar Chihiros, ten My Chihiros disponible para recuperar AUTO.</p></div>
 <p id="labTxState" class="note">Envíos bloqueados.</p>
 <div class="labButtons">
 <button class="danger" id="labArm">Autorizar envíos 90 s</button><button id="labDisarm">Bloquear envíos</button>
 <button class="danger" id="labPv">Pez Verde · blanco tenue</button><button class="danger" id="labCh">Chihiros · blanco suave</button>
-<button id="labAuto">Chihiros · solicitar AUTO</button>
+<button class="danger" id="labCh10">Chihiros · nivel 10/10/10</button>
+<button class="danger" id="labCh20">Chihiros · nivel 20/20/20</button>
+<button class="danger" id="labCh35">Chihiros · nivel 35/32/28</button>
 </div>
-<p class="note">Las órdenes GATT completadas no garantizan respuesta visual. El vencimiento bloquea nuevos comandos; no restaura por sí mismo el estado óptico de ninguna pantalla.</p>
+<div class="labDanger"><p class="note" style="color:#f3d1b7;margin:0"><strong>AUTO deshabilitado.</strong> La orden usada antes seleccionaba escenas y apagó la Chihiros. Solo restablece tu programación con My Chihiros. No pulses otras opciones hasta comprobar visualmente el resultado.</p></div>
+<p class="note">Las órdenes GATT completadas no garantizan respuesta visual. El vencimiento bloquea nuevos comandos; NO restaura la programación anterior. Los niveles solo sirven para pruebas supervisadas.</p>
 </section>
 </main>
 <nav class="bottom" aria-label="Secciones"><button class="tab active" data-view="light"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 17a9 9 0 1 1 12 0M9 20h6m-5 3h4"/></svg>Luz</button><button class="tab" data-view="curves"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 18L8 12l5 3 9-10M2 22h20"/></svg>Curvas</button><button class="tab" data-view="service"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2v4m0 12v4M4.9 4.9l2.8 2.8m8.6 8.6 2.8 2.8M2 12h4m12 0h4M4.9 19.1l2.8-2.8m8.6-8.6 2.8-2.8"/><circle cx="12" cy="12" r="4"/></svg>Servicio</button><button class="tab" data-view="lab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3v6l-5 9a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3M8 3h8M7 15h10"/></svg>Pruebas</button></nav></div>
@@ -580,7 +592,7 @@ async function chLiveDisableUi(){
 let labProbeBusy=false;
 function labPretty(d){
  const b=v=>v?'Correcto':'Pendiente';
- const c=d.checks||{},sc=d.discovery_scan||d.passive_scan||{},tx=d.lighting||{},http=d.browser_rtt||{};
+ const c=d.checks||{},sc=d.discovery_scan||d.passive_scan||{},tx=d.lighting||{},http=d.browser_rtt||{},probe=d.gatt_probe||{};
  $('labState').textContent=d.running?'Batería en marcha · '+d.samples+' muestras · '+d.session_elapsed_sec+' s':'Batería detenida · '+d.samples+' muestras acumuladas';
  $('labMetrics').textContent=[
  'Red: '+b(c.wifi)+' · coexistencia: '+b(c.coexistence)+' · AP: '+b(c.ap),
@@ -599,6 +611,7 @@ function labPretty(d){
  'RGB Chihiros previsto: '+(tx.dry_run_chihiros_rgb||[]).join('/')+' · tramas PV/CH: '+tx.pv_tx_frames+'/'+tx.ch_tx_frames
  ].join('\n');
  $('labTxState').textContent=tx.gatt_tx_armed?'ENVÍOS HABILITADOS · quedan '+tx.tx_window_remaining_sec+' s':'Envíos GATT bloqueados (predeterminado)';
+ $('labProbeState').textContent='Sondas sin escritura: '+(probe.completed||0)+' completada(s)'+(probe.pending?' · una en marcha':'')+' · '+(probe.devices||[]).map(p=>p.device+': '+(p.success?'SERVICIO Y RX CONFIRMADOS':p.reason||'sin probar')+' ('+p.duration_ms+' ms)').join(' · ');
 }
 async function labRefresh(){
  if(!isLive())return;
@@ -633,9 +646,13 @@ async function labLight(which){
  const data=pv?{lab_manual:'1',r:'235',g:'224',b:'210',bright:'10'}:{lab_manual:'1',r:'35',g:'32',b:'28'};
  await labDo(pv?'/api/manual':'/api/chihiros/manual',data);
 }
-async function labAuto(){
- if(!confirm('Enviar Chihiros AUTO por BLE. Comprueba que My Chihiros recupera el control visualmente. ¿Enviar?'))return;
- await labDo('/api/chihiros/stop',{lab_manual:'1'});
+async function labProbe(device){
+ if(!confirm('CIELO conectará brevemente a '+device+' para comprobar GATT y después se desconectará. NO enviará órdenes de luz. ¿Continuar?'))return;
+ await labDo('/api/lab/probe',{device,confirm:'SOLO_CONEXION_SIN_ESCRIBIR'});
+}
+async function labChLevel(r,g,b){
+ if(!confirm('Se enviará manualmente Chihiros '+r+'/'+g+'/'+b+'. AUTO seguirá bloqueado y tendrás que recuperar tu programación desde My Chihiros. ¿Continuar?'))return;
+ await labDo('/api/chihiros/manual',{lab_manual:'1',r:String(r),g:String(g),b:String(b)});
 }
 function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>nav(b.dataset.view));document.querySelectorAll('[data-lamp]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.lamp);state.editIndex=0;pointEditor(b.dataset.lamp)});
 document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;
@@ -653,7 +670,11 @@ $('labArm').onclick=labArm;
 $('labDisarm').onclick=()=>labDo('/api/lab/tx/disarm');
 $('labPv').onclick=()=>labLight('pez');
 $('labCh').onclick=()=>labLight('chi');
-$('labAuto').onclick=labAuto;
+$('labProbePv').onclick=()=>labProbe('pez_verde');
+$('labProbeCh').onclick=()=>labProbe('chihiros');
+$('labCh10').onclick=()=>labChLevel(10,10,10);
+$('labCh20').onclick=()=>labChLevel(20,20,20);
+$('labCh35').onclick=()=>labChLevel(35,32,28);
 $('stormOn').onclick=stormStartUi;$('stormOff').onclick=stormStopUi;$('stormSound').onclick=toggleStormSound;$('stormTestSound').onclick=stormTestSoundUi;$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(!state.preview){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000);setInterval(()=>{if(state.view==='lab')labRefresh()},10000)}
 window.addEventListener('DOMContentLoaded',init);
 </script></body></html>
