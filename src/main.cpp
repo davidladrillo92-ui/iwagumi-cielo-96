@@ -522,6 +522,8 @@ static void labTick(){
    if(custom.success){
     cieloReturnOk++;cieloChWasDriven=false;lastChDesired=false;
     cieloReturnTries=0;cieloChReturnPending=false;
+    if(!prefs.putBool("v4_ch_takeover",false))
+     record("V4_NVS_AVISO","No se pudo limpiar marca de control anterior");
     cieloReturnReason="Curva personalizada My Chihiros: GATT OK (efecto optico no medido)";
     record("V4_RETORNO_GATT_OK",cieloReturnReason);
    }else{
@@ -910,6 +912,8 @@ static void configureRoutes(){
      cieloChAwaitResponse||lab.scanPending||lab.probePending||lab.txArmed||
      contrastStage==1||contrastStage==2||contrastStage==4)
    return fail(409,"Existe otra operacion o prueba: termina y repite");
+  if(!prefs.putBool("v4_ch_takeover",true))
+   return fail(507,"No se pudo proteger el retorno de My Chihiros en NVS");
   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
   cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   cieloStartedAt=millis();lastPvDesired=false;lastChDesired=false;
@@ -1149,7 +1153,13 @@ static void lightingTask(){
   const bool changed=!lastChDesired||memcmp(&v,&prevCh,sizeof(v))!=0;
   const bool heartbeat=now-lastChDesiredAt>300000UL;
   if(changed||heartbeat){
-   if(queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,
+   // Recuperar My Chihiros al reiniciar tras tener control manual.
+   bool markerReady=cieloChWasDriven||prefs.getBool("v4_ch_takeover",false);
+   if(!markerReady)markerReady=prefs.putBool("v4_ch_takeover",true)!=0;
+   if(!markerReady){
+    cieloChRun=false;cieloFallbacks++;
+    cieloRequestReturn("NVS no disponible: controlar desde My Chihiros");
+   }else if(queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,
                    v.r,v.g,v.b,0,now,90000UL)){
     prevCh=v;lastChDesired=true;lastChDesiredAt=now;cieloChOrders++;
    }
@@ -1278,7 +1288,16 @@ void setup(){
  otaRunningPartition=running?running->label:"desconocida";
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
  tracePhase(TracePhase::Profile);
- loadProfile();storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
+ loadProfile();
+ if(prefs.getBool("v4_ch_takeover",false)){
+  // Al reiniciar: NO reactivar el programador; solo devolver el control
+  // personalizado a My Chihiros despues de establecer Bluetooth.
+  cieloChWasDriven=true;cieloChReturnPending=true;
+  cieloReturnRetryAt=millis()+30000UL;
+  cieloReturnReason="Recuperacion preventiva tras reinicio del ATOM";
+  record("V4_RECUPERACION_BOOT",cieloReturnReason);
+ }
+ storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
  // Recover credentials from the original 9.5.3 namespace, retained by application-only OTA.
  // Verified on owner's private 8MB flash: namespace "iwagumi-rgb", keys homeSsid/homePass.
  // Never embed passwords in firmware, logs, source repository, report or response.
