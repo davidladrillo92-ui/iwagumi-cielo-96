@@ -746,7 +746,10 @@ static void bleTick(){
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Web sigue activo; tarea BLE no liberada artificialmente");}
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
-  if(!cielo96::ble_dispatch(cmd)){
+  if(!labTxEnabled()){
+    queue.complete(cmd.sequence,false,now);
+    lab.txBlocked++;record("LAB_TX_BLOQUEADA","Cola BLE abortada: autorizacion caducada");
+  }else if(!cielo96::ble_dispatch(cmd)){
     queue.complete(cmd.sequence,false,now);record("BLE_COLA_LLENA","No se envio comando al worker");
   }
  }
@@ -842,8 +845,8 @@ void loop(){
   blePilotRequested=false;
   // Do not create the BLE worker unless WiFi's coexistence requirement holds.
   // Do not mark pilot as attempted if the guard blocked its creation.
-  bool sleepSet=WiFi.setSleep(true);
-  if(!sleepSet || !wifiCoexistReady()){
+  if(!wifiCoexistReady())WiFi.setSleep(true);
+  if(!wifiCoexistReady()){
    record("BLE_COEX_BLOQUEADO","WiFi modem sleep obligatorio en ESP-IDF 4.4; sin iniciar BLE");
   }else{
    blePilotAttempted=true;
