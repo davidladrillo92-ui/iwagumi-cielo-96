@@ -101,7 +101,7 @@ struct LabState {
  uint32_t heapMin=UINT32_MAX,heapLargestMin=UINT32_MAX;
  uint32_t baselineWifiDrops=0,baselineBleErrors=0,baselineHttp=0;
  uint32_t loopLast=0,loopMaxGapMs=0;
- uint32_t scanRequests=0,scanCompleted=0,scanRejects=0;
+ uint32_t scanRequests=0,scanCompleted=0,scanRejects=0,scanTimeouts=0,scanStartedMs=0;
  bool scanPending=false;
  cielo96::BleScanResult lastScan{};
  uint32_t browserSamples=0,browserAvgMs=0,browserMaxMs=0;
@@ -369,7 +369,7 @@ static String labJson(){
  j+=",\"browser_rtt\":{\"samples\":"+String(lab.browserSamples);
  j+=",\"avg_ms\":"+String(lab.browserAvgMs)+",\"max_ms\":"+String(lab.browserMaxMs)+"}";
  j+=",\"passive_scan\":{\"requested\":"+String(lab.scanRequests);
- j+=",\"completed\":"+String(lab.scanCompleted)+",\"rejected\":"+String(lab.scanRejects);
+ j+=",\"completed\":"+String(lab.scanCompleted)+",\"rejected\":"+String(lab.scanRejects)+",\"timeouts\":"+String(lab.scanTimeouts);
  j+=",\"pending\":"+String(lab.scanPending?"true":"false");
  j+=",\"last_scan_duration_ms\":"+String(lab.lastScan.elapsed_ms);
  j+=",\"found_pez_verde\":"+String(lab.lastScan.pez_found?"true":"false");
@@ -393,6 +393,10 @@ static void labTick(){
  while(cielo96::ble_scan_result(result)){
   lab.lastScan=result;lab.scanCompleted++;lab.scanPending=false;
   record("LAB_SCAN_RESULT",String("PV=")+(result.pez_found?"1":"0")+" CH="+(result.chihiros_found?"1":"0")+" anuncios="+String(result.advertised));
+ }
+ if(lab.scanPending && now-lab.scanStartedMs>12000UL){
+  lab.scanPending=false;lab.scanTimeouts++;
+  record("LAB_SCAN_TIMEOUT","Escaneo sin respuesta tras 12 segundos");
  }
  if(lab.txArmed && (int32_t)(now-lab.txUntil)>=0){
   lab.txArmed=false;
@@ -609,6 +613,7 @@ static void configureRoutes(){
  srv.on("/api/lab/status",HTTP_GET,[]{jsonSend(200,labJson());});
  srv.on("/api/lab/start",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
+  if(lab.scanPending)return fail(409,"Termina primero el escaneo BLE");
   labStart();ok();
  });
  srv.on("/api/lab/stop",HTTP_POST,[]{
@@ -620,7 +625,7 @@ static void configureRoutes(){
   if(!bleReady)return fail(423,"Inicia Bluetooth con boton fisico 3-7 segundos, sin enviar ordenes");
   if(lab.scanPending)return fail(409,"Ya hay un escaneo BLE en marcha");
   if(!cielo96::ble_scan_request()){lab.scanRejects++;return fail(503,"Cola de escaneos no disponible");}
-  lab.scanRequests++;lab.scanPending=true;record("LAB_SCAN_START","Escaneo BLE pasivo 3s sin GATT");ok();
+  lab.scanRequests++;lab.scanPending=true;lab.scanStartedMs=millis();record("LAB_SCAN_START","Escaneo BLE pasivo 3s sin GATT");ok();
  });
  srv.on("/api/lab/tx/arm",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
@@ -656,10 +661,10 @@ static void configureRoutes(){
  srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,true);});
  srv.on("/api/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualPv();});
  srv.on("/api/chihiros/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualCh();});
- srv.on("/api/chihiros/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=false;chiManual=false;requestAuto();ok();});
- srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=false;chiManual=false;requestAuto();ok();});
- srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=true;chiManual=false;chiAutoPending=false;chiAutoAttempted=false;lastChDesired=false;ok();});
- srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");chiCieloNight=false;chiManual=false;requestAuto();ok();});
+ srv.on("/api/chihiros/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");if(!labTxEnabled()||srv.arg("lab_manual")!="1")return fail(423,"AUTO solo con autorizacion en Laboratorio");chiCieloNight=false;chiManual=false;requestAuto();ok();});
+ srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; usa Laboratorio para AUTO manual");});
+ srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; activacion pendiente de pruebas opticas");});
+ srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Usa Laboratorio con autorizacion para AUTO manual");});
  srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
