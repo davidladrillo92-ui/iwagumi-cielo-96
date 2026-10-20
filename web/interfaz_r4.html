@@ -229,32 +229,57 @@ async function restoreAll(){
 }
 function sceneChoose(name){let times={dawn:900,day:1100,dusk:1340,moon:1400};state.preview=times[name];state.scrub=times[name];$('scrub').value=state.scrub;document.querySelectorAll('.scene').forEach(b=>b.classList.toggle('active',b.dataset.scene===name));render();toast('Vista previa · sin cambios en las luces')}
 function wifiSetup(){
- const d=state.status;
- sheet('<h2 class="sheet-title">Red de casa</h2><p class="sheet-sub" id="wifiInfo">Conectar al router</p>'+
- '<div class="wifiForm"><label>Nombre de red<input id="wifiSsid" type="text" autocapitalize="none" autocomplete="off" placeholder="Wi-Fi de casa"></label>'+
- '<label>Contraseña<input id="wifiPass" type="password" autocomplete="new-password" placeholder="Solo WPA2 2,4 GHz"></label>'+
- '<button class="wifiPrimary" id="wifiTry" type="button">Conectar</button>'+
- '<button class="wifiSecondary" id="wifiForget" type="button">Olvidar red guardada</button></div>'+
- '<p class="helpchip">Comprueba SSID EXACTO, 2,4 GHz y clave. WPA3 exclusivamente o banda 5 GHz no sirve. Durante la conexión Safari puede desconectarse de Iwagumi-RGB. Si conecta, usa <strong>iwagumi-cielo.local</strong> desde la red de casa; si falla, vuelve a <strong>Iwagumi-RGB</strong> y consulta el código.</p>');
- $('wifiInfo').textContent=d?.wifi?('Conectada · '+d.homeIp):(d?.wifiStatus||'Conectar al router');
- const description=document.createElement('p');description.className='note';description.textContent='Último intento: '+(d?.wifiLastResult||'Sin registrar')+' · Código Wi-Fi: '+(d?.wifiReason??'—')+' · Estado: '+(d?.wifiStatus||'—')+' · Reinicio: '+(d?.bootReason??'—');$('wifiInfo').after(description);
- $('wifiForget').style.display=d?.wifiSaved?'block':'none';
+ const d=state.status||{};
+ sheet(`<h2 class="sheet-title">Red Wi-Fi</h2>
+ <p class="sheet-sub">Conectada: ${d.homeSsid||'—'} · ${d.homeIp||'sin IP'}</p>
+ <p class="note">La red de recuperación WPA2 sigue disponible como <strong>CIELO96-CONFIG</strong>, IP <strong>192.168.4.1</strong>.</p>
+ <div class="wifiForm">
+ <button class="wifiSecondary" id="wifiScan">Buscar redes cercanas</button>
+ <p id="wifiScanInfo" class="note">Puedes buscar o escribir manualmente otra red de 2,4 GHz.</p>
+ <label>Red encontrada<select id="wifiNetworks"><option value="">Selecciona una red…</option></select></label>
+ <label>Nombre de red<input id="wifiSsid" type="text" autocapitalize="none" autocomplete="off" placeholder="SSID"></label>
+ <label>Contraseña<input id="wifiPass" type="password" autocomplete="new-password" placeholder="WPA2 de la nueva red"></label>
+ <button class="wifiPrimary" id="wifiTry">Guardar y conectar</button>
+ <button class="wifiSecondary" id="wifiForget">Olvidar red configurada</button></div>
+ <details class="curveHelper"><summary>Más información de conexión</summary>
+ <p class="note">El ATOM admite redes de 2,4 GHz y mantiene su punto de acceso privado de rescate. Al cambiar la red, la IP puede variar. Consulta el router o entra al AP CIELO96-CONFIG por 192.168.4.1.</p></details>`);
+ $('wifiSsid').value=d.homeSsid||'';
+ $('wifiNetworks').onchange=()=>{if($('wifiNetworks').value)$('wifiSsid').value=$('wifiNetworks').value};
+ $('wifiScan').onclick=async()=>{
+  const status=$('wifiScanInfo');status.textContent='Buscando redes…';$('wifiScan').disabled=true;
+  try{
+   await api('/api/wifi/scan',{});
+   let networks=[];
+   for(let n=0;n<18;n++){
+    await new Promise(r=>setTimeout(r,750));
+    const out=await api('/api/wifi/networks');
+    if(!out.pending){networks=out.networks||[];break}
+   }
+   const select=$('wifiNetworks');
+   select.replaceChildren(new Option('Selecciona una red…',''));
+   const unique=new Set();
+   for(const ap of networks){
+    if(!ap.ssid||unique.has(ap.ssid))continue;
+    unique.add(ap.ssid);
+    select.add(new Option(ap.ssid+' · '+ap.rssi+' dBm',ap.ssid));
+   }
+   status.textContent=networks.length?networks.length+' redes detectadas. Elige una o escribe su nombre.':'No se encontraron redes; comprueba la banda 2,4 GHz.';
+  }catch(e){status.textContent='No se pudo buscar: '+e.message}
+  finally{$('wifiScan').disabled=false}
+ };
  $('wifiTry').onclick=async()=>{
-   const ssid=$('wifiSsid').value.trim(),password=$('wifiPass').value;
-   if(!ssid||password.length<8)return toast('Comprueba el nombre y la contraseña');
-   if(!confirm('Probar conexión a '+ssid+'. Iwagumi-RGB puede desconectarse unos segundos. Si falla, se recuperará. ¿Continuar?'))return;
-   try{
-     await api('/api/wifi',{ssid,password});
-     toast('Conectando… Puede cambiar la red Wi-Fi del iPhone');
-     close();
-   }catch(e){toast(e.message)}
+  const ssid=$('wifiSsid').value.trim(),password=$('wifiPass').value;
+  if(!ssid||password.length<8)return toast('Indica red y contraseña (mínimo 8 caracteres)');
+  if(!confirm('Cambiar CIELO a la red «'+ssid+'». Si cambia la IP, entra al AP privado CIELO96-CONFIG en 192.168.4.1. ¿Continuar?'))return;
+  try{await api('/api/wifi',{ssid,password});toast('Conectando a la nueva Wi-Fi…');close()}
+  catch(e){toast(e.message)}
  };
  $('wifiForget').onclick=async()=>{
-   if(!confirm('¿Olvidar la red de casa y volver a Iwagumi-RGB?'))return;
-   try{await api('/api/wifi/forget',{});toast('Red olvidada');close();await sync()}catch(e){toast(e.message)}
+  if(!confirm('¿Olvidar la red actual? El AP CIELO96-CONFIG seguirá disponible.'))return;
+  try{await api('/api/wifi/forget',{});toast('Red olvidada');close();await sync()}
+  catch(e){toast(e.message)}
  };
 }
-
 function chooseCurve(which){
  state.curve=which;
  document.querySelectorAll('[data-curve]').forEach(b=>b.classList.toggle('active',b.dataset.curve===which));
@@ -385,7 +410,24 @@ function manualChooser(){
  $('testChi').onclick=()=>lampSheet('chi');$('testPez').onclick=()=>lampSheet('pez');
 }
 
-function settings(){let d=state.status;sheet(`<h2 class="sheet-title">Ajustes</h2><p class="sheet-sub">IWAGUMI CIELO · Estudio 9.5.3</p><div class="settings-row"><span>ATOM</span><small>${state.connected?'Conectado · '+(d?.ip||'192.168.4.1'):'Sin conexión'}</small></div><div class="settings-row"><span>Bluetooth Pez Verde</span><small>${d?.ble?'Conectado':state.connected?'Sin enlace':'—'}</small></div><div class="settings-row"><span>Chihiros</span><small>${d?.chEvening?'CIELO · atardecer continuo':d?.chContinuous?'CIELO · diagnóstico':d?.chActive?'Restaurando AUTO':'My Chihiros · Auto'}</small></div><div class="settings-row"><span>Wi-Fi de casa</span><button id="wifiHome">Ver estado ↗</button></div><div class="settings-row"><span>Hora</span><small>${d?.clockValid?d?.clock:'No sincronizada'}</small></div><div class="settings-row"><span>Reloj del ATOM</span><button id="syncClock">Sincronizar ↗</button></div><div class="settings-row"><span>Diagnóstico</span><button id="refresh">Actualizar ↗</button></div><div style="margin-top:20px" class="helpchip">La curva Pez Verde se ejecuta en ATOM. Chihiros puede quedar bajo control CIELO hasta las 23:05 al activar la sesión nocturna; en otro caso sigue My Chihiros.</div>`);$('wifiHome').onclick=wifiSetup;let wi=$('wifiHome');if(d?.wifi)wi.textContent='Conectada · '+(d.homeIp||'IP');else if(d?.wifiConnecting)wi.textContent='Conectando…';else if(d?.wifiLastResult==='Fallida')wi.textContent='Falló · detalle ↗';else if(d?.wifiLastResult==='Desconectada')wi.textContent='Desconectada ↗';else wi.textContent='Sin conectar ↗';$('syncClock').onclick=async()=>{try{await api('/api/clock',{epoch:Math.floor(Date.now()/1000)});toast('Hora sincronizada');close();await sync()}catch(e){toast(e.message)}};$('refresh').onclick=async()=>{close();await sync();toast(state.connected?'Conectado':'Sin conexión')}}
+function settings(){
+ const d=state.status||{};
+ sheet(`<h2 class="sheet-title">Ajustes</h2>
+ <p class="sheet-sub">ATOM · ${d.firmware||'CIELO'} </p>
+ <div class="settings-row"><span>Wi-Fi</span><button id="wifiHome">${d.homeSsid||'Elegir red'} ↗</button></div>
+ <div class="settings-row"><span>IP local</span><small>${d.homeIp||'Sin dirección actual'}</small></div>
+ <div class="settings-row"><span>Reloj de Madrid</span><small>${d.clockValid?d.clock:'Pendiente de sincronización'}</small></div>
+ <div class="settings-row"><span>Sincronizar hora</span><button id="syncClock">Sincronizar ↗</button></div>
+ <details class="curveHelper"><summary>Recuperación y conexiones</summary>
+ <p class="note">Punto de acceso: <strong>CIELO96-CONFIG</strong> · IP <strong>192.168.4.1</strong>.
+ El Wi-Fi de casa puede cambiar de IP. La recuperación USB sigue disponible.
+ Bluetooth se desconecta entre órdenes y la portada muestra la última respuesta GATT, no una conexión permanente.</p></details>`);
+ $('wifiHome').onclick=wifiSetup;
+ $('syncClock').onclick=async()=>{
+  try{await api('/api/clock',{epoch:Math.floor(Date.now()/1000)});toast('Hora del ATOM sincronizada con iPhone');close();await sync()}
+  catch(e){toast(e.message)}
+ };
+}
 function exportCurves(){let d={name:'IWAGUMI CIELO',version:9,exported:new Date().toISOString(),lights:{chihiros:{points:state.chi,unit:'percent',source:'local-MyChihiros-not-synced'},pezverde:{points:state.pez,unit:'rgb255-plus-brightness',source:state.connected?'ATOM':'demo'}}};let b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='Cielo-curvas.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 // Audio opcional: trueno suave sintetizado en el navegador, nunca en el ATOM.
 let stormSoundOn=false,stormAudioContext=null,lastStormAudio=0;
