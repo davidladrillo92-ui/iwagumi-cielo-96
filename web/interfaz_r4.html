@@ -136,8 +136,10 @@ function render(){
  $('moment').textContent=moment[0];
  $('momentSub').textContent=preview?'Vista previa · '+hourLabel(when):'';
  $('heroTime').textContent=hourLabel(when);
- const chiRgb=chi.map(v=>Math.round(v*2.55));
- const pvRgb=pez.slice(0,3);
+ const chiIsKnown=preview||!!v4.chihiros_active;
+ const pvIsKnown=preview||!!v4.pez_verde_active;
+ const chiRgb=(chiIsKnown?chi:[0,0,0]).map(v=>Math.round(v*2.55));
+ const pvRgb=pvIsKnown?pez.slice(0,3):[0,0,0];
  const dimmedPv=pvRgb.map(v=>Math.round(v*(pez[3]||0)/100));
  const mix=[0,1,2].map(k=>Math.round(.58*dimmedPv[k]+.42*chiRgb[k]));
  const strength=Math.max(...mix);
@@ -150,12 +152,14 @@ function render(){
  $('glow').style.setProperty('--sky',ambient);
  $('heroTint').style.setProperty('--ambient',ambient);
  $('heroTint').style.opacity=String(strength<5?.04:Math.min(.56,.12+strength/400));
- $('chiPct').textContent=v4.chihiros_active||preview?Math.max(...chi)+'%':'—';
- $('pezPct').textContent=pez[3]+'%';
+ $('chiPct').textContent=chiIsKnown?Math.max(...chi)+'%':'—';
+ $('pezPct').textContent=pvIsKnown?pez[3]+'%':'—';
  $('chiColor').style.background=rgb(...chiRgb);
  $('pezColor').style.background=rgb(...pvRgb);
- $('chiInfo').textContent=chi.join(' / ')+(chiRecent?' · enviado':preview?' · simulado':' · previsto');
- $('pezInfo').textContent=pvRgb.join(' / ')+(pvRecent?' · enviado':preview?' · simulado':' · previsto');
+ $('chiInfo').textContent=!chiIsKnown?'Sin lectura de My Chihiros':
+   chi.join(' / ')+(chiRecent?' · enviado':preview?' · simulado':' · previsto');
+ $('pezInfo').textContent=!pvIsKnown?'Luz no controlada por CIELO':
+   pvRgb.join(' / ')+(pvRecent?' · enviado':preview?' · simulado':' · previsto');
  $('chiSub').textContent=preview?'Simulación · sin órdenes':!v4.chihiros_active?'My Chihiros · sin telemetría remota':chiRecent?'CIELO · orden BLE correcta':'CIELO · esperando datos';
  $('pezSub').textContent=preview?'Simulación · sin órdenes':v4.pez_verde_active?(pvRecent?'CIELO · orden BLE correcta':'CIELO · esperando datos'):'CIELO pausado';
  for(const [id,up] of [['chiLed',v4.chihiros_active&&v4.ch_online_recent],['pezLed',v4.pez_verde_active&&v4.pv_online_recent]]){
