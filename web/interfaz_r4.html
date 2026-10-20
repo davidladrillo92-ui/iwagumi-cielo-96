@@ -122,24 +122,42 @@ async function api(path,data){if(!isLive())throw Error('Vista previa, abre Cielo
 async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}render()}catch(e){state.connected=false;render()}}
 function hourLabel(t){return fmt(clamp(t,0,1439))}
 function render(){
- const d=state.status,c=currentClock();
- const chi=vAt(state.chi,state.preview??c),pez=vAt(state.pez,state.preview??c),moment=scene(state.preview??c);
+ const d=state.status,v4=d?.cieloV4||{},now=currentClock();
+ const preview=state.preview!==null,when=preview?state.preview:now;
+ const chiPlan=vAt(state.chi,when),pvPlan=vAt(state.pez,when);
+ const chiRecent=!preview&&v4.chihiros_active&&v4.ch_online_recent&&Array.isArray(v4.ch_last_requested);
+ const pvRecent=!preview&&v4.pez_verde_active&&v4.pv_online_recent&&Array.isArray(v4.pv_last_requested);
+ const chi=chiRecent?v4.ch_last_requested:chiPlan;
+ const pez=pvRecent?v4.pv_last_requested:pvPlan;
+ const moment=scene(when);
  $('status').classList.toggle('offline',!state.connected);
- $('statusText').textContent=state.connected?'Conectado':'Sin conexión';
+ $('statusText').textContent=!state.connected?'Sin conexión':preview?'Simulación, sin tocar las luces':'ATOM conectado · '+(d?.clockValid?'reloj sincronizado':'hora pendiente');
  $('moment').textContent=moment[0];
- $('momentSub').textContent=state.preview===null?'A su ritmo':'Vista previa';
- $('heroTime').textContent=hourLabel(state.preview??c);
- $('glow').style.setProperty('--sky',rgb(...(pez.length?pez:[210,150,120])));
- // Chihiros no devuelve lectura de intensidad: es una prevision de la curva, no una medida.
- $('chiPct').textContent=Math.max(...chi)+'%';
- $('chiSub').textContent=d?.chEvening?'CIELO · curva 2 s':d?.chContinuous?'CIELO · diagnóstico':d?.chActive?'Restaurando AUTO':'My Chihiros · AUTO estimado';
- $('chiColor').style.background=rgb(...chi.map(v=>Math.round(v*2.55)));
- $('chiInfo').textContent=chi.join(' / ');
- let realPez=state.connected&&state.preview===null&&Array.isArray(d?.rgb)?d.rgb:pez;
- $('pezPct').textContent=(state.connected&&state.preview===null?(d?.brightness??pez[3]):pez[3])+'%';
- $('pezSub').textContent=d?.manual?'Prueba temporal':'AUTO · último envío';
- $('pezColor').style.background=rgb(...realPez.slice(0,3));
- $('pezInfo').textContent=realPez.slice(0,3).join(' / ');
+ $('momentSub').textContent=preview?'Vista previa · '+hourLabel(when):'';
+ $('heroTime').textContent=hourLabel(when);
+ const chiRgb=chi.map(v=>Math.round(v*2.55));
+ const pvRgb=pez.slice(0,3);
+ const dimmedPv=pvRgb.map(v=>Math.round(v*(pez[3]||0)/100));
+ const mix=[0,1,2].map(k=>Math.round(.58*dimmedPv[k]+.42*chiRgb[k]));
+ const strength=Math.max(...mix);
+ const ambient=strength<5?'#13232e':rgb(...mix.map(v=>Math.min(255,Math.max(8,Math.round(v*1.65)))));
+ $('glow').style.setProperty('--sky',ambient);
+ $('heroTint').style.setProperty('--ambient',ambient);
+ $('heroTint').style.opacity=String(strength<5?.04:Math.min(.56,.12+strength/400));
+ $('chiPct').textContent=v4.chihiros_active||preview?Math.max(...chi)+'%':'—';
+ $('pezPct').textContent=pez[3]+'%';
+ $('chiColor').style.background=rgb(...chiRgb);
+ $('pezColor').style.background=rgb(...pvRgb);
+ $('chiInfo').textContent=chi.join(' / ')+(chiRecent?' · enviado':preview?' · simulado':' · previsto');
+ $('pezInfo').textContent=pvRgb.join(' / ')+(pvRecent?' · enviado':preview?' · simulado':' · previsto');
+ $('chiSub').textContent=preview?'Simulación · sin órdenes':!v4.chihiros_active?'My Chihiros · sin telemetría remota':chiRecent?'CIELO · orden BLE correcta':'CIELO · esperando datos';
+ $('pezSub').textContent=preview?'Simulación · sin órdenes':v4.pez_verde_active?(pvRecent?'CIELO · orden BLE correcta':'CIELO · esperando datos'):'CIELO pausado';
+ for(const [id,up] of [['chiLed',v4.chihiros_active&&v4.ch_online_recent],['pezLed',v4.pez_verde_active&&v4.pv_online_recent]]){
+  const el=$(id);el.className='conn-tick'+(state.connected&&up&&!preview?' ok':' wait');
+  el.textContent=state.connected&&up&&!preview?'✓':'·';
+  el.title=up?'GATT correcto reciente. El enlace se libera entre envíos.':'No hay confirmación GATT reciente; no implica avería';
+ }
+ $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+': la pantalla Luz muestra esta hora, sin cambiar la iluminación real.':'Vista del momento actual. Los colores reales son las últimas órdenes confirmadas por GATT.';
  const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
  $('scrubTime').textContent=hourLabel(state.scrub);
  $('scrubScene').textContent=scene(state.scrub)[0];
@@ -160,17 +178,14 @@ function render(){
  if($('chi931Off'))$('chi931Off').disabled=!d?.chi931Backup||!!d?.chContinuous||!!d?.chActive||!state.connected;
  const v4=d?.cieloV4||{};
  if($('chNightStatus'))$('chNightStatus').textContent=
-   v4.return_pending?'Recuperando curva guardada de My Chihiros…':
-   v4.chihiros_active?(v4.ch_window_now?'CIELO Natural V4 controla Chihiros; Pez Verde ':
-        'My Chihiros durante el descanso · CIELO retomará a las 14:30; Pez Verde ')+(v4.pez_verde_active?'ACTIVA':'pausada'):
-   v4.pez_verde_active?'My Chihiros recuperada · Pez Verde sigue con CIELO':
-   'My Chihiros controla su curva · CIELO en espera';
+  v4.return_pending?'Recuperando My Chihiros…':
+  v4.chihiros_active&&v4.pez_verde_active?'CIELO controla las dos luces 24 horas':
+  v4.pez_verde_active?'Pez Verde en CIELO · Chihiros en My Chihiros':'Control detenido';
  if($('chNightMetrics'))$('chNightMetrics').textContent=
-   'Pez Verde: '+(v4.pv_gatt_ok||0)+' operaciones GATT · Chihiros: '+(v4.ch_gatt_ok||0)+
-   ' · Retornos My Chihiros: '+(v4.return_ok||0)+' correctos / '+(v4.return_failed||0)+' fallidos'+
-   (v4.safety_fallbacks?' · Recuperaciones de seguridad: '+v4.safety_fallbacks:'');
- if($('chNightOn'))$('chNightOn').disabled=!d?.wifi||!d?.clockValid||!d?.ble||
-  (!!v4.chihiros_active&&!!v4.pez_verde_active)||!!v4.return_pending;
+  'Pez Verde '+(v4.pv_gatt_ok||0)+' GATT · Chihiros '+(v4.ch_gatt_ok||0)+
+  ' GATT · retornos '+(v4.return_ok||0)+' · errores '+(v4.return_failed||0);
+ if($('chNightOn'))$('chNightOn').disabled=!state.connected||!d?.clockValid||!d?.ble||
+  (v4.chihiros_active&&v4.pez_verde_active)||v4.return_pending;
  if($('chNightOff'))$('chNightOff').disabled=!state.connected||!!v4.return_pending;
  if($('pez94Status'))$('pez94Status').textContent=d?.pez94Active?'Colores Impacto activos (en este ATOM). Hay copia de seguridad.':'Colores actuales conservados. Activar solo bajo tu confirmación.';
  if($('pez94On'))$('pez94On').disabled=!!d?.pez94Active||!state.connected;
@@ -596,28 +611,22 @@ async function chiAuroraRestore(){
 }
 async function chNightStart(){
  if(!state.connected)return toast('Conecta el ATOM');
- if(state.dirty.chi||state.dirty.pez)return toast('Guarda antes los cambios de ambas curvas');
- if(!confirm('Natural V4: CIELO enviará a PEZ VERDE y CHIHIROS sus colores según la hora de Madrid. Chihiros volverá a My Chihiros al terminar su curva (23:00) o si falla su conexión. Pez Verde seguirá los 27 puntos. Debes cerrar My Chihiros durante el control. ¿ACTIVAR?'))return;
- try{
-  await api('/api/cielo/v4/start',{confirm:'ACTIVAR_NATURAL_V4'});
-  toast('Natural V4 activada para ambas luces');await sync();await serviceRefresh();
- }catch(e){toast('No activado: '+e.message)}
+ if(state.dirty.chi||state.dirty.pez)return toast('Guarda antes las curvas');
+ if(!confirm('CIELO controlará ambas luces las 24 horas, enviando incluso valores cero de noche y reanudando tras reinicios estables. ¿Activar control continuo?'))return;
+ try{await api('/api/cielo/v4/start',{confirm:'ACTIVAR_NATURAL_V4'});toast('Curvas continuas activadas');await sync()}
+ catch(e){toast(e.message)}
 }
 async function chNightStop(){
  if(!state.connected)return toast('Sin conexión');
- if(!confirm('Recuperar la curva PERSONALIZADA de My Chihiros (0x03), dejando a Pez Verde siguiendo Natural V4. ¿Volver a My Chihiros?'))return;
- try{
-  await api('/api/cielo/v4/return',{confirm:'VOLVER_MY_CHIHIROS'});
-  toast('Restaurando My Chihiros; Pez Verde sigue con CIELO');await sync();
- }catch(e){toast('Retorno no enviado: '+e.message)}
+ if(!confirm('EMERGENCIA: devolver Chihiros a la curva de My Chihiros. CIELO dejará de controlarla; Pez Verde sigue mientras el ATOM esté encendido. ¿Continuar?'))return;
+ try{await api('/api/cielo/v4/return',{confirm:'VOLVER_MY_CHIHIROS'});toast('Recuperando My Chihiros');await sync()}
+ catch(e){toast(e.message)}
 }
 async function cieloPauseAllUi(){
  if(!state.connected)return toast('Sin conexión');
- if(!confirm('Pausar TODOS los envíos de CIELO y tratar de devolver Chihiros a My Chihiros. Pez Verde no cambia de color, conserva el último estado. ¿Pausar?'))return;
- try{
-  await api('/api/cielo/v4/pause',{confirm:'PAUSAR_TODO'});
-  toast('CIELO pausado; revisa el retorno de My Chihiros');await sync();
- }catch(e){toast('Pausa no completada: '+e.message)}
+ if(!confirm('Pausar ambas curvas y recuperar My Chihiros; Pez Verde conservará su último estado. ¿Confirmar?'))return;
+ try{await api('/api/cielo/v4/pause',{confirm:'PAUSAR_TODO'});toast('Envíos pausados');await sync()}
+ catch(e){toast(e.message)}
 }
 async function pezWarmApply(){
  if(!state.connected)return toast('Conecta ATOM');
