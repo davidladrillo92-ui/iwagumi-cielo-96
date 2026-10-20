@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, dev/r4-3-2-diagnostico-seguro]
+    branches: [main, dev/r4-3-3-arranque-seguro]
     paths:
       - 'CIELO_SOURCE.zip'
       - 'src/**'
