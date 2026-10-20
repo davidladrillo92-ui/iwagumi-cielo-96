@@ -38,6 +38,11 @@ int main(){
  }
  assert(has5a);
  assert(codec::ch_auto(id,b,sizeof(b),len));assert(b[5]==0x05&&b[6]==18&&len==10);
+ id=0x0005;
+ assert(codec::ch_custom_curve_resume(id,b,sizeof(b),len));
+ const uint8_t custom[]={0x5a,0x01,0x08,0x00,0x06,0x05,0x03,0xff,0xff,0x09};
+ assert(len==sizeof(custom) && memcmp(custom,b,len)==0);
+ assert(codec::ch_xor(b,len-1)==b[len-1]);
  ProfileImage p{};p.pvCount=cielo::pezverde_count;p.chCount=cielo::chihiros_count;
  memcpy(p.pv,cielo::pezverde,sizeof(cielo::pezverde));memcpy(p.ch,cielo::chihiros,sizeof(cielo::chihiros));
  profileSeal(p);assert(profileValid(p));

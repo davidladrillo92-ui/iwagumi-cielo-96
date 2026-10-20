@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="10.0.0-RC1-CENTRO";
+static constexpr const char* VERSION="10.0.1-RC2-CENTRO-LIMPIO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -117,6 +117,10 @@ struct LabState {
 };
 static LabState lab;
 static constexpr uint32_t LAB_TX_WINDOW_MS=90000UL;
+static bool customResumePending=false;
+static uint32_t customResumeRequested=0,customResumeOk=0,customResumeFailed=0;
+static String customResumeLast="Sin probar";
+static uint32_t customResumeLastMs=0;
 static bool labTxEnabled(){
  return lab.txArmed && (int32_t)(lab.txUntil-millis())>0 &&
         bleReady && !rescueOpen && wifiCoexistReady();
@@ -295,6 +299,17 @@ static bool positiveInt(const String&s,unsigned& n){
  for(size_t i=0;i<s.length();i++){char c=s[i];if(c<'0'||c>'9')return false;x=x*10+(c-'0');if(x>1440)return false;}
  n=x;return true;
 }
+// Los valores de latencia HTTP no son minutos: permitir hasta 60 segundos sin
+// reinterpretar mediciones reales como fallos de ruta/entrada de usuario.
+static bool parseBoundedUInt(const String&s,unsigned&n,unsigned maxValue){
+ if(s.isEmpty()||s.length()>8)return false;
+ uint32_t x=0;
+ for(size_t i=0;i<s.length();i++){
+  char ch=s[i];if(ch<'0'||ch>'9')return false;
+  x=x*10+(ch-'0');if(x>maxValue)return false;
+ }
+ n=x;return true;
+}
 static bool parsePoints(const String&serialized,bool isPv,cielo96::ProfileImage&out){
  if(serialized.isEmpty() || serialized.length()>1700)return false;
  unsigned cols=isPv?5:4,count=0;
@@ -424,6 +439,11 @@ static String labJson(){
   j+=",\"last_disconnect_ms\":"+String(link.last_disconnect_ms)+"}";
  }
  j+="}";
+ j+=",\"chihiros_my_curve\":{\"experimental\":true,\"confirmed_optically\":false";
+ j+=",\"pending\":"+String(customResumePending?"true":"false");
+ j+=",\"requests\":"+String(customResumeOk+customResumeFailed+(customResumePending?1:0));
+ j+=",\"gatt_ok\":"+String(customResumeOk)+",\"gatt_failed\":"+String(customResumeFailed);
+ j+=",\"last_result\":"+jsonQuote(customResumeLast)+"}";
  j+=",\"lighting\":{\"scheduler_enabled\":false,\"gatt_tx_armed\":"+String(labTxEnabled()?"true":"false");
  j+=",\"tx_window_remaining_sec\":"+String(labTxEnabled()?(lab.txUntil-age)/1000UL:0);
  j+=",\"tx_arm_count\":"+String(lab.txArmCount)+",\"tx_blocked\":"+String(lab.txBlocked);
@@ -439,6 +459,18 @@ static String labJson(){
 }
 static void labTick(){
  const uint32_t now=millis();
+ cielo96::BleCustomResumeResult custom{};
+ while(cielo96::ble_custom_resume_result(custom)){
+  customResumePending=false;customResumeLastMs=now;
+  customResumeLast=String(custom.reason)+" "+String(custom.duration_ms)+" ms; verificacion visual pendiente";
+  if(custom.success){customResumeOk++;record("CH_CURVA_MYCH_GATT_OK",customResumeLast);}
+  else {customResumeFailed++;record("CH_CURVA_MYCH_FALLO",customResumeLast);}
+ }
+ if(customResumePending && now-customResumeRequested>24000UL){
+  customResumePending=false;customResumeFailed++;
+  customResumeLast="Sin respuesta de la tarea BLE en 24 s; no repetir automaticamente";
+  record("CH_CURVA_MYCH_TIMEOUT",customResumeLast);
+ }
  if(lab.loopLast && now-lab.loopLast>lab.loopMaxGapMs)lab.loopMaxGapMs=now-lab.loopLast;
  lab.loopLast=now;
  cielo96::BleProbeResult probe{};
@@ -545,7 +577,8 @@ static void diagnosticJson(){
  j+=",\"last_ota_message\":"+jsonQuote(lastOtaError)+",\"github_check\":\"NO_USADO\",\"cloud\":\"DESACTIVADA\"}";
  j+=",\"recovery\":{\"ap_ssid\":\"CIELO96-CONFIG\",\"ap_ip\":\"192.168.4.1\",\"password_location\":\"SERIAL_USB_LOCAL\",\"always_on\":true";
  j+=",\"running_partition\":"+jsonQuote(otaRunningPartition)+",\"next_update_partition\":"+jsonQuote(otaNextPartition);
- j+=",\"physical_ota_grant\":"+String(physicalOtaGrant()?"true":"false")+",\"ota_enabled\":false}";
+ j+=",\"physical_ota_grant\":"+String(physicalOtaGrant()?"true":"false");
+ j+=",\"ota_enabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+"}";
  time_t currentEpoch=time(nullptr);
  struct tm clockLocal{};
  char clockOffset[8]="";
@@ -774,6 +807,18 @@ static void configureRoutes(){
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
+ srv.on("/api/chihiros/my-curve-test",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(!bleReady || !labTxEnabled())return fail(423,"Bluetooth no preparado o ensayo sin autorizacion de 90 segundos");
+  if(srv.arg("confirm")!="PROBAR_CURVA_MY_CHIHIROS")return fail(403,"Se requiere confirmacion explicita");
+  if(customResumePending||lab.scanPending||lab.probePending||queue.busy())
+   return fail(409,"Bluetooth ocupado: espera a terminar");
+  if(!cielo96::ble_custom_resume_request())return fail(503,"No se pudo programar ensayo seguro");
+  customResumePending=true;customResumeRequested=millis();
+  chiManual=false;chiAutoPending=false;
+  record("CH_CURVA_MYCH_ENSAYO","0x05 [03 FF FF] seleccion curva personalizada; no modifica los puntos; NO probado opticamente");
+  ok();
+ });
  srv.on("/api/ble/release",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(!bleReady)return fail(423,"Bluetooth aun no inicializado");
@@ -822,9 +867,9 @@ static void configureRoutes(){
  srv.on("/api/lab/browser-sample",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   unsigned count=0,avg=0,maximum=0;
-  if(!positiveInt(srv.arg("count"),count)||count>40||count<1||
-     !positiveInt(srv.arg("avg"),avg)||avg>15000||
-     !positiveInt(srv.arg("max"),maximum)||maximum>15000)return fail(400,"Muestra de latencia incorrecta");
+  if(!parseBoundedUInt(srv.arg("count"),count,40)||count<1||
+     !parseBoundedUInt(srv.arg("avg"),avg,60000)||
+     !parseBoundedUInt(srv.arg("max"),maximum,60000))return fail(400,"Muestra de latencia incorrecta");
   lab.browserSamples+=count;lab.browserAvgMs=avg;
   if(maximum>lab.browserMaxMs)lab.browserMaxMs=maximum;
   record("LAB_HTTP","Latencia desde navegador media "+String(avg)+" ms max "+String(maximum)+" ms");ok();

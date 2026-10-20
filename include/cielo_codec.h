@@ -46,6 +46,11 @@ inline bool ch_manual(uint8_t channel,uint8_t percent,uint16_t& id,uint8_t* out,
  if(channel>3||percent>100)return false;
  const uint8_t p[]={channel,percent};return ch_safe_frame(0x5a,0x07,p,2,id,out,cap,len);
 }
+// Mode 0x03 = curva personalizada de My Chihiros; 0x12 = escenas (provoco apagado).
+// SOLO para un ensayo supervisado, sin alterar ni reenviar puntos del horario.
+inline bool ch_custom_curve_resume(uint16_t& id,uint8_t* out,size_t cap,size_t& len){
+ const uint8_t p[]={3,255,255};return ch_safe_frame(0x5a,0x05,p,3,id,out,cap,len);
+}
 inline bool ch_auto(uint16_t& id,uint8_t* out,size_t cap,size_t& len){
  const uint8_t p[]={18,255,255};return ch_safe_frame(0x5a,0x05,p,3,id,out,cap,len);
 }
