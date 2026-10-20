@@ -41,7 +41,10 @@ assert 'res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto)' in co
 assert 'CH_AUTO_ERROR' in code and 'CH_AUTO_NO_ENVIADO' in code
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '9.6.0-R4.4.1-BLE-DISCOVERY' in code
+assert '9.6.0-R4.4.2-AUTO-BLE-PV' in code
+assert 'BLE_AUTO_SOLICITADO' in code and 'millis()-bootMs>=30000UL' in code
+assert 'ble_start_requires_button\\\\":false' in code or 'ble_start_requires_button\\":false' in code
+assert 'if(!labTxEnabled())' in code
 assert 'BLEDevice::init(' in bleworker
 assert 'sendPez(c,err):sendCh(c,err)' in bleworker
 assert 'scanDiscover();lastHeartbeat=millis();' in bleworker
