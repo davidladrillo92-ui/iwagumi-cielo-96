@@ -158,7 +158,7 @@ static void statusLedTick(){
 static bool pezManual=false,chiManual=false,chiCieloNight=false,chiAutoPending=false;
 // Modo ACTIVADO EXPLICITAMENTE. Tras reinicio exige pulsar otra vez.
 static bool cieloPvRun=false,cieloChRun=false,cieloChWasDriven=false;
-static bool cieloAlwaysOn=false;
+static bool cieloAlwaysOn=false,cieloResumePending=false;
 static uint32_t cieloLastNightSample=0;
 static uint32_t cieloDaySamples=0,cieloNightSamples=0;
 static uint32_t cieloLastSuccessfulPvAt=0,cieloLastSuccessfulChAt=0;
@@ -966,7 +966,7 @@ static void configureRoutes(){
    return fail(507,"No se pudo proteger el retorno de My Chihiros en NVS");
   if(!prefs.putBool("v5_always",true))
    return fail(507,"No se pudo guardar el control continuo en NVS");
-  cieloAlwaysOn=true;
+  cieloAlwaysOn=true;cieloResumePending=false;
   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
   cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   cieloStartedAt=millis();lastPvDesired=false;lastChDesired=false;
@@ -982,7 +982,7 @@ static void configureRoutes(){
   if(customResumePending||lab.scanPending||lab.probePending||
      contrastStage==1||contrastStage==2||contrastStage==4)
    return fail(409,"Espera a que finalice el ensayo previo");
-  cieloChRun=false;cieloAlwaysOn=false;prefs.putBool("v5_always",false);
+  cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
   cieloRequestReturn("Emergencia: volver a My Chihiros");
   record("V4_BOTON_MYCHIHIROS","Pez Verde sigue usando Natural V4 si estaba activa");
   ok();
@@ -990,7 +990,7 @@ static void configureRoutes(){
  srv.on("/api/cielo/v4/pause",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
   if(srv.arg("confirm")!="PAUSAR_TODO")return fail(403,"Confirma pausa de ambas pantallas");
-  cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;prefs.putBool("v5_always",false);
+  cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(bleReady)cieloRequestReturn("Pausa total: devolver Chihiros a My Chihiros");
   else {queue.cancel_pending(cielo::ble::Device::Chihiros);record("V4_SIN_BLE","No se puede restaurar Chihiros sin BLE; requiere My Chihiros");}
@@ -1374,6 +1374,7 @@ void setup(){
  tracePhase(TracePhase::Profile);
  loadProfile();
  cieloAlwaysOn=prefs.getBool("v5_always",false);
+ cieloResumePending=cieloAlwaysOn;
  if(prefs.getBool("v4_ch_takeover",false)){
   // Al reiniciar: NO reactivar el programador; solo devolver el control
   // personalizado a My Chihiros despues de establecer Bluetooth.
@@ -1445,13 +1446,7 @@ void loop(){
    record("OTA_ARRANQUE_VALIDADO","Nuevo firmware activo tras 180 segundos; cambios confirmados");
   }
   record("ARRANQUE_ESTABLE","180 segundos sin reiniciar");
-  if(cieloAlwaysOn && !rescueOpen && timeOK() && cielo96::profileValid(profile)){
-   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
-   cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
-   lastPvDesired=false;lastChDesired=false;
-   cieloStartedAt=millis();lastScheduleAt=millis()-30000UL;
-   record("V5_AUTO_REANUDADO","Curvas 24h reanudadas tras arranque estable");
-  }
+
  }
  tracePhase(TracePhase::Http);srv.handleClient();
  tracePhase(TracePhase::Button);physicalButtonTask();
@@ -1482,8 +1477,17 @@ void loop(){
  // Invariante R4.4: iniciar Bluetooth NO habilita el programador de luces.
  // Pruebas de curvas se ejecutan solo en RAM en labTick().
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
- // Programador local 24h: sobrevive a caidas de Internet, no requiere Safari.
- // Pero el interruptor V4 es volátil: tras reinicio se exige reactivarlo.
+ // Reanudar el modo guardado cuando BLE, perfil, hora y recuperación estén listos.
+ if(cieloResumePending && cieloAlwaysOn && currentBootMarkedHealthy &&
+    bleReady && timeOK() && wifiCoexistReady() && !rescueOpen &&
+    cielo96::profileValid(profile) && !customResumePending &&
+    !cieloChReturnPending && !cieloChAwaitResponse && !queue.busy()){
+  cieloResumePending=false;cieloPvRun=true;cieloChRun=true;
+  cieloWatchdogTripped=false;cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
+  lastPvDesired=false;lastChDesired=false;
+  cieloStartedAt=millis();lastScheduleAt=millis()-30000UL;
+  record("V5_AUTO_REANUDADO","Ambas curvas reanudadas tras comprobar hora, WiFi y Bluetooth");
+ }
  lightingTask();
  cieloTrendTick();
  labTick();
