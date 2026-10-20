@@ -637,7 +637,7 @@ function labPretty(d){
 }
 async function labRefresh(){
  if(!isLive())return;
- try{labPretty(await api('/api/lab/status'))}catch(e){$('labState').textContent='No disponible: '+e.message}
+ try{labPretty(await api('/api/lab/status'))}catch(e){if($('cieloLinks'))$('cieloLinks').textContent='Sin datos Bluetooth: '+e.message}
 }
 async function releaseLight(device){
  try{
