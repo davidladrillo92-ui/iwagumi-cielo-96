@@ -52,7 +52,7 @@
 </details>
 
 <section class="livePanel" id="chLivePanel">
-<strong>¿Quién controla Chihiros?</strong>
+<strong>¿Quién controla Chihiros?</strong><p class="note">R4.4: el programador CIELO queda pausado durante el laboratorio. La programación habitual sigue bajo My Chihiros.</p>
 <p id="chNightStatus">My Chihiros · AUTO (predeterminado y recomendado).</p>
 <div class="liveButtons"><button id="chNightOff">My Chihiros · AUTO</button><button id="chNightOn">Probar control CIELO</button></div>
 <details class="curveHelper"><summary>Cómo funciona</summary><p>My Chihiros mantiene su programa normal. Si eliges CIELO, ATOM controla temporalmente la curva solo entre las 14:00 y las 23:05. Después recupera AUTO; no es todavía un control automático de 24 horas.</p><p id="chNightMetrics">Sin actividad de CIELO.</p></details>
@@ -201,7 +201,7 @@ function nav(n){state.view=n;document.querySelectorAll('.page').forEach(e=>e.cla
 function sheet(html){$('modalBody').innerHTML=html;$('modal').classList.add('open');document.body.style.overflow='hidden'}function close(){ $('modal').classList.remove('open');document.body.style.overflow='';}
 function input(id,label,value,max){return `<div class="field"><label for="${id}">${label}</label><input type="number" id="${id}" inputmode="numeric" step="1" min="0" max="${max}" value="${value}"></div>`}
 let picked='chi';
-function lampSheet(which){picked=which;let arr=vAt(state[which],state.preview??currentClock());let isPez=which==='pez';let base=isPez?arr:[...arr];sheet(`<h2 class="sheet-title">${isPez?'Pez Verde':'Chihiros'}</h2><p class="sheet-sub">${isPez?'Luz ambiente':'Luz principal'} · ${isPez?'RGB 255':'RGB 100'}</p><div class="fields ${isPez?'':'three'}">${input('r','Rojo',base[0],isPez?255:100)}${input('g','Verde',base[1],isPez?255:100)}${input('b','Azul',base[2],isPez?255:100)}${isPez?input('bright','Brillo',base[3],100):''}</div><div class="actions"><button id="previewButton" class="btn">Probar ${isPez?'20':'8'} s</button><button id="restoreButton" class="btn sub">Auto</button></div><p class="note" style="margin-top:18px">${isPez?'Vuelve a su programación habitual.':'La curva automática permanece en My Chihiros.'}</p>`);$('previewButton').onclick=()=>preview(which);$('restoreButton').onclick=()=>restore(which)}
+function lampSheet(which){picked=which;let arr=vAt(state[which],state.preview??currentClock());let isPez=which==='pez';let base=isPez?arr:[...arr];sheet(`<h2 class="sheet-title">${isPez?'Pez Verde':'Chihiros'}</h2><p class="sheet-sub">${isPez?'Luz ambiente':'Luz principal'} · ${isPez?'RGB 255':'RGB 100'}</p><div class="fields ${isPez?'':'three'}">${input('r','Rojo',base[0],isPez?255:100)}${input('g','Verde',base[1],isPez?255:100)}${input('b','Azul',base[2],isPez?255:100)}${isPez?input('bright','Brillo',base[3],100):''}</div><div class="actions"><button id="previewButton" class="btn">Probar ${isPez?'20':'8'} s</button><button id="restoreButton" class="btn sub">Auto</button></div><p class="note" style="margin-top:18px">${isPez?'No hay retorno automático en laboratorio: utiliza la aplicación Pez Verde.':'Puede quedar en modo manual: solicita AUTO desde Laboratorio o My Chihiros.'}</p>`);$('previewButton').onclick=()=>preview(which);$('restoreButton').onclick=()=>restore(which)}
 async function preview(which){if(state.busy)return;let isPez=which==='pez';let m=isPez?255:100,fields=['r','g','b',...(isPez?['bright']:[])];let a=fields.map(id=>{let v=$ (id).value.trim();return /^\d+$/.test(v)?Number(v):NaN});if(a.some((v,i)=>!Number.isInteger(v)||v<0||v>(i===3?100:m))){toast('Revisa los valores');return}if(!state.connected){toast('Conecta el iPhone a Iwagumi-RGB');return}if(!confirm(`Probar ${which==='chi'?'Chihiros':'Pez Verde'} durante ${isPez?20:8} segundos. ¿Continuar?`))return;state.busy=true;try{if(isPez)await api('/api/manual',{r:a[0],g:a[1],b:a[2],bright:a[3],confirm:'daytime',source:'sim'});else await api('/api/chihiros/manual',{r:a[0],g:a[1],b:a[2],confirm:'anyhour'});toast('Prueba enviada');close();await sync()}catch(e){toast(e.message)}finally{state.busy=false}}
 async function restore(which){if(!state.connected){toast('Sin conexión con ATOM');return}state.busy=true;try{await api(which==='pez'?'/api/manual':'/api/chihiros/stop',which==='pez'?{mode:'auto'}:{});toast('AUTO solicitado');close();await sync()}catch(e){toast(e.message)}finally{state.busy=false}}
 async function restoreAll(){if(!state.connected){toast('Sin conexión');return}if(!confirm('Terminar pruebas y devolver Chihiros al programa de My Chihiros y Pez Verde al del ATOM. No se borran las curvas. ¿Continuar?'))return;try{await api('/api/manual',{mode:'auto'});await api('/api/chihiros/stop',{});toast('AUTO solicitado');await sync()}catch(e){toast(e.message)}}
@@ -359,7 +359,7 @@ async function importProgram(ev){
 function manualChooser(){
  sheet('<h2 class="sheet-title">Prueba manual</h2><p class="sheet-sub">Pruebas breves con retorno automático</p>'+
  '<div class="actions"><button class="btn" id="testChi">Chihiros · 8 s</button><button class="btn sub" id="testPez">Pez Verde · 20 s</button></div>'+
- '<p class="note" style="margin-top:15px">La prueba se envía solo tras confirmar. AUTO vuelve al finalizar.</p>');
+ '<p class="note" style="margin-top:15px">R4.4: usa la pestaña Pruebas. Una orden manual no garantiza volver automáticamente al estado anterior.</p>');
  $('testChi').onclick=()=>lampSheet('chi');$('testPez').onclick=()=>lampSheet('pez');
 }
 
@@ -632,7 +632,7 @@ async function labLight(which){
 }
 async function labAuto(){
  if(!confirm('Enviar Chihiros AUTO por BLE. Comprueba que My Chihiros recupera el control visualmente. ¿Enviar?'))return;
- await labDo('/api/chihiros/stop',{});
+ await labDo('/api/chihiros/stop',{lab_manual:'1'});
 }
 function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>nav(b.dataset.view));document.querySelectorAll('[data-lamp]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.lamp);state.editIndex=0;pointEditor(b.dataset.lamp)});
 document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;
