@@ -1028,29 +1028,61 @@ static void wifiTask(){
  }
 
 }
+static static void cieloRequestReturn(const char* reason){
+ // Apartar inmediatamente TODAS las órdenes CH pendientes, aun cuando hay una
+ // operacion BLE iniciada que debe terminar antes de mandar el selector 0x03.
+ queue.cancel_pending(cielo::ble::Device::Chihiros);
+ lastChDesired=false;chiManual=false;chiCieloNight=false;
+ if(cieloChReturnPending||cieloChAwaitResponse)return;
+ cieloReturnTries=0;cieloReturnRetryAt=millis();
+ cieloChReturnPending=true;cieloReturnReason=reason;
+ record("V4_RETORNO_PEDIDO",cieloReturnReason+"; selector personalizado 0x03, no escenas 0x12");
+}
 static void lightingTask(){
- uint32_t now=millis();
- if(!timeOK())return;
- // Timeouts of manual previews use subtraction safe under millis wraparound.
- if(pezManual && (int32_t)(now-pezManualUntil)>=0){pezManual=false;lastPvDesired=false;record("PV_MANUAL_FIN","Volver a curva");}
- if(chiManual && (int32_t)(now-chiManualUntil)>=0){chiManual=false;lastChDesired=false;record("CH_MANUAL_FIN","Volver a curva o AUTO");}
- if(now-lastScheduleAt<12000UL)return;lastScheduleAt=now;
+ const uint32_t now=millis();
+ if(pezManual && (int32_t)(now-pezManualUntil)>=0)pezManual=false;
+ if(chiManual && (int32_t)(now-chiManualUntil)>=0)chiManual=false;
+ // Las verificaciones se hacen incluso si CIELO no controla las luces.
+ if(!cieloPvRun && !cieloChRun && !cieloChWasDriven)return;
+ if(now-lastScheduleAt<30000UL)return;lastScheduleAt=now;
+ if(!timeOK() || !cielo96::profileValid(profile)){
+  if(cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
+   cieloChRun=false;cieloPvRun=false;cieloFallbacks++;
+   cieloRequestReturn("Hora o curva invalida: ceder a My Chihiros");
+  }
+  return;
+ }
+ if(!bleReady || !wifiCoexistReady() || rescueOpen)return;
  const int minute=minuteOfDay();
- if(!pezManual){
-  auto p=desiredPv();
-  if(!lastPvDesired||memcmp(&p,&prevPv,sizeof(p))!=0||now-lastPvDesiredAt>300000UL){
-   submitPv(p);prevPv=p;lastPvDesired=true;lastPvDesiredAt=now;
+ const bool chWindow=(minute>=870 && minute<1380); // Natural V4 14:30-23:00
+ // 27 puntos PV, 21 CH. Interpolacion lineal ya probada en cielo_engine.h.
+ // Refresco a lo sumo 1 vez cada 30s; con curva estable heartbeat cada 5min.
+ if(cieloPvRun && !pezManual && !lab.txArmed && !queue.pending(cielo::ble::Device::PezVerde)){
+  const auto v=desiredPv();
+  const bool changed=!lastPvDesired||memcmp(&v,&prevPv,sizeof(v))!=0;
+  const bool heartbeat=now-lastPvDesiredAt>(v.brightness?300000UL:900000UL);
+  if(changed||heartbeat){
+   if(queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,
+                   v.r,v.g,v.b,v.brightness,now,90000UL)){
+    prevPv=v;lastPvDesired=true;lastPvDesiredAt=now;cieloPvOrders++;
+   }
   }
  }
- // 14:30 to 23:00: CIELO drives RGB. From 23:00: return Chihiros to My Chihiros AUTO.
- const bool within=(minute>=870&&minute<1380);
- if(chiCieloNight && within && !chiManual){
-  auto c=desiredCh();
-  if(!lastChDesired||memcmp(&c,&prevCh,sizeof(c))!=0||now-lastChDesiredAt>300000UL){
-   submitCh(c);prevCh=c;lastChDesired=true;lastChDesiredAt=now;chiAutoPending=false;chiAutoAttempted=false;
+ if(cieloChRun && chWindow && !chiManual && !lab.txArmed &&
+    !cieloChReturnPending && !cieloChAwaitResponse && !customResumePending &&
+    !queue.pending(cielo::ble::Device::Chihiros)){
+  const auto v=desiredCh();
+  const bool changed=!lastChDesired||memcmp(&v,&prevCh,sizeof(v))!=0;
+  const bool heartbeat=now-lastChDesiredAt>300000UL;
+  if(changed||heartbeat){
+   if(queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,
+                   v.r,v.g,v.b,0,now,90000UL)){
+    prevCh=v;lastChDesired=true;lastChDesiredAt=now;cieloChOrders++;
+   }
   }
- }else if(!within && !chiAutoAttempted){
-  requestAuto();lastChDesired=false;
+ }else if(!chWindow && cieloChWasDriven &&
+           !cieloChReturnPending && !cieloChAwaitResponse){
+  cieloRequestReturn("23:00: finalizar Natural V4 Chihiros; Pez Verde continua");
  }
 }
 static void bleTick(){
