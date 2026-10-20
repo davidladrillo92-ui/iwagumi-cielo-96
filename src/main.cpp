@@ -898,8 +898,50 @@ static void configureRoutes(){
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
+ srv.on("/api/cielo/v4/status",HTTP_GET,[]{jsonSend(200,cieloModeJson());});
+ srv.on("/api/cielo/v4/start",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate de solo lectura");
+  if(srv.arg("confirm")!="ACTIVAR_NATURAL_V4")return fail(403,"Confirma el control de ambas luces");
+  if(!currentBootMarkedHealthy || !bleReady || !timeOK() ||
+     !wifiCoexistReady() || !cielo96::profileValid(profile))
+   return fail(423,"Espera arranque estable (3 min), BLE, reloj y perfil validos");
+  if(queue.busy()||customResumePending||cieloChReturnPending||
+     cieloChAwaitResponse||lab.scanPending||lab.probePending||lab.txArmed||
+     contrastStage==1||contrastStage==2||contrastStage==4)
+   return fail(409,"Existe otra operacion o prueba: termina y repite");
+  cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
+  cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
+  cieloStartedAt=millis();lastPvDesired=false;lastChDesired=false;
+  lastScheduleAt=millis()-30000UL;
+  pezManual=false;chiManual=false;
+  record("V4_ACTIVADA","Natural V4 en vivo: PV 27 puntos, CH 21 puntos, CH vuelve a My Chihiros a las 23:00");
+  ok();
+ });
+ srv.on("/api/cielo/v4/return",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate de solo lectura");
+  if(srv.arg("confirm")!="VOLVER_MY_CHIHIROS")return fail(403,"Confirma el retorno");
+  if(!bleReady)return fail(423,"BLE no disponible: abre My Chihiros directamente");
+  if(customResumePending||lab.scanPending||lab.probePending||
+     contrastStage==1||contrastStage==2||contrastStage==4)
+   return fail(409,"Espera a que finalice el ensayo previo");
+  cieloChRun=false;
+  cieloRequestReturn("Boton: volver a curva personalizada My Chihiros");
+  record("V4_BOTON_MYCHIHIROS","Pez Verde sigue usando Natural V4 si estaba activa");
+  ok();
+ });
+ srv.on("/api/cielo/v4/pause",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate de solo lectura");
+  if(srv.arg("confirm")!="PAUSAR_TODO")return fail(403,"Confirma pausa de ambas pantallas");
+  cieloPvRun=false;cieloChRun=false;
+  queue.cancel_pending(cielo::ble::Device::PezVerde);
+  if(bleReady)cieloRequestReturn("Pausa total: devolver Chihiros a My Chihiros");
+  else {queue.cancel_pending(cielo::ble::Device::Chihiros);record("V4_SIN_BLE","No se puede restaurar Chihiros sin BLE; requiere My Chihiros");}
+  record("V4_PAUSA_TOTAL","Pez Verde queda en su ultimo estado; sin nuevos envios de CIELO");
+  ok();
+ });
  srv.on("/api/chihiros/contrast/start",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(cieloPvRun||cieloChRun)return fail(409,"Pausa Natural V4 antes de ejecutar contrastes");
   if(srv.arg("confirm")!="ENSAYO_30_30_30")return fail(403,"Confirmacion necesaria");
   if(!bleReady||!wifiCoexistReady()||!timeOK())return fail(423,"Bluetooth o reloj sin preparar");
   if(queue.busy()||customResumePending||lab.scanPending||lab.probePending||
@@ -947,12 +989,15 @@ static void configureRoutes(){
   const String device=srv.arg("device");
   if(device!="chihiros"&&device!="pez_verde")return fail(400,"Elige una pantalla valida");
   const uint8_t index=device=="chihiros"?1:0;
+  if(device=="chihiros" && cieloChRun)
+   return fail(409,"Para volver a My Chihiros utiliza el boton Curvas: Volver a My Chihiros");
   if(!cielo96::ble_release_request(index))return fail(503,"No se pudo solicitar la liberacion");
   record("BLE_CEDER",device+" liberacion solicitada sin ordenes RGB");
   ok();
  });
  srv.on("/api/lab/preview",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(cieloPvRun||cieloChRun)return fail(409,"Pausa Natural V4 antes del modo laboratorio");
   if(!labTxEnabled()||srv.arg("confirm")!="ENSAYO_CURVA")return fail(423,"Autoriza primero el ensayo de curva (90 s)");
   if(!timeOK()||!cielo96::profileValid(profile))return fail(503,"Hora o curva sin validar");
   const String screen=srv.arg("screen");
@@ -977,6 +1022,7 @@ static void configureRoutes(){
  });
  srv.on("/api/lab/tx/arm",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
+  if(cieloPvRun||cieloChRun)return fail(409,"Primero pausa el modo Natural V4");
   if(srv.arg("confirm")!="HABILITAR_MANUAL")return fail(403,"Confirmacion explicita requerida");
   if(!bleReady||!wifiCoexistReady())return fail(423,"Bluetooth o coexistencia no preparados");
   lab.txArmed=true;lab.txUntil=millis()+LAB_TX_WINDOW_MS;lab.txArmCount++;
