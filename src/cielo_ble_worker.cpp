@@ -23,7 +23,7 @@ struct Target {
 };
 Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
                    {codec::CH_NAME,codec::CH_SVC,codec::CH_TX}};
-QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr,releaseRequests=nullptr;
+QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr,releaseRequests=nullptr,customRequests=nullptr,customResults=nullptr;
 struct SharedLink { volatile bool connected=false;volatile bool released=false;volatile uint32_t releases=0;volatile uint32_t lastDisconnect=0;};
 SharedLink shared[2]{};
 uint32_t linkTouched[2]{};
@@ -31,7 +31,9 @@ static constexpr uint32_t BLE_IDLE_RELEASE_MS=5000UL;
 void releaseTarget(uint8_t device,bool userRequested){
  Target& t=targets[device];
  if(t.client && t.client->isConnected())t.client->disconnect();
- t.writer=nullptr;t.manualEntered=false;t.addressKnown=false;t.pvOn=false;
+ t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
+ // Mantener direccion/tipo aprendidos para evitar scan de 5s en cada orden;
+ // ante un fallo real de conexion se invalida en connect().
  shared[device].connected=false;
  shared[device].released=userRequested;
  shared[device].releases++;
@@ -169,7 +171,7 @@ void probeGATT(uint8_t device){
  // Si CIELO conserva una conexion anterior de prueba manual, soltarla antes
  // de realizar la sonda para no iniciar otra conexion encima.
  if(t.client && t.client->isConnected())t.client->disconnect();
- t.writer=nullptr;t.addressKnown=false;t.manualEntered=false;
+ t.writer=nullptr;t.manualEntered=false;
  if(!locate(t)){
   reason="BLE_DEVICE_NOT_FOUND";
  }else{
@@ -202,6 +204,24 @@ void probeGATT(uint8_t device){
   BleProbeResult old{};xQueueReceive(probeResponses,&old,0);xQueueSend(probeResponses,&r,0);
  }
 }
+void resumeCustomCurve(){
+ BleCustomResumeResult res{};uint32_t started=millis();const char*err="OK";
+ Target& t=targets[1];uint8_t frame[32];size_t n=0;
+ const bool connected=connect(t,err);
+ if(connected){
+  if(!codec::ch_custom_curve_resume(chMessageId,frame,sizeof(frame),n)){
+   err="CH_CUSTOM_FRAME";res.success=false;
+  }else{
+   res.success=put(t,frame,n,err);
+  }
+ }
+ res.duration_ms=millis()-started;
+ strncpy(res.reason,err,sizeof(res.reason)-1);
+ releaseTarget(1,true); // Nunca quedar bloqueando My Chihiros.
+ if(xQueueSend(customResults,&res,0)!=pdTRUE){
+  BleCustomResumeResult old{};xQueueReceive(customResults,&old,0);xQueueSend(customResults,&res,0);
+ }
+}
 void task(void*){
  BLEDevice::init("IWAGUMI-CIELO-96");
  lastHeartbeat=millis();
@@ -212,6 +232,10 @@ void task(void*){
    if(releaseToken<2)releaseTarget(releaseToken,true);
   }
   releaseIdleLinks();
+  uint8_t customToken=0;
+  if(xQueueReceive(customRequests,&customToken,0)==pdTRUE){
+   resumeCustomCurve();lastHeartbeat=millis();
+  }
   if(xQueueReceive(probeRequests,&probeToken,0)==pdTRUE){
    probeGATT(probeToken);lastHeartbeat=millis();
   }
@@ -239,8 +263,17 @@ bool ble_begin(){
  scanRequests=xQueueCreate(1,sizeof(uint8_t));scanResponses=xQueueCreate(2,sizeof(BleScanResult));
  probeRequests=xQueueCreate(1,sizeof(uint8_t));probeResponses=xQueueCreate(2,sizeof(BleProbeResult));
  releaseRequests=xQueueCreate(2,sizeof(uint8_t));
- if(!requests || !responses || !scanRequests || !scanResponses || !probeRequests || !probeResponses || !releaseRequests)return false;
+ customRequests=xQueueCreate(1,sizeof(uint8_t));
+ customResults=xQueueCreate(1,sizeof(BleCustomResumeResult));
+ if(!requests || !responses || !scanRequests || !scanResponses || !probeRequests || !probeResponses || !releaseRequests || !customRequests || !customResults)return false;
  return xTaskCreatePinnedToCore(task,"cielo_ble",16384,nullptr,1,nullptr,0)==pdPASS;
+}
+bool ble_custom_resume_request(){
+ uint8_t token=1;
+ return customRequests && xQueueSend(customRequests,&token,0)==pdTRUE;
+}
+bool ble_custom_resume_result(BleCustomResumeResult& result){
+ return customResults && xQueueReceive(customResults,&result,0)==pdTRUE;
 }
 bool ble_release_request(uint8_t device){
  return device<2 && releaseRequests && xQueueSend(releaseRequests,&device,0)==pdTRUE;
