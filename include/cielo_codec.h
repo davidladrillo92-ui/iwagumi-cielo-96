@@ -22,17 +22,18 @@ inline void pv_brightness(uint8_t percent,uint8_t out[9]) {
  for(int i=0;i<9;i++)out[i]=t[i];
 }
 inline uint8_t ch_xor(const uint8_t* p,size_t length_without_crc){uint8_t x=0;for(size_t i=1;i<length_without_crc;i++)x^=p[i];return x;}
-// Respeta byte reservado 0x5A (ID, payload y checksum). Un ID invalido se descarta.
+// El byte 0x5A solo esta reservado para los dos bytes del identificador
+// de mensaje. Payload y XOR pueden valer 0x5A sin alterarse ni rechazarse.
 inline bool ch_frame(uint8_t family,uint8_t mode,const uint8_t* payload,size_t n,
                      uint16_t id,uint8_t* out,size_t cap,size_t& len){
  len=0;if(n>32||cap<n+7||(!payload&&n))return false;
  if((id>>8)==0x5a||(id&0xff)==0x5a)return false;
  out[0]=family;out[1]=0x01;out[2]=uint8_t(n+5);out[3]=uint8_t(id>>8);out[4]=uint8_t(id);
- out[5]=mode;for(size_t i=0;i<n;i++)out[6+i]=payload[i]==0x5a?0x59:payload[i];
- uint8_t crc=ch_xor(out,n+6);if(crc==0x5a)return false;
+ out[5]=mode;for(size_t i=0;i<n;i++)out[6+i]=payload[i];
+ const uint8_t crc=ch_xor(out,n+6);
  out[n+6]=crc;len=n+7;return true;
 }
-// Busca un ID valido tambien cuando el XOR coincide con 0x5a.
+// Busca un ID cuyos dos bytes sean validos; no modifica datos ni checksum.
 inline bool ch_safe_frame(uint8_t family,uint8_t mode,const uint8_t* payload,size_t n,
                           uint16_t& id,uint8_t* out,size_t cap,size_t& len){
  for(unsigned i=0;i<600;i++){
