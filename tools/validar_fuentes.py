@@ -183,7 +183,9 @@ assert "await api('/api/cielo/v4/return',{confirm:'VOLVER_MY_CHIHIROS'})" in act
 assert "await api('/api/cielo/v4/pause',{confirm:'PAUSAR_TODO'})" in actual
 assert "await api('/api/chihiros/contrast/start',{confirm:'ENSAYO_30_30_30'})" in actual
 assert "await api('/api/chihiros/my-curve-test',{confirm:'PROBAR_CURVA_MY_CHIHIROS'})" in actual
-assert "$('restoreCustomTest').disabled=ctr.stage!=='esperando_confirmacion_visual'" in actual
+assert 'id="restoreCustomTest"' not in actual
+assert 'id="contrast30"' not in actual
+assert 'id="releaseCh"' not in actual
 assert 'function testMyChihirosCurve()' in actual
 assert 'async function contrast30()' in actual
 
