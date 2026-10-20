@@ -371,7 +371,7 @@ static String labJson(){
  j+=",\"http_requests_delta\":"+String(httpCount-lab.baselineHttp);
  j+=",\"browser_rtt\":{\"samples\":"+String(lab.browserSamples);
  j+=",\"avg_ms\":"+String(lab.browserAvgMs)+",\"max_ms\":"+String(lab.browserMaxMs)+"}";
- j+=",\"passive_scan\":{\"requested\":"+String(lab.scanRequests);
+ j+=",\"discovery_scan\":{\"requested\":"+String(lab.scanRequests);
  j+=",\"completed\":"+String(lab.scanCompleted)+",\"rejected\":"+String(lab.scanRejects)+",\"timeouts\":"+String(lab.scanTimeouts);
  j+=",\"pending\":"+String(lab.scanPending?"true":"false");
  j+=",\"last_scan_duration_ms\":"+String(lab.lastScan.elapsed_ms);
