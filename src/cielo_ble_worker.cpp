@@ -1,5 +1,6 @@
 #include "cielo_ble_worker.h"
 #include "cielo_codec.h"
+#include "cielo_ble_match.h"
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEScan.h>
@@ -32,11 +33,11 @@ bool locate(Target& t) {
  BLEScan* scan=BLEDevice::getScan();
  scan->setActiveScan(true);
  scan->setInterval(150);scan->setWindow(75);
- BLEScanResults result=scan->start(3,false);
+ BLEScanResults result=scan->start(5,false);
  bool found=false;
  for(int i=0;i<result.getCount();++i){
   BLEAdvertisedDevice d=result.getDevice(i);
-  if(d.haveName() && String(d.getName().c_str())==String(t.name)){
+  if(d.haveName() && bleNameMatches(d.getName().c_str(),t.name)){
    t.address=String(d.getAddress().toString().c_str());t.addressKnown=true;found=true;break;
   }
  }
@@ -100,21 +101,24 @@ bool sendCh(const cielo::ble::Command& c,const char*&err){
  }
  return true;
 }
-void scanPassive(){
+void scanDiscover(){
  BleScanResult r{};
  uint32_t start=millis();
  BLEScan* scan=BLEDevice::getScan();
- scan->setActiveScan(false);
- scan->setInterval(180);
- scan->setWindow(70);
- BLEScanResults found=scan->start(3,false);
+ // Active scan requests scan-response packets where controllers often advertise their full name.
+ // This remains discovery-only: does not connect or write a single GATT byte.
+ scan->setActiveScan(true);
+ scan->setInterval(160);
+ scan->setWindow(80);
+ BLEScanResults found=scan->start(5,false);
  r.advertised=found.getCount();
  for(int i=0;i<found.getCount();++i){
   BLEAdvertisedDevice d=found.getDevice(i);
-  if(!d.haveName())continue;
-  String name(d.getName().c_str());
-  if(name==codec::PV_NAME){r.pez_found=true;r.pez_rssi=d.getRSSI();}
-  if(name==codec::CH_NAME){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
+  if(!d.haveName()){r.unnamed++;continue;}
+  r.named++;
+  const char* name=d.getName().c_str();
+  if(bleNameMatches(name,codec::PV_NAME)){r.pez_found=true;r.pez_rssi=d.getRSSI();}
+  if(bleNameMatches(name,codec::CH_NAME)){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
  }
  scan->clearResults();
  r.elapsed_ms=millis()-start;
@@ -129,7 +133,7 @@ void task(void*){
  for(;;){
   uint8_t scanToken=0;
   if(xQueueReceive(scanRequests,&scanToken,0)==pdTRUE){
-   scanPassive();lastHeartbeat=millis();
+   scanDiscover();lastHeartbeat=millis();
   }
   cielo::ble::Command c{};
   // Block without consuming CPU; heartbeat updates every second when idle.
