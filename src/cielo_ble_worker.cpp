@@ -139,6 +139,10 @@ void scanDiscover(){
 void probeGATT(uint8_t device){
  BleProbeResult r{};r.device=device;const uint32_t start=millis();
  Target& t=targets[device==1?1:0];const char* reason="OK";
+ // Si CIELO conserva una conexion anterior de prueba manual, soltarla antes
+ // de realizar la sonda para no iniciar otra conexion encima.
+ if(t.client && t.client->isConnected())t.client->disconnect();
+ t.writer=nullptr;t.addressKnown=false;t.manualEntered=false;
  if(!locate(t)){
   reason="BLE_DEVICE_NOT_FOUND";
  }else{
