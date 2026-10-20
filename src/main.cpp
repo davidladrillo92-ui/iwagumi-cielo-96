@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="10.0.0-RC1-CENTRO";
+static constexpr const char* VERSION="10.0.1-RC2-CENTRO-LIMPIO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -117,6 +117,10 @@ struct LabState {
 };
 static LabState lab;
 static constexpr uint32_t LAB_TX_WINDOW_MS=90000UL;
+static bool customResumePending=false;
+static uint32_t customResumeRequested=0,customResumeOk=0,customResumeFailed=0;
+static String customResumeLast="Sin probar";
+static uint32_t customResumeLastMs=0;
 static bool labTxEnabled(){
  return lab.txArmed && (int32_t)(lab.txUntil-millis())>0 &&
         bleReady && !rescueOpen && wifiCoexistReady();
@@ -424,6 +428,11 @@ static String labJson(){
   j+=",\"last_disconnect_ms\":"+String(link.last_disconnect_ms)+"}";
  }
  j+="}";
+ j+=",\"chihiros_my_curve\":{\"experimental\":true,\"confirmed_optically\":false";
+ j+=",\"pending\":"+String(customResumePending?"true":"false");
+ j+=",\"requests\":"+String(customResumeOk+customResumeFailed+(customResumePending?1:0));
+ j+=",\"gatt_ok\":"+String(customResumeOk)+",\"gatt_failed\":"+String(customResumeFailed);
+ j+=",\"last_result\":"+jsonQuote(customResumeLast)+"}";
  j+=",\"lighting\":{\"scheduler_enabled\":false,\"gatt_tx_armed\":"+String(labTxEnabled()?"true":"false");
  j+=",\"tx_window_remaining_sec\":"+String(labTxEnabled()?(lab.txUntil-age)/1000UL:0);
  j+=",\"tx_arm_count\":"+String(lab.txArmCount)+",\"tx_blocked\":"+String(lab.txBlocked);
@@ -439,6 +448,18 @@ static String labJson(){
 }
 static void labTick(){
  const uint32_t now=millis();
+ cielo96::BleCustomResumeResult custom{};
+ while(cielo96::ble_custom_resume_result(custom)){
+  customResumePending=false;customResumeLastMs=now;
+  customResumeLast=String(custom.reason)+" "+String(custom.duration_ms)+" ms; verificacion visual pendiente";
+  if(custom.success){customResumeOk++;record("CH_CURVA_MYCH_GATT_OK",customResumeLast);}
+  else {customResumeFailed++;record("CH_CURVA_MYCH_FALLO",customResumeLast);}
+ }
+ if(customResumePending && now-customResumeRequested>24000UL){
+  customResumePending=false;customResumeFailed++;
+  customResumeLast="Sin respuesta de la tarea BLE en 24 s; no repetir automaticamente";
+  record("CH_CURVA_MYCH_TIMEOUT",customResumeLast);
+ }
  if(lab.loopLast && now-lab.loopLast>lab.loopMaxGapMs)lab.loopMaxGapMs=now-lab.loopLast;
  lab.loopLast=now;
  cielo96::BleProbeResult probe{};
@@ -545,7 +566,8 @@ static void diagnosticJson(){
  j+=",\"last_ota_message\":"+jsonQuote(lastOtaError)+",\"github_check\":\"NO_USADO\",\"cloud\":\"DESACTIVADA\"}";
  j+=",\"recovery\":{\"ap_ssid\":\"CIELO96-CONFIG\",\"ap_ip\":\"192.168.4.1\",\"password_location\":\"SERIAL_USB_LOCAL\",\"always_on\":true";
  j+=",\"running_partition\":"+jsonQuote(otaRunningPartition)+",\"next_update_partition\":"+jsonQuote(otaNextPartition);
- j+=",\"physical_ota_grant\":"+String(physicalOtaGrant()?"true":"false")+",\"ota_enabled\":false}";
+ j+=",\"physical_ota_grant\":"+String(physicalOtaGrant()?"true":"false");
+ j+=",\"ota_enabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+"}";
  time_t currentEpoch=time(nullptr);
  struct tm clockLocal{};
  char clockOffset[8]="";
@@ -773,6 +795,18 @@ static void configureRoutes(){
   if(!cielo96::ble_probe_request(index)){lab.probeRejected++;return fail(503,"Cola de GATT ocupada");}
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
+ });
+ srv.on("/api/chihiros/my-curve-test",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  if(!bleReady || !labTxEnabled())return fail(423,"Bluetooth no preparado o ensayo sin autorizacion de 90 segundos");
+  if(srv.arg("confirm")!="PROBAR_CURVA_MY_CHIHIROS")return fail(403,"Se requiere confirmacion explicita");
+  if(customResumePending||lab.scanPending||lab.probePending||queue.busy())
+   return fail(409,"Bluetooth ocupado: espera a terminar");
+  if(!cielo96::ble_custom_resume_request())return fail(503,"No se pudo programar ensayo seguro");
+  customResumePending=true;customResumeRequested=millis();
+  chiManual=false;chiAutoPending=false;
+  record("CH_CURVA_MYCH_ENSAYO","0x05 [03 FF FF] seleccion curva personalizada; no modifica los puntos; NO probado opticamente");
+  ok();
  });
  srv.on("/api/ble/release",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
