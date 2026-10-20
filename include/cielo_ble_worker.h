@@ -22,6 +22,16 @@ struct BleProbeResult {
  bool success=false,service=false,characteristic=false;
  char reason[48]{};
 };
+// Ceder el control al telefono sin modificar RGB ni horarios.
+// La desconexion es propiedad exclusiva del worker BLE.
+struct BleLinkStatus {
+ bool connected=false;
+ bool released_to_app=false;
+ uint32_t release_count=0;
+ uint32_t last_disconnect_ms=0;
+};
+bool ble_release_request(uint8_t device);
+BleLinkStatus ble_link_status(uint8_t device);
 bool ble_probe_request(uint8_t device);
 bool ble_probe_result(BleProbeResult& result);
 bool ble_scan_request();
