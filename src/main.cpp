@@ -555,15 +555,11 @@ static void submitCh(cielo::ChiValue c,uint32_t ttl=90000){
  if(!queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,c.r,c.g,c.b,0,millis(),ttl))record("COLA_RECHAZADA","CH");
 }
 static void requestAuto(){
- // No reactivar hasta identificar desde My Chihiros el modo auto que usa la pantalla.
- if(true){record("CH_AUTO_INSEGURO","Orden de restauracion deshabilitada en R4.4.2");return;}
- if(!labTxEnabled()){lab.txBlocked++;record("LAB_TX_BLOQUEADA","AUTO Chihiros requiere autorizacion");return;}
- chiAutoAttempted=true;
- if(queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::RestoreAuto,0,0,0,0,millis(),90000)){
-  chiAutoPending=true;
- }else{
-  chiAutoPending=false;record("AUTO_RECHAZADO","No se pudo encolar AUTO; NO restaurado");
- }
+ // No conocemos si la Chihiros usa curva personalizada o escena.
+ // 0x12 se deshabilita: apago fisicamente la WRGB Slim en la prueba 22.
+ chiAutoPending=false;
+ lab.txBlocked++;
+ record("CH_AUTO_INSEGURO","Restauracion BLE bloqueada hasta verificar modo desde My Chihiros");
 }
 static void manualPv(){
  if(!labTxEnabled() || srv.arg("lab_manual")!="1")return fail(423,"Laboratorio: habilita 90 segundos de transmisiones manuales");
