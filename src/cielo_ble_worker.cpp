@@ -86,9 +86,11 @@ bool sendCh(const cielo::ble::Command& c,const char*&err){
  Target&t=targets[1];if(!connect(t,err))return false;
  uint8_t frame[32];size_t size=0;
  if(c.action==cielo::ble::Action::RestoreAuto){
-  if(!codec::ch_auto(chMessageId,frame,sizeof(frame),size)){err="CH_AUTO_ENCODE";return false;}
-  if(!put(t,frame,size,err))return false;
-  t.manualEntered=false;return true;
+  // Fallo fisico Informe Maestro 22: la trama 0x05 [18,ff,ff]
+  // selecciono escenas y apago la Chihiros con curva personalizada.
+  // Defensa en profundidad: incluso si se encolase, NO escribir GATT.
+  err="CH_AUTO_MODE_UNVERIFIED";
+  return false;
  }
  if(!t.manualEntered){
   if(!codec::ch_manual_prelude(chMessageId,frame,sizeof(frame),size)){err="CH_PRELUDE_ENCODE";return false;}
