@@ -385,6 +385,12 @@ static String cieloModeJson(){
  j+=",\"pv_consecutive_errors\":"+String(cieloPvConsecutiveFailures);
  j+=",\"ch_consecutive_errors\":"+String(cieloChConsecutiveFailures);
  j+=",\"started_at_ms\":"+String(cieloStartedAt);
+ j+=",\"pv_last_requested\":["+String(prevPv.r)+","+String(prevPv.g)+","+String(prevPv.b)+","+String(prevPv.brightness)+"]";
+ j+=",\"ch_last_requested\":["+String(prevCh.r)+","+String(prevCh.g)+","+String(prevCh.b)+"]";
+ j+=",\"pv_last_requested_age_sec\":"+String(lastPvDesiredAt?(millis()-lastPvDesiredAt)/1000UL:0);
+ j+=",\"ch_last_requested_age_sec\":"+String(lastChDesiredAt?(millis()-lastChDesiredAt)/1000UL:0);
+ j+=",\"ch_window_now\":"+String(timeOK()&&minuteOfDay()>=870&&minuteOfDay()<1380?"true":"false");
+ j+=",\"return_stored_after_reboot\":"+String(prefs.getBool("v4_ch_takeover",false)?"true":"false");
  j+=",\"note\":\"La recuperacion 0x03 requiere BLE operativo y energia del ATOM\"}";
  return j;
 }
