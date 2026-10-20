@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 #include <esp_attr.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/sha256.h>
@@ -33,7 +34,7 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.3.4-RELOJ-TRAZAS";
+static constexpr const char* VERSION="9.6.0-R4.3.5-COEX-SEGURO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -79,6 +80,18 @@ static cielo96::ProfileImage profile;
 static cielo::ble::Scheduler queue(3500,250,2000);
 static bool bleReady=false, profileRecovery=false, wifiApOn=false;
 static bool phoneSyncedThisBoot=false;
+static bool wifiCoexistReady(){
+ wifi_ps_type_t ps=WIFI_PS_NONE;
+ return esp_wifi_get_ps(&ps)==ESP_OK && ps!=WIFI_PS_NONE;
+}
+static const char* wifiSleepName(){
+ wifi_ps_type_t ps=WIFI_PS_NONE;
+ if(esp_wifi_get_ps(&ps)!=ESP_OK)return "NO_DISPONIBLE";
+ if(ps==WIFI_PS_NONE)return "NONE_INCOMPATIBLE_BLE";
+ if(ps==WIFI_PS_MIN_MODEM)return "MIN_MODEM";
+ if(ps==WIFI_PS_MAX_MODEM)return "MAX_MODEM";
+ return "DESCONOCIDO";
+}
 static bool blePilotRequested=false, blePilotAttempted=false, rescueOpen=false;
 static bool apProtected=false;
 static uint32_t rescueUntil=0, lastIndicatorAt=0;
@@ -331,7 +344,8 @@ static void diagnosticJson(){
  j+=",\"previous_reset_phase_is_hint_only\":true";
  j+=",\"persistent_fault_count\":"+String(savedFailures)+",\"prior_fault_type\":"+jsonQuote(priorEvent)+",\"prior_fault_detail\":"+jsonQuote(priorEventDetail)+"}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
- j+=",\"wifi_disconnects\":"+String(wifiDisconnects)+",\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0)+"}";
+ j+=",\"wifi_disconnects\":"+String(wifiDisconnects)+",\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0);
+ j+=",\"wifi_modem_sleep\":"+jsonQuote(wifiSleepName())+",\"wifi_ble_coex_ready\":"+String(wifiCoexistReady()?"true":"false")+"}";
  j+=",\"lighting\":{\"pez_verde\":{\"mode\":"+jsonQuote(pezManual?"manual":"programa")+",\"tx_batches\":"+String(devices[0].completed);
  j+=",\"tx_frames\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+"},\"chihiros\":{\"cielo_night_enabled\":"+String(chiCieloNight?"true":"false");
  j+=",\"ble_active\":"+String(bleReady?"true":"false")+",\"auto_restore_pending\":"+String(chiAutoPending?"true":"false")+",\"tx_frames\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+"}}";
@@ -638,7 +652,12 @@ void setup(){
  pinMode(ATOMS3_BUTTON_GPIO,INPUT_PULLUP);
  statusPixel.begin();statusPixel.setBrightness(32);statusPixel.clear();statusPixel.show();
  tracePhase(TracePhase::WifiInit);
- WiFi.mode(WIFI_AP_STA);WiFi.setSleep(false);WiFi.setAutoReconnect(false);
+ WiFi.mode(WIFI_AP_STA);
+ // ESP-IDF 4.4: Bluetooth controller aborts inside coex_core_enable if WIFI_PS_NONE.
+ // Keep WiFi modem sleep enabled; protect BLE startup with a runtime check below.
+ bool wifiSleepApplied=WiFi.setSleep(true);
+ WiFi.setAutoReconnect(false);
+ if(!wifiSleepApplied)record("COEX_AVISO","No se pudo activar WiFi MIN_MODEM; BLE seguira bloqueado");
  WiFi.setHostname("iwagumi-cielo96");
  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
  apProtected=wifiApOn;
@@ -665,10 +684,19 @@ void loop(){
  tracePhase(TracePhase::WifiTick);wifiTask();
  if(blePilotRequested && !blePilotAttempted && !rescueOpen){
   tracePhase(TracePhase::Ble);
-  blePilotRequested=false;blePilotAttempted=true;
-  record("BLE_PILOTO_INICIO","Se prueba Bluetooth con HTTP ya activo");
-  bleReady=cielo96::ble_begin();
-  record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
+  blePilotRequested=false;
+  // Do not create the BLE worker unless WiFi's coexistence requirement holds.
+  // Do not mark pilot as attempted if the guard blocked its creation.
+  bool sleepSet=WiFi.setSleep(true);
+  if(!sleepSet || !wifiCoexistReady()){
+   record("BLE_COEX_BLOQUEADO","WiFi modem sleep obligatorio en ESP-IDF 4.4; sin iniciar BLE");
+  }else{
+   blePilotAttempted=true;
+   record("BLE_COEX_VALIDADO",wifiSleepName());
+   record("BLE_PILOTO_INICIO","Se prueba Bluetooth con HTTP ya activo");
+   bleReady=cielo96::ble_begin();
+   record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
+  }
  }
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);lightingTask();bleTick();}
  tracePhase(TracePhase::Led);statusLedTick();
