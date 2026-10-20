@@ -14,6 +14,16 @@ struct BleScanResult {
  NearbyDevice observed[8]{};
  uint8_t observed_count=0;
 };
+// Prueba de GATT: conecta, descubre servicio y escritura; NO escribe datos.
+// Deja la conexión libre para My Chihiros / Pez Verde después del ensayo.
+struct BleProbeResult {
+ uint8_t device=0;
+ uint32_t elapsed_ms=0;
+ bool success=false,service=false,characteristic=false;
+ char reason[48]{};
+};
+bool ble_probe_request(uint8_t device);
+bool ble_probe_result(BleProbeResult& result);
 bool ble_scan_request();
 bool ble_scan_result(BleScanResult& out);
 bool ble_begin();

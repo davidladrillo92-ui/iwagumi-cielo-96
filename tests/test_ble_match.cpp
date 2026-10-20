@@ -5,6 +5,10 @@
 int main(){
  using cielo96::bleNameMatches;
  assert(bleNameMatches("ELK-BLEDOB","ELK-BLEDOB"));
+ assert(bleNameMatches("ELK-BLEDOB       ","ELK-BLEDOB")); // Capturado físicamente en R4.4.1
+ assert(bleNameMatches("ELK-BLEDOB\t ","ELK-BLEDOB"));
+ assert(!bleNameMatches(" ELK-BLEDOB","ELK-BLEDOB"));
+ assert(!bleNameMatches("ELK-BLEDOB2      ","ELK-BLEDOB"));
  assert(!bleNameMatches("ELK-BLEDOB2","ELK-BLEDOB"));
  assert(!bleNameMatches("ELK","ELK-BLEDOB"));
  assert(bleNameMatches("DYSL60","DYSL60"));

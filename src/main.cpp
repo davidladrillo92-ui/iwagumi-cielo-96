@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.4.1-BLE-DISCOVERY";
+static constexpr const char* VERSION="9.6.0-R4.4.2-AUTO-BLE-PV";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -107,6 +107,9 @@ struct LabState {
  uint32_t browserSamples=0,browserAvgMs=0,browserMaxMs=0;
  bool txArmed=false;
  uint32_t txUntil=0,txArmCount=0,txBlocked=0;
+ uint32_t probeRequests=0,probeCompleted=0,probeRejected=0,probeTimeouts=0,probeStartedMs=0;
+ bool probePending=false;
+ cielo96::BleProbeResult probeResults[2]{};
  uint32_t dryRunChecks=0;
  uint32_t dryRunChecksum=0;
  uint8_t pvSimR=0,pvSimG=0,pvSimB=0,pvSimBrightness=0;
@@ -392,6 +395,21 @@ static String labJson(){
   j+=",\"nordic_uart\":"+String(entry.nus?"true":"false")+"}";
  }
  j+="]}";
+ j+=",\"gatt_probe\":{\"requested\":"+String(lab.probeRequests);
+ j+=",\"completed\":"+String(lab.probeCompleted)+",\"rejected\":"+String(lab.probeRejected);
+ j+=",\"timeouts\":"+String(lab.probeTimeouts)+",\"pending\":"+String(lab.probePending?"true":"false");
+ j+=",\"devices\":[";
+ for(uint8_t k=0;k<2;k++){
+  if(k)j+=",";
+  const auto& probe=lab.probeResults[k];
+  j+="{\"device\":"+jsonQuote(k?"chihiros":"pez_verde");
+  j+=",\"success\":"+String(probe.success?"true":"false");
+  j+=",\"service\":"+String(probe.service?"true":"false");
+  j+=",\"characteristic\":"+String(probe.characteristic?"true":"false");
+  j+=",\"duration_ms\":"+String(probe.elapsed_ms);
+  j+=",\"reason\":"+jsonQuote(String(probe.reason))+"}";
+ }
+ j+="]}";
  j+=",\"lighting\":{\"scheduler_enabled\":false,\"gatt_tx_armed\":"+String(labTxEnabled()?"true":"false");
  j+=",\"tx_window_remaining_sec\":"+String(labTxEnabled()?(lab.txUntil-age)/1000UL:0);
  j+=",\"tx_arm_count\":"+String(lab.txArmCount)+",\"tx_blocked\":"+String(lab.txBlocked);
@@ -401,13 +419,25 @@ static String labJson(){
  j+=",\"dry_run_pez_brightness\":"+String(lab.pvSimBrightness);
  j+=",\"dry_run_chihiros_rgb\":["+String(lab.chSimR)+","+String(lab.chSimG)+","+String(lab.chSimB)+"]";
  j+=",\"pv_tx_frames\":"+String(devices[0].write_calls);
- j+=",\"ch_tx_frames\":"+String(devices[1].write_calls)+"}}";
+ j+=",\"ch_tx_frames\":"+String(devices[1].write_calls);
+ j+=",\"chihiros_auto_verified\":false,\"auto_command_disabled\":true}}";
  return j;
 }
 static void labTick(){
  const uint32_t now=millis();
  if(lab.loopLast && now-lab.loopLast>lab.loopMaxGapMs)lab.loopMaxGapMs=now-lab.loopLast;
  lab.loopLast=now;
+ cielo96::BleProbeResult probe{};
+ while(cielo96::ble_probe_result(probe)){
+  lab.probeResults[probe.device==1?1:0]=probe;
+  lab.probeCompleted++;lab.probePending=false;
+  record(probe.success?"LAB_GATT_PROBE_OK":"LAB_GATT_PROBE_FALLO",
+   String(probe.device?"CH ":"PV ")+String(probe.reason)+" "+String(probe.elapsed_ms)+"ms sin escrituras");
+ }
+ if(lab.probePending && now-lab.probeStartedMs>20000UL){
+  lab.probePending=false;lab.probeTimeouts++;
+  record("LAB_GATT_PROBE_TIMEOUT","Enlace no contestó en 20s; no iniciar otra sonda");
+ }
  cielo96::BleScanResult result{};
  while(cielo96::ble_scan_result(result)){
   lab.lastScan=result;lab.scanCompleted++;lab.scanPending=false;
@@ -462,7 +492,7 @@ static void diagnosticJson(){
  String j;j.reserve(11500);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
- j+=",\"pilot\":{\"ble_start_requires_button\":true,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
+ j+=",\"pilot\":{\"ble_start_requires_button\":false,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null";
@@ -525,13 +555,11 @@ static void submitCh(cielo::ChiValue c,uint32_t ttl=90000){
  if(!queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,c.r,c.g,c.b,0,millis(),ttl))record("COLA_RECHAZADA","CH");
 }
 static void requestAuto(){
- if(!labTxEnabled()){lab.txBlocked++;record("LAB_TX_BLOQUEADA","AUTO Chihiros requiere autorizacion");return;}
- chiAutoAttempted=true;
- if(queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::RestoreAuto,0,0,0,0,millis(),90000)){
-  chiAutoPending=true;
- }else{
-  chiAutoPending=false;record("AUTO_RECHAZADO","No se pudo encolar AUTO; NO restaurado");
- }
+ // No conocemos si la Chihiros usa curva personalizada o escena.
+ // 0x12 se deshabilita: apago fisicamente la WRGB Slim en la prueba 22.
+ chiAutoPending=false;
+ lab.txBlocked++;
+ record("CH_AUTO_INSEGURO","Restauracion BLE bloqueada hasta verificar modo desde My Chihiros");
 }
 static void manualPv(){
  if(!labTxEnabled() || srv.arg("lab_manual")!="1")return fail(423,"Laboratorio: habilita 90 segundos de transmisiones manuales");
@@ -653,9 +681,22 @@ static void configureRoutes(){
  srv.on("/api/lab/scan",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   if(!bleReady)return fail(423,"Inicia Bluetooth con boton fisico 3-7 segundos, sin enviar ordenes");
-  if(lab.scanPending)return fail(409,"Ya hay un escaneo BLE en marcha");
+  if(lab.scanPending||lab.probePending)return fail(409,"Ya hay otra prueba BLE en marcha");
   if(!cielo96::ble_scan_request()){lab.scanRejects++;return fail(503,"Cola de escaneos no disponible");}
   lab.scanRequests++;lab.scanPending=true;lab.scanStartedMs=millis();record("LAB_SCAN_START","Escaneo BLE activo 5s; sin conectar ni escribir GATT");ok();
+ });
+ srv.on("/api/lab/probe",HTTP_POST,[]{
+  if(rescueOpen)return fail(403,"Rescate es solo lectura");
+  if(!bleReady)return fail(423,"Bluetooth todavia no inicializado");
+  if(lab.scanPending||lab.probePending||queue.busy()||labTxEnabled())
+   return fail(409,"Deten los envios y espera a que terminen las otras operaciones");
+  if(srv.arg("confirm")!="SOLO_CONEXION_SIN_ESCRIBIR")return fail(403,"Confirmacion necesaria");
+  const String device=srv.arg("device");
+  if(device!="chihiros"&&device!="pez_verde")return fail(400,"Dispositivo desconocido");
+  uint8_t index=device=="chihiros"?1:0;
+  if(!cielo96::ble_probe_request(index)){lab.probeRejected++;return fail(503,"Cola de GATT ocupada");}
+  lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
+  record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
  srv.on("/api/lab/tx/arm",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
@@ -691,7 +732,10 @@ static void configureRoutes(){
  srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,true);});
  srv.on("/api/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualPv();});
  srv.on("/api/chihiros/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualCh();});
- srv.on("/api/chihiros/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");if(!labTxEnabled()||srv.arg("lab_manual")!="1")return fail(423,"AUTO solo con autorizacion en Laboratorio");chiCieloNight=false;chiManual=false;requestAuto();ok();});
+ srv.on("/api/chihiros/stop",HTTP_POST,[]{
+  record("CH_AUTO_INSEGURO","Solicitud rechazado: 0x12 activa escenas y produjo apagado fisico");
+  return fail(423,"AUTO Chihiros bloqueado: el modo 0x12 apaga DYSL60; restaura desde My Chihiros");
+ });
  srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; usa Laboratorio para AUTO manual");});
  srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; activacion pendiente de pruebas opticas");});
  srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Usa Laboratorio con autorizacion para AUTO manual");});
@@ -878,6 +922,13 @@ void loop(){
  tracePhase(TracePhase::Http);srv.handleClient();
  tracePhase(TracePhase::Button);physicalButtonTask();
  tracePhase(TracePhase::WifiTick);wifiTask();
+ // Arranque BLE automatico SIN transmisiones y solo tras 30 segundos con WiFi STA
+ // listo. Se mantiene boton manual de respaldo (3–7 s) y rescate >=8 s.
+ if(!blePilotRequested && !blePilotAttempted && !bleReady && !rescueOpen &&
+    millis()-bootMs>=30000UL && WiFi.status()==WL_CONNECTED && wifiCoexistReady()){
+  blePilotRequested=true;
+  record("BLE_AUTO_SOLICITADO","WiFi listo, 30s desde arranque; solo inicializar radio");
+ }
  if(blePilotRequested && !blePilotAttempted && !rescueOpen){
   tracePhase(TracePhase::Ble);
   blePilotRequested=false;
