@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_attr.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
@@ -32,12 +33,52 @@
 #define CIELO_ENABLE_OTA 0 // Explicitly enable only after bench validation
 #endif
 
-static constexpr const char* VERSION="9.6.0-R4.3.3-RESCATE";
+static constexpr const char* VERSION="9.6.0-R4.3.4-RELOJ-TRAZAS";
+static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
+// Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
+enum class TracePhase : uint32_t {
+ Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
+ WebInit=60, Http=70, Button=80, WifiTick=90, Ble=100, Led=110,
+ Idle=120, RescueOpen=130, RescueClose=140
+};
+struct RtcTrace { uint32_t magic; uint32_t phase; uint32_t check; };
+static constexpr uint32_t RTC_TRACE_MAGIC=0xC1E10964UL;
+static constexpr uint32_t RTC_TRACE_SALT=0x6B3D821FUL;
+RTC_NOINIT_ATTR static volatile RtcTrace rtcTrace;
+static uint32_t lastResetTracePhase=0;
+static bool lastResetTraceValid=false;
+static const char* tracePhaseName(uint32_t p){
+ switch(static_cast<TracePhase>(p)){
+ case TracePhase::Setup:return "SETUP";
+ case TracePhase::Nvs:return "NVS";
+ case TracePhase::Profile:return "PERFIL";
+ case TracePhase::WifiInit:return "WIFI_INICIO";
+ case TracePhase::Clock:return "RELOJ_NTP";
+ case TracePhase::WebInit:return "HTTP_INICIO";
+ case TracePhase::Http:return "HTTP_ATENCION";
+ case TracePhase::Button:return "BOTON";
+ case TracePhase::WifiTick:return "WIFI_GESTION";
+ case TracePhase::Ble:return "BLE";
+ case TracePhase::Led:return "LED";
+ case TracePhase::Idle:return "BUCLE_EN_ESPERA";
+ case TracePhase::RescueOpen:return "RESCATE_ABRIENDO";
+ case TracePhase::RescueClose:return "RESCATE_CERRANDO";
+ default:return "NO_DISPONIBLE";
+ }
+}
+static void tracePhase(TracePhase p){
+ uint32_t v=static_cast<uint32_t>(p);
+ rtcTrace.phase=v;
+ rtcTrace.check=RTC_TRACE_MAGIC ^ RTC_TRACE_SALT ^ v;
+ rtcTrace.magic=RTC_TRACE_MAGIC;
+}
+
 static WebServer srv(80);
 static Preferences prefs;
 static cielo96::ProfileImage profile;
 static cielo::ble::Scheduler queue(3500,250,2000);
 static bool bleReady=false, profileRecovery=false, wifiApOn=false;
+static bool phoneSyncedThisBoot=false;
 static bool blePilotRequested=false, blePilotAttempted=false, rescueOpen=false;
 static bool apProtected=false;
 static uint32_t rescueUntil=0, lastIndicatorAt=0;
@@ -280,10 +321,14 @@ static void diagnosticJson(){
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+jsonQuote(warning?"avisos_detectados":"sin_avisos_actuales");
  j+=",\"pilot\":{\"ble_start_requires_button\":true,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
- j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null,\"last_phase\":\"NO_INSTRUMENTADA\"";
+ j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null";
  j+=",\"boot_count\":"+String(previousBootCount+1)+",\"previous_boot_marked_clean\":"+String(priorBootClean?"true":"false");
+ j+=",\"last_phase\":"+jsonQuote(tracePhaseName(rtcTrace.phase));
+ j+=",\"previous_reset_phase_valid\":"+String(lastResetTraceValid?"true":"false");
+ j+=",\"previous_reset_phase\":"+jsonQuote(lastResetTraceValid?tracePhaseName(lastResetTracePhase):"NO_DISPONIBLE");
+ j+=",\"previous_reset_phase_is_hint_only\":true";
  j+=",\"persistent_fault_count\":"+String(savedFailures)+",\"prior_fault_type\":"+jsonQuote(priorEvent)+",\"prior_fault_detail\":"+jsonQuote(priorEventDetail)+"}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
  j+=",\"wifi_disconnects\":"+String(wifiDisconnects)+",\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0)+"}";
@@ -306,6 +351,18 @@ static void diagnosticJson(){
  j+=",\"recovery\":{\"ap_ssid\":\"CIELO96-CONFIG\",\"ap_ip\":\"192.168.4.1\",\"password_location\":\"SERIAL_USB_LOCAL\",\"always_on\":true";
  j+=",\"running_partition\":"+jsonQuote(otaRunningPartition)+",\"next_update_partition\":"+jsonQuote(otaNextPartition);
  j+=",\"physical_ota_grant\":"+String(physicalOtaGrant()?"true":"false")+",\"ota_enabled\":false}";
+ time_t currentEpoch=time(nullptr);
+ struct tm clockLocal{};
+ char clockOffset[8]="";
+ if(timeOK()){
+  localtime_r(&currentEpoch,&clockLocal);
+  strftime(clockOffset,sizeof(clockOffset),"%z",&clockLocal);
+ }
+ j+=",\"clock_diagnostics\":{\"epoch\":"+String((uint32_t)currentEpoch);
+ j+=",\"valid\":"+String(timeOK()?"true":"false");
+ j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
+ j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
+ j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false")+"}";
  j+=",\"event_retention\":\"36_RAM_y_ultimo_error_persistente_NVS\",\"events\":[";
  for(int i=0;i<eventCount;i++){
   int idx=(eventHead-eventCount+i+EVENT_MAX)%EVENT_MAX;
@@ -355,6 +412,7 @@ static void physicalButtonTask(){
  const bool held=digitalRead(ATOMS3_BUTTON_GPIO)==LOW;
  if(held && !buttonDownAt){buttonDownAt=now;physicalArmed=false;}
  if(held && buttonDownAt && !rescueOpen && now-buttonDownAt>=8000UL){
+  tracePhase(TracePhase::RescueOpen);
   rescueOpen=true;
   rescueUntil=now+120000UL;
   WiFi.softAPdisconnect(true);
@@ -370,6 +428,7 @@ static void physicalButtonTask(){
   }
  }
  if(rescueOpen && (int32_t)(now-rescueUntil)>=0){
+  tracePhase(TracePhase::RescueClose);
   WiFi.softAPdisconnect(true);
   wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
   apProtected=wifiApOn;rescueOpen=false;
@@ -434,7 +493,7 @@ static void configureRoutes(){
    String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
    for(unsigned i=0;i<s.length();i++)if(s[i]<'0'||s[i]>'9')return fail(400,"Epoch incorrecto");
    unsigned long long val=strtoull(s.c_str(),nullptr,10);if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
-   struct timeval tv{(time_t)val,0};settimeofday(&tv,nullptr);record("HORA_SYNC","Reloj desde telefono");return ok();
+   struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
   }return fail(400,"Epoch demasiado corto");});
  srv.on("/api/save",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,false);});
  srv.on("/api/reset",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,true);});
@@ -527,8 +586,13 @@ static void bleTick(){
 }
 void setup(){
  bootMs=millis();Serial.begin(115200);delay(100);
+ uint32_t previousPhaseCode=rtcTrace.phase;
+ lastResetTraceValid=(rtcTrace.magic==RTC_TRACE_MAGIC &&
+  rtcTrace.check==(RTC_TRACE_MAGIC ^ RTC_TRACE_SALT ^ previousPhaseCode));
+ if(lastResetTraceValid)lastResetTracePhase=previousPhaseCode;
+ tracePhase(TracePhase::Setup);
  Serial.printf("IWAGUMI CIELO %s | ATOMS3-Lite | build experimental\n",VERSION);
- setenv("TZ","CET-1CEST,M3.5.0,M10.5.0/3",1);tzset();
+ tracePhase(TracePhase::Nvs);
  prefs.begin("cielo96",false);
  previousBootCount=prefs.getUInt("boots",0);
  priorEvent=prefs.getString("fault_type","ninguno");
@@ -542,6 +606,7 @@ void setup(){
  const esp_partition_t *next=esp_ota_get_next_update_partition(nullptr);
  otaRunningPartition=running?running->label:"desconocida";
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
+ tracePhase(TracePhase::Profile);
  loadProfile();storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
  // Recover credentials from the original 9.5.3 namespace, retained by application-only OTA.
  // Verified on owner's private 8MB flash: namespace "iwagumi-rgb", keys homeSsid/homePass.
@@ -572,18 +637,22 @@ void setup(){
  }
  pinMode(ATOMS3_BUTTON_GPIO,INPUT_PULLUP);
  statusPixel.begin();statusPixel.setBrightness(32);statusPixel.clear();statusPixel.show();
+ tracePhase(TracePhase::WifiInit);
  WiFi.mode(WIFI_AP_STA);WiFi.setSleep(false);WiFi.setAutoReconnect(false);
  WiFi.setHostname("iwagumi-cielo96");
  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
  apProtected=wifiApOn;
  if(storedSSID.length()){WiFi.begin(storedSSID.c_str(),storedPass.c_str());lastWiFiAttempt=millis();}
- configTime(0,0,"pool.ntp.org","time.google.com");
+ tracePhase(TracePhase::Clock);
+ configTzTime(CIELO_TZ,"pool.ntp.org","time.google.com");
  bleReady=false; // Do not start BLE until explicit physical authorization.
  record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" ("+resetReasonName(esp_reset_reason())+") BLE="+String(bleReady));
  if(abnormalReset(esp_reset_reason()))record("REINICIO_ANOMALO",resetReasonName(esp_reset_reason()));
  Serial.printf("WIFI de rescate si fuera necesaria: CIELO96-CONFIG | clave: %s\n",apPassword.c_str());
+ tracePhase(TracePhase::WebInit);
  configureRoutes();
  record("WEB_PRIMERO","HTTP y AP de recuperación inicializados; Bluetooth en espera");
+ tracePhase(TracePhase::Idle);
 }
 void loop(){
  if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
@@ -591,16 +660,17 @@ void loop(){
   prefs.putBool("clean",true);
   record("ARRANQUE_ESTABLE","180 segundos sin reiniciar; NO implica que BLE funcione correctamente");
  }
- srv.handleClient();
- physicalButtonTask();
- wifiTask();
+ tracePhase(TracePhase::Http);srv.handleClient();
+ tracePhase(TracePhase::Button);physicalButtonTask();
+ tracePhase(TracePhase::WifiTick);wifiTask();
  if(blePilotRequested && !blePilotAttempted && !rescueOpen){
+  tracePhase(TracePhase::Ble);
   blePilotRequested=false;blePilotAttempted=true;
   record("BLE_PILOTO_INICIO","Se prueba Bluetooth con HTTP ya activo");
   bleReady=cielo96::ble_begin();
   record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
  }
- if(bleReady && !rescueOpen){lightingTask();bleTick();}
- statusLedTick();
- delay(3);
+ if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);lightingTask();bleTick();}
+ tracePhase(TracePhase::Led);statusLedTick();
+ tracePhase(TracePhase::Idle);delay(3);
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import re, json, hashlib, subprocess,sys
+import re, json, hashlib, subprocess,sys,os,time,datetime
 r=Path(__file__).resolve().parents[1]
 original=(r/'reference/INTERFAZ_ORIGINAL_953_SIN_MODIFICAR.html').read_text()
 actual=(r/'web/interfaz_r4.html').read_text()
@@ -12,6 +12,26 @@ assert 'Descargar JSON' in actual
 code=(r/'src/main.cpp').read_text()
 assert 'ESP_RST_PANIC' in code and 'reset_reason_name' in code
 assert 'boot_marked_healthy' in code and 'latencyP95' in code
+assert 'configTzTime(CIELO_TZ' in code and 'configTime(0,0' not in code
+assert 'RTC_NOINIT_ATTR' in code and 'previous_reset_phase_valid' in code
+assert 'phone_sync_this_boot' in code and 'utc_offset' in code
+# Comprobar el cambio invierno/verano de la regla TZ sin depender de la hora del runner.
+oldtz=os.environ.get('TZ')
+try:
+ os.environ['TZ']='CET-1CEST,M3.5.0,M10.5.0/3'
+ time.tzset()
+ cases=[
+   (datetime.datetime(2026,10,20,9,tzinfo=datetime.timezone.utc),11,1),
+   (datetime.datetime(2026,11,1,9,tzinfo=datetime.timezone.utc),10,0),
+   (datetime.datetime(2027,4,1,9,tzinfo=datetime.timezone.utc),11,1),
+ ]
+ for utc,expected_hour,expected_dst in cases:
+  local=time.localtime(utc.timestamp())
+  assert (local.tm_hour,local.tm_isdst)==(expected_hour,expected_dst),(utc,local)
+finally:
+ if oldtz is None: os.environ.pop('TZ',None)
+ else: os.environ['TZ']=oldtz
+ time.tzset()
 assert 'WiFi.softAP("CIELO96-CONFIG",apPassword.c_str())' in code
 assert 'WiFi.softAP("CIELO96-RESCATE")' in code
 assert 'if(rescueOpen)return fail(403' in code
@@ -20,8 +40,8 @@ assert 'bleReady=false; // Do not start BLE' in code
 assert code.index('configureRoutes();') < code.index('blePilotRequested=false;blePilotAttempted=true;')
 assert '-DCIELO_ENABLE_OTA=1' not in (r/'platformio.ini').read_text()
 
-assert '<title>CIELO 9.6 R4.3.3 · Rescate</title>' in actual
-assert 'CIELO 9.6 R4.3.3 · firmware de pruebas' in actual
+assert '<title>CIELO 9.6 R4.3.4 · Diagnóstico</title>' in actual
+assert 'CIELO 9.6 R4.3.4 · firmware de pruebas' in actual
 for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
               '/api/chihiros/manual','/api/chihiros/stop','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
