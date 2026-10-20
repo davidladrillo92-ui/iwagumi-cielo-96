@@ -116,9 +116,9 @@ void scanDiscover(){
   BLEAdvertisedDevice d=found.getDevice(i);
   if(!d.haveName()){r.unnamed++;continue;}
   r.named++;
-  const char* name=d.getName().c_str();
-  if(bleNameMatches(name,codec::PV_NAME)){r.pez_found=true;r.pez_rssi=d.getRSSI();}
-  if(bleNameMatches(name,codec::CH_NAME)){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
+  const std::string name=d.getName();
+  if(bleNameMatches(name.c_str(),codec::PV_NAME)){r.pez_found=true;r.pez_rssi=d.getRSSI();}
+  if(bleNameMatches(name.c_str(),codec::CH_NAME)){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
  }
  scan->clearResults();
  r.elapsed_ms=millis()-start;
