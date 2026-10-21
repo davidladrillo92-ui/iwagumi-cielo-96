@@ -170,7 +170,7 @@ static bool cieloPvRun=false,cieloChRun=false,cieloChWasDriven=false;
 static bool cieloAlwaysOn=false,cieloResumePending=false;
 enum class PvSafetyState:uint8_t {Paused,Active,Degraded,OffPending,OffRetrying,OffGattOk};
 static PvSafetyState pvSafety=PvSafetyState::Paused;
-static bool pvOffObligation=false;
+static bool pvOffObligation=false,pvControlDesired=false;
 static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
@@ -445,6 +445,7 @@ static String cieloModeJson(){
  j+=",\"pv_consecutive_errors\":"+String(cieloPvConsecutiveFailures);
  j+=",\"pv_safety_state\":"+jsonQuote(pvSafetyName());
  j+=",\"pv_off_obligation\":"+String(pvOffObligation?"true":"false");
+ j+=",\"pv_control_requested\":"+String(pvControlDesired?"true":"false");
  j+=",\"pv_off_attempts\":"+String(pvOffAttempts)+",\"pv_off_failures\":"+String(pvOffFailures);
  j+=",\"pv_off_last_gatt_ms\":"+String(pvOffLastGatt)+",\"pv_off_last_attempt_ms\":"+String(pvOffLastTry);
  j+=",\"pv_optically_confirmed\":false";
@@ -1331,7 +1332,7 @@ static void configureRoutes(){
    return fail(507,"No se pudo guardar el control continuo en NVS");
   cieloAlwaysOn=true;cieloResumePending=false;
   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
-  pvSafety=PvSafetyState::Active;pvRetryNext=0;pvOffNextTry=0;
+  pvControlDesired=true;pvSafety=PvSafetyState::Active;pvRetryNext=0;pvOffNextTry=0;
   cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   cieloStartedAt=millis();lastPvDesired=false;lastChDesired=false;
   lastScheduleAt=millis()-30000UL;
@@ -1576,27 +1577,27 @@ static void lightingTask(){
  if(cieloWatchdogTripped && bleReady && !queue.busy() &&
     now-cielo96::ble_last_heartbeat()<3000UL){
   cieloWatchdogTripped=false;pvRetryNext=now;lastPvDesired=false;
-  if(cieloAlwaysOn)pvSafety=PvSafetyState::Degraded;
+  if(pvControlDesired)pvSafety=PvSafetyState::Degraded;
   record("BLE_WORKER_RECUPERADO","Mismo trabajador BLE activo; reintentar seguridad nocturna");
  }
  if(pezManual && (int32_t)(now-pezManualUntil)>=0)pezManual=false;
  if(chiManual && (int32_t)(now-chiManualUntil)>=0)chiManual=false;
  // Las verificaciones se hacen incluso si CIELO no controla las luces.
- if(!cieloPvRun && !cieloChRun && !cieloChWasDriven && !pvOffObligation && !cieloAlwaysOn)return;
+ if(!cieloPvRun && !cieloChRun && !cieloChWasDriven && !pvOffObligation && !pvControlDesired)return;
  // Si la tarea propietaria BLE deja de responder, dejar de programar RGB.
  // La orden de retorno se pedira y se completara solo si el trabajador revive.
  if(bleReady && !cieloWatchdogTripped &&
     now-cielo96::ble_last_heartbeat()>45000UL){
   cieloWatchdogTripped=true;cieloPvRun=false;cieloChRun=false;
-  if(cieloAlwaysOn){pvSafety=PvSafetyState::Degraded;pvRetryNext=now+5000UL;}
+  if(pvControlDesired){pvSafety=PvSafetyState::Degraded;pvRetryNext=now+5000UL;}
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(cieloChWasDriven)cieloRequestReturn("Watchdog BLE 45s: parada preventiva y retorno pendiente");
   cieloFallbacks++;
   record("V4_WATCHDOG_PAUSA","BLE no responde: no se garantiza retorno hasta recuperar radio");
   return;
  }
- if(cieloAlwaysOn && timeOK() && cielo96::profileValid(profile)){
-  const bool night=cielo96::safety::offRequired(cieloAlwaysOn,timeOK(),cielo96::profileValid(profile),desiredPv().brightness);
+ if(pvControlDesired && timeOK() && cielo96::profileValid(profile)){
+  const bool night=cielo96::safety::offRequired(pvControlDesired,timeOK(),cielo96::profileValid(profile),desiredPv().brightness);
   if(night && !pvOffObligation){
    pvOffObligation=true;pvOffNextTry=now;pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
@@ -1618,7 +1619,7 @@ static void lightingTask(){
  }
  if(!bleReady || !wifiCoexistReady() || rescueOpen)return;
  const bool bleAlive=!cieloWatchdogTripped && (now-cielo96::ble_last_heartbeat()<15000UL);
- if(pvOffObligation && cieloAlwaysOn && !otaBusy &&
+ if(pvOffObligation && pvControlDesired && !otaBusy &&
     otaTxn.phase!=OtaPhase::Preparing && otaTxn.phase!=OtaPhase::Ready &&
     otaTxn.phase!=OtaPhase::Uploading && bleAlive &&
     cielo96::safety::retryDue(now,pvOffNextTry) && !queue.busy() &&
@@ -1631,7 +1632,7 @@ static void lightingTask(){
    record("PV_POWER_OFF_INTENTO",String("Intento ")+String(pvOffAttempts)+" GATT pendiente");
   }else pvOffNextTry=now+5000UL;
  }
- if(cieloAlwaysOn && !pvOffObligation && !cieloPvRun && bleAlive &&
+ if(pvControlDesired && !pvOffObligation && !cieloPvRun && bleAlive &&
     cielo96::safety::retryDue(now,pvRetryNext) && otaTxn.phase==OtaPhase::Idle){
   cieloPvRun=true;pvSafety=PvSafetyState::Degraded;lastPvDesired=false;
   record("PV_RECONECTANDO","RGB actual; no reproducir consignas obsoletas");
@@ -1824,6 +1825,7 @@ void setup(){
  tracePhase(TracePhase::Profile);
  loadProfile();
  cieloAlwaysOn=prefs.getBool("v5_always",false);
+ pvControlDesired=cieloAlwaysOn;
  cieloResumePending=cieloAlwaysOn;
  if(prefs.getBool("v4_ch_takeover",false)){
   // Al reiniciar: NO reactivar el programador; solo devolver el control
@@ -1969,6 +1971,7 @@ void loop(){
     cielo96::profileValid(profile) && !customResumePending &&
     !cieloChReturnPending && !cieloChAwaitResponse && !queue.busy()){
   cieloResumePending=false;cieloPvRun=true;cieloChRun=true;
+  pvControlDesired=true;
   cieloWatchdogTripped=false;cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   lastPvDesired=false;lastChDesired=false;
   cieloStartedAt=millis();lastScheduleAt=millis()-30000UL;
