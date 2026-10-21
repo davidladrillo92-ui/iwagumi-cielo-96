@@ -14,6 +14,11 @@
 #include <esp_attr.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/sha256.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/pkcs5.h>
+#include <mbedtls/md.h>
+#include "cielo_ota_signing_public.h"
+#include "cielo_https_proxy.h"
 #include "cielo_engine.h"
 #include "profiles_generated.h"
 #include "cielo_profile_store.h"
@@ -34,7 +39,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC3-ACCESO-LAN";
+static constexpr const char* VERSION="11.1.0-RC4-FIRMA-KDF";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -812,20 +817,67 @@ static void manualCh(){
  chiManual=true;chiManualUntil=millis()+8000UL;
  submitCh({uint8_t(a[0]),uint8_t(a[1]),uint8_t(a[2])},8000);record("CH_MANUAL","8 segundos");ok();
 }
-static bool sha256String(const String&str,uint8_t dest[32]){return mbedtls_sha256_ret((const unsigned char*)str.c_str(),str.length(),dest,0)==0;}
+static bool sha256String(const String&str,uint8_t dest[32]){
+ return mbedtls_sha256_ret((const unsigned char*)str.c_str(),str.length(),dest,0)==0;
+}
+// PBKDF2-HMAC-SHA256 con sal aleatoria por ATOM; 60000 iteraciones.
+// Se migra en el primer acceso exitoso con la clave antigua. Nunca guardar la clave en NVS.
+static constexpr unsigned CIELO_KDF_ROUNDS=60000;
+static bool constantTime32(const uint8_t*a,const uint8_t*b){
+ uint8_t d=0;for(unsigned i=0;i<32;i++)d|=a[i]^b[i];return d==0;
+}
+static bool deriveCieloKey(const String&secret,const uint8_t salt[16],uint8_t output[32]){
+ mbedtls_md_context_t md;mbedtls_md_init(&md);
+ const mbedtls_md_info_t*info=mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+ if(!info||mbedtls_md_setup(&md,info,1)!=0){mbedtls_md_free(&md);return false;}
+ const int rc=mbedtls_pkcs5_pbkdf2_hmac(&md,
+  reinterpret_cast<const unsigned char*>(secret.c_str()),secret.length(),
+  salt,16,CIELO_KDF_ROUNDS,32,output);
+ mbedtls_md_free(&md);return rc==0;
+}
+static bool saveModernAuth(const String&secret){
+ uint8_t salt[16],derived[32];esp_fill_random(salt,sizeof(salt));
+ if(!deriveCieloKey(secret,salt,derived))return false;
+ // Indicador de activacion SIEMPRE en ultimo lugar para evitar autenticacion parcial.
+ if(prefs.putBytes("auth_salt",salt,16)!=16||
+    prefs.putBytes("auth_pbk",derived,32)!=32)return false;
+ return prefs.putBool("auth_v2",true);
+}
 static bool tokenEqual(){
+ // La contraseña JAMAS viaja por HTTP en claro por la red: solo bucle
+ // interno desde la tarea HTTPS. El puerto 80 conserva diagnóstico de rescate.
+ if(srv.client().remoteIP()!=IPAddress(127,0,0,1))return false;
  if(!CIELO_ENABLE_OTA)return false;
  if(prefs.getBytesLength("ota_sha")!=32)return false;
- uint8_t given[32],stored[32];if(!sha256String(srv.header("X-Cielo-Key"),given))return false;
- prefs.getBytes("ota_sha",stored,32);uint8_t diff=0;
- for(unsigned i=0;i<32;i++)diff|=stored[i]^given[i];return diff==0;
+ const String provided=srv.header("X-Cielo-Key");
+ if(provided.length()<12||provided.length()>96)return false;
+ if(prefs.getBool("auth_v2",false)){
+  if(prefs.getBytesLength("auth_salt")!=16||prefs.getBytesLength("auth_pbk")!=32)return false;
+  uint8_t salt[16],given[32],stored[32];
+  prefs.getBytes("auth_salt",salt,16);prefs.getBytes("auth_pbk",stored,32);
+  if(!deriveCieloKey(provided,salt,given))return false;
+  return constantTime32(given,stored);
+ }
+ // Compatibilidad temporal con 11.0/RC3: tras verificar, migrar sin perder el hash
+ // antiguo requerido si se vuelve a la particion anterior.
+ uint8_t given[32],stored[32];
+ if(!sha256String(provided,given))return false;
+ prefs.getBytes("ota_sha",stored,32);
+ if(!constantTime32(given,stored))return false;
+ if(saveModernAuth(provided))record("ACCESO_KDF_MIGRADO","Huella PBKDF2 con sal unica; credencial no registrada");
+ else record("ACCESO_KDF_AVISO","Migration no completada; rollback legado conservado");
+ return true;
 }
 // Una sola clave local para cambios de curvas, luces, Wi-Fi y OTA.
 // Se conserva la huella OTA existente en NVS: migracion no destructiva.
 // Los cambios requieren cabecera personalizada, que una pagina externa
 // no puede introducir mediante un formulario HTML/CSRF corriente.
-// Pendiente: TLS y KDF con sal por dispositivo; nunca tratar HTTP como cifrado.
+// KDF PBKDF2 migrada. NOTA: HTTP no cifra el canal: las escrituras en red
+// no fiable deben pasar por un terminador TLS validado; no publicar puerto 80.
 static bool requireAdminWrite(){
+ if(srv.client().remoteIP()!=IPAddress(127,0,0,1)){
+  fail(426,"Usa HTTPS para modificar CIELO; HTTP permite solo diagnostico");return false;
+ }
  if(rescueOpen){fail(403,"Rescate es solo lectura");return false;}
  if(prefs.getBytesLength("ota_sha")!=32){
   fail(423,"Primero configura la clave privada en Centro > Actualizaciones, con autorizacion fisica");
@@ -1022,16 +1074,46 @@ static void otaPrepareCancel(){
 }
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
+ if(srv.client().remoteIP()!=IPAddress(127,0,0,1))return fail(426,"El alta de clave requiere HTTPS");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
  if(!physicalOtaGrant())return fail(403,"Mantener pulsado el boton fisico GPIO41 durante 5 segundos antes del emparejamiento");
  String s=srv.arg("key");if(s.length()<12||s.length()>96)return fail(400,"Clave OTA de 12 a 96 caracteres");
- uint8_t digest[32];if(!sha256String(s,digest)||prefs.putBytes("ota_sha",digest,32)!=32)return fail(507,"No se pudo guardar la clave");
- record("OTA_EMPAREJADA","Clave hasheada SHA256. No se registra en texto");ok();
+ uint8_t digest[32];if(!sha256String(s,digest)||prefs.putBytes("ota_sha",digest,32)!=32 ||
+    !saveModernAuth(s))return fail(507,"No se pudo proteger la nueva clave");
+ record("OTA_EMPAREJADA","Clave PBKDF2 con sal almacenada; respaldo legado para rollback");ok();
 }
 static bool hashLooksValid(const String& h){
  if(h.length()!=64)return false;
  for(size_t i=0;i<h.length();i++)if(!isxdigit(static_cast<unsigned char>(h[i])))return false;
  return true;
+}
+// Firma ECDSA P-256 sobre SHA256 del BIN exacto; clave de confianza solo PUBLICA.
+// Se rechaza cualquier firma ausente, malformada o ajena al par del propietario.
+static char otaExpectedSignature[147]{};
+static bool hexSignatureDecode(const String&hex,uint8_t out[72],size_t&len){
+ if(hex.length()<16||hex.length()>144||(hex.length()&1))return false;
+ len=hex.length()/2;
+ for(size_t i=0;i<len;i++){
+  const char a=hex[2*i],b=hex[2*i+1];
+  const int hi=(a>='0'&&a<='9')?a-'0':(a>='a'&&a<='f')?a-'a'+10:(a>='A'&&a<='F')?a-'A'+10:-1;
+  const int lo=(b>='0'&&b<='9')?b-'0':(b>='a'&&b<='f')?b-'a'+10:(b>='A'&&b<='F')?b-'A'+10:-1;
+  if(hi<0||lo<0)return false;
+  out[i]=(hi<<4)|lo;
+ }
+ return true;
+}
+static bool verifyFirmwareSignature(const uint8_t digest[32],const String&signatureHex){
+ uint8_t sig[72];size_t sigLen=0;
+ if(!hexSignatureDecode(signatureHex,sig,sigLen))return false;
+ mbedtls_pk_context ctx;mbedtls_pk_init(&ctx);
+ const int parsed=mbedtls_pk_parse_public_key(&ctx,
+  reinterpret_cast<const unsigned char*>(CIELO_OTA_PUBLIC_KEY_PEM),
+  strlen(CIELO_OTA_PUBLIC_KEY_PEM)+1);
+ bool ok=false;
+ if(parsed==0 && mbedtls_pk_can_do(&ctx,MBEDTLS_PK_ECKEY))
+  ok=mbedtls_pk_verify(&ctx,MBEDTLS_MD_SHA256,digest,32,sig,sigLen)==0;
+ mbedtls_pk_free(&ctx);
+ return ok;
 }
 static void otaDigestStop(){
  if(otaDigestStarted){mbedtls_sha256_free(&otaDigest);otaDigestStarted=false;}
@@ -1076,6 +1158,12 @@ static void otaUpload(){
    lastOtaError="BIN o SHA256 del navegador no valido";otaError=true;return;
   }
   strncpy(otaExpectedSha,expected.c_str(),64);otaExpectedSha[64]='\0';
+  const String sigHeader=srv.header("X-Cielo-Signature");
+  uint8_t decoded[72];size_t decodedLen=0;
+  if(!hexSignatureDecode(sigHeader,decoded,decodedLen)){
+   lastOtaError="Firma del BIN ausente o con formato incorrecto";otaError=true;return;
+  }
+  strncpy(otaExpectedSignature,sigHeader.c_str(),146);otaExpectedSignature[146]='\0';
   const esp_partition_t* target=esp_ota_get_next_update_partition(nullptr);
   if(!target || target->size<1048576 || target->size>0x330000 ||
      !Update.begin(target->size,U_FLASH)){
@@ -1088,7 +1176,7 @@ static void otaUpload(){
   otaDigestStarted=true;
   otaBusy=true;otaTxn.phase=OtaPhase::Uploading;
   otaTxn.reason="Recibiendo firmware y comprobando integridad SHA-256";
-  record("OTA_START","BIN local; control de luces temporalmente cedido");
+  record("OTA_START","BIN firmado ECDSA; control de luces temporalmente cedido");
  }else if(upload.status==UPLOAD_FILE_WRITE){
   if(!otaAllowed||otaError)return;
   const esp_partition_t* target=esp_ota_get_next_update_partition(nullptr);
@@ -1115,6 +1203,10 @@ static void otaUpload(){
   actual[64]='\0';
   if(strcasecmp(actual,otaExpectedSha)!=0 || otaBytes<500000){
    otaError=true;lastOtaError="Hash o tamano de firmware no coinciden";Update.abort();
+  }else if(!verifyFirmwareSignature(otaDigestOut,String(otaExpectedSignature))){
+   lastOtaError="FIRMA NO VALIDA: BIN no autorizado por el propietario";
+   otaError=true;Update.abort();
+   record("OTA_FIRMA_RECHAZADA","Imagen sin firma del propietario: no se instalara");
   }else if(!Update.end(true)){
    lastOtaError="BIN no validado como firmware ESP32-S3";otaError=true;Update.abort();
   }else{
@@ -1124,7 +1216,7 @@ static void otaUpload(){
    prefs.putUChar("ota_attempts",0);
    otaSuccess=true;otaTxn.phase=OtaPhase::Completed;
    otaTxn.reason="Firmware recibido y verificado por Update; reinicio pendiente";
-   lastOtaError="SHA256 coincide y Update acepta el BIN";
+   lastOtaError="SHA256 coincide, firma ECDSA verificada y Update acepta el BIN";
    otaPhysicalUntil=0;
    record("OTA_OK",String("bytes=")+String(otaBytes)+" validado");
   }
@@ -1155,8 +1247,11 @@ static void configureWifi(){
  ok();
 }
 static void configureRoutes(){
- const char*keys[]={"X-Cielo-Key","X-Cielo-Sha256"};srv.collectHeaders(keys,2);
- srv.on("/",HTTP_GET,[]{++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
+ const char*keys[]={"X-Cielo-Key","X-Cielo-Sha256","X-Cielo-Signature"};srv.collectHeaders(keys,3);
+ srv.on("/",HTTP_GET,[]{if(!rescueOpen && srv.client().remoteIP()!=IPAddress(127,0,0,1)){
+  srv.sendHeader("Location","https://"+WiFi.localIP().toString()+"/");
+  srv.send(307,"text/plain","CIELO: conecta por HTTPS. Confirma la huella de certificado por USB.");return;
+ }++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
  srv.on("/api/status",HTTP_GET,statusJson);
  srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
  srv.on("/api/service/report",HTTP_GET,diagnosticJson);
@@ -1689,6 +1784,8 @@ void setup(){
  Serial.printf("WIFI de rescate si fuera necesaria: CIELO96-CONFIG | clave: %s\n",apPassword.c_str());
  tracePhase(TracePhase::WebInit);
  configureRoutes();
+ if(!cielo96::https_begin(prefs))record("HTTPS_NO_DISPONIBLE","Acceso de escritura bloqueado; USB para recuperacion");
+ else record("HTTPS_INICIADO","Certificado unico generado, peticiones de escritura via TLS");
  record("WEB_PRIMERO","HTTP y AP de recuperación inicializados; Bluetooth en espera");
  tracePhase(TracePhase::Idle);
 }
