@@ -19,7 +19,7 @@ assert 'BLE_COEX_BLOQUEADO' in code and 'wifi_modem_sleep' in code
 assert 'COEX_AVISO' not in code and 'esp_wifi_set_ps(WIFI_PS_MIN_MODEM)' in code
 assert 'lightingTask();' in code # RC4: activo solo mediante boton, nunca desde BLE por si mismo
 assert 'static bool cieloPvRun=false,cieloChRun=false' in code
-assert 'if(!cieloPvRun && !cieloChRun && !cieloChWasDriven && !pvOffObligation && !cieloAlwaysOn)return;' in code
+assert 'if(!cieloPvRun && !cieloChRun && !cieloChWasDriven && !pvOffObligation && !pvControlDesired)return;' in code
 assert 'cielo::at(profile.pv,profile.pvCount,minuteOfDay())' not in code or 'desiredPv()' in code
 assert 'const bool chWindow=true' in code
 assert 'const bool schedulerCH=cieloChRun&&timeOK()&&' in code
