@@ -144,6 +144,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 
 <label style="display:block;margin:8px 0 4px" for="otaSecret">Clave privada de actualización</label>
 <input id="otaSecret" type="password" autocomplete="off" placeholder="Clave de actualización local" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256">
+<p class="note">La misma clave protege las luces, las curvas, la Wi-Fi y las actualizaciones. Escríbela una vez por sesión; no se guarda salvo que elijas recordarla.</p>
 <label class="note" style="display:block;margin:10px 0"><input id="otaRemember" type="checkbox"/> Recordar esta clave en este iPhone (no recomendado si es compartido)</label>
 <div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave una vez</button></div>
 <label style="display:block;margin:14px 0 4px" for="otaFile">Archivo (.bin)</label>
@@ -179,7 +180,7 @@ function currentClock(){
  return Math.floor(((seconds+elapsed)%86400)/60);
 }
 function isLive(){return location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'||location.search.includes('live=1')}
-async function api(path,data){if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');const opt={cache:'no-store',credentials:'same-origin'};if(data){opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};opt.body=new URLSearchParams(data)}const r=await fetch(path,opt);const body=await r.text();if(!r.ok)throw Error(body||('Error '+r.status));try{return JSON.parse(body)}catch{return body}}
+async function api(path,data){if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');const opt={cache:'no-store',credentials:'same-origin'};if(data){opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};const key=$('otaSecret')?.value||'';if(key)opt.headers['X-Cielo-Key']=key;opt.body=new URLSearchParams(data)}const r=await fetch(path,opt);const body=await r.text();if(!r.ok)throw Error(body||('Error '+r.status));try{return JSON.parse(body)}catch{return body}}
 async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}render()}catch(e){state.connected=false;render()}}
 function hourLabel(t){return fmt(clamp(t,0,1439))}
 function render(){

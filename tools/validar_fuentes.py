@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC2-SEGURIDAD-OTA' in code
+assert '11.1.0-RC3-ACCESO-LAN' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -176,6 +176,11 @@ assert 'XMLHttpRequest()' in actual and 'upload.onprogress' in actual
 assert 'id="otaProgress"' in actual
 assert 'Activar CIELO · siempre' in actual
 assert 'id="cieloPauseAll"' in actual
+# P0: toda ruta POST mutable queda protegida por la misma clave OTA.
+for protected_path in ['/api/lab/start','/api/lab/stop','/api/lab/scan','/api/lab/probe','/api/cielo/v4/start','/api/cielo/v4/return','/api/cielo/v4/pause','/api/chihiros/contrast/start','/api/chihiros/contrast/cancel','/api/chihiros/my-curve-test','/api/ble/release','/api/lab/preview','/api/lab/tx/arm','/api/lab/tx/disarm','/api/lab/browser-sample','/api/clock','/api/save','/api/reset','/api/chihiros/curve','/api/chihiros/curve/reset','/api/manual','/api/chihiros/manual','/api/chihiros/stop','/api/chihiros/evening/off','/api/chihiros/evening/on','/api/chihiros/live/stop','/api/wifi/scan','/api/wifi','/api/wifi/forget']:
+ assert 'srv.on("'+protected_path+'",HTTP_POST,[]{if(!requireAdminWrite())return;' in code, protected_path
+assert 'X-Cielo-Key' in actual and 'requireAdminWrite()' in code
+
 assert 'Activar CIELO · siempre' in actual
 # El boton sigue existiendo, pero se ha trasladado a Emergencia con otro titulo.
 assert 'id="chNightOff"' in actual
