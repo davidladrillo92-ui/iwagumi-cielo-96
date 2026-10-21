@@ -750,6 +750,7 @@ static void diagnosticJson(){
  j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
+ j+=",\"security\":{\"https_ready\":"+String(cielo96::https_ready()?"true":"false")+",\"authentication\":\"PBKDF2-SHA256\",\"ota_signature\":\"ECDSA-P256\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
  j+=",\"last_ota_message\":"+jsonQuote(lastOtaError);
  j+=",\"postboot_candidate_pending\":"+String(otaCandidateBoot?"true":"false");
@@ -1801,7 +1802,7 @@ void setup(){
 void loop(){
  if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
   const bool baseHealthy=!otaCandidateBoot ||
-   (WiFi.status()==WL_CONNECTED && wifiCoexistReady() &&
+   (cielo96::https_ready() && WiFi.status()==WL_CONNECTED && wifiCoexistReady() &&
     otaBleHealthy() && timeOK() && cielo96::profileValid(profile) &&
     !cieloWatchdogTripped && !cieloChReturnPending &&
     !cieloChAwaitResponse && !customResumePending);
@@ -1809,7 +1810,7 @@ void loop(){
    currentBootMarkedHealthy=true;
    prefs.putBool("clean",true);
    record("ARRANQUE_BASE_VALIDADO",otaCandidateBoot?
-     "OTA: WiFi, reloj, perfil y BLE preparados; pendiente verificacion de GATT":
+     "OTA: HTTPS, WiFi, reloj, perfil y BLE listos; pendiente verificacion de GATT":
      "Arranque estable 180 segundos");
   }
  }
