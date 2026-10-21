@@ -850,7 +850,7 @@ static void otaDigestStop(){
 }
 static void startOtaResponse(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA local desactivada por seguridad");
- if(!otaAllowed)return fail(403,"Clave OTA incorrecta");
+ if(!otaAllowed)return fail(403,lastOtaError.c_str());
  if(otaError)return fail(500,lastOtaError.c_str());
  if(!otaSuccess)return fail(500,"La imagen no se ha completado");
  srv.send(200,"text/plain","Firmware recibido y validado por Update; reiniciando");
@@ -863,7 +863,23 @@ static void otaUpload(){
              !labTxEnabled() && !queue.busy() && !otaBusy &&
              !cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse;
   otaSuccess=false;otaError=false;otaBytes=0;otaDigestStop();
-  if(!otaAllowed){lastOtaError="Requiere clave y permiso de 90s del boton ATOM";otaError=true;return;}
+  if(!otaAllowed){
+   // Diagnostico explicito: antes se informaba siempre "Clave OTA incorrecta",
+   // incluso con clave valida y retorno BLE bloqueado.
+   if(!tokenEqual())lastOtaError="Clave OTA incorrecta";
+   else if(!physicalOtaGrant())lastOtaError="Permiso fisico OTA caducado o no autorizado";
+   else if(!currentBootMarkedHealthy)lastOtaError="Arranque aun no verificado";
+   else if(cieloWatchdogTripped || (bleReady && millis()-cielo96::ble_last_heartbeat()>45000UL))
+     lastOtaError="Bluetooth bloqueado: no se puede actualizar de forma segura";
+   else if(cieloChReturnPending||cieloChAwaitResponse)
+     lastOtaError="Retorno a My Chihiros pendiente: actualizacion detenida";
+   else if(cieloPvRun||cieloChRun)
+     lastOtaError="Control de luces activo: prepara la actualizacion antes de cargar el BIN";
+   else if(queue.busy()||labTxEnabled())
+     lastOtaError="Operacion Bluetooth en curso: espera antes de actualizar";
+   else lastOtaError="Actualizacion no disponible en este momento";
+   otaError=true;record("OTA_RECHAZADA",lastOtaError);return;
+  }
   const String expected=srv.header("X-Cielo-Sha256");
   if(!hashLooksValid(expected) || !upload.filename.endsWith(".bin")){
    lastOtaError="BIN o SHA256 del navegador no valido";otaError=true;return;
