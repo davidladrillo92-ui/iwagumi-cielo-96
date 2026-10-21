@@ -1669,11 +1669,23 @@ static void bleTick(){
   // Los resultados de la curva Natural V4 no son ACK ópticos.
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
      (cieloPvRun||cieloChRun||cieloChWasDriven)){
-   if(res.device==0 && cieloPvRun){
-    if(res.success){cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;}
-    else if(++cieloPvConsecutiveFailures>=3){
+   if(res.device==0 && (cieloPvRun||pvOffObligation)){
+    if(res.success){
+     cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;
+     if(pvOffObligation){
+      pvOffLastGatt=now;pvOffFailures=0;pvSafety=PvSafetyState::OffGattOk;
+      pvOffNextTry=now+300000UL;
+      record("PV_POWER_OFF_GATT_OK","POWER OFF GATT OK; sin verificacion optica");
+     }else pvSafety=PvSafetyState::Active;
+    }else if(pvOffObligation){
+     ++pvOffFailures;
+     const uint32_t backoff=pvOffFailures<2?5000UL:pvOffFailures<4?15000UL:60000UL;
+     pvOffNextTry=now+backoff;pvSafety=PvSafetyState::OffRetrying;
+     record("PV_POWER_OFF_REINTENTO",String("Fallo ")+String(pvOffFailures)+", reintento "+String(backoff/1000UL)+"s");
+    }else if(++cieloPvConsecutiveFailures>=3){
      cieloPvRun=false;queue.cancel_pending(cielo::ble::Device::PezVerde);
-     cieloFallbacks++;record("V4_PV_FALLO","3 fallos GATT: pausar Pez Verde, queda en ultimo estado conocido");
+     pvSafety=PvSafetyState::Degraded;pvRetryNext=now+30000UL;
+     cieloFallbacks++;record("PV_DEGRADADA","3 fallos BLE; recuperacion automatica y apagado nocturno prioritario");
     }
    }
    if(res.device==1 && (cieloChRun||cieloChWasDriven)){
