@@ -896,7 +896,8 @@ async function otaInstallUi(){
  if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Selecciona el firmware .bin');
  if(file.size<500000||file.size>0x330000)return toast('El tamaño del BIN no es compatible');
  if(key.length<12)return toast('Indica tu clave privada OTA');
- if(!confirm('Primero PAUSA las curvas de CIELO desde Curvas → Emergencia. Selecciona solo BIN oficial del proyecto. Después pulsa el botón del ATOM durante 3–7 segundos. ¿Continuar?'))return;
+ if(!await otaPreflightUi())return;
+ if(!confirm('Comprobación Bluetooth superada. Esta versión todavía requiere detener las curvas y autorizar la actualización con el botón del ATOM durante 3–7 segundos. ¿Continuar?'))return;
  $('otaInstall').disabled=true;
  const output=$('otaState'),progress=$('otaProgress');
  progress.value=0;progress.hidden=false;
