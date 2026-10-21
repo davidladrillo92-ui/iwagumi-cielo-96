@@ -171,7 +171,7 @@ static bool cieloAlwaysOn=false,cieloResumePending=false;
 enum class PvSafetyState:uint8_t {Paused,Active,Degraded,OffPending,OffRetrying,OffGattOk};
 static PvSafetyState pvSafety=PvSafetyState::Paused;
 static bool pvOffObligation=false,pvControlDesired=false;
-static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
+static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffScheduled=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
 static uint32_t cieloLastNightSample=0;
@@ -446,7 +446,7 @@ static String cieloModeJson(){
  j+=",\"pv_safety_state\":"+jsonQuote(pvSafetyName());
  j+=",\"pv_off_obligation\":"+String(pvOffObligation?"true":"false");
  j+=",\"pv_control_requested\":"+String(pvControlDesired?"true":"false");
- j+=",\"pv_off_attempts\":"+String(pvOffAttempts)+",\"pv_off_failures\":"+String(pvOffFailures);
+ j+=",\"pv_off_attempts\":"+String(pvOffAttempts)+",\"pv_off_scheduled\":"+String(pvOffScheduled)+",\"pv_off_failures\":"+String(pvOffFailures);
  j+=",\"pv_off_last_gatt_ms\":"+String(pvOffLastGatt)+",\"pv_off_last_attempt_ms\":"+String(pvOffLastTry);
  j+=",\"pv_optically_confirmed\":false";
  j+=",\"ch_consecutive_errors\":"+String(cieloChConsecutiveFailures);
@@ -1628,10 +1628,10 @@ static void lightingTask(){
     !customResumePending && !cieloChAwaitResponse){
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,0,0,0,0,now,90000UL)){
-   pvOffAttempts++;pvOffLastTry=now;
+   pvOffScheduled++;
    pvSafety=pvOffFailures?PvSafetyState::OffRetrying:PvSafetyState::OffPending;
    pvOffNextTry=now+60000UL;
-   record("PV_POWER_OFF_INTENTO",String("Intento ")+String(pvOffAttempts)+" GATT pendiente");
+   record("PV_POWER_OFF_ENCOLADO",String("Programado ")+String(pvOffScheduled)+"; envio GATT pendiente");
   }else pvOffNextTry=now+5000UL;
  }
  if(pvControlDesired && !pvOffObligation && !cieloPvRun && bleAlive &&
@@ -1770,7 +1770,10 @@ static void bleTick(){
    record("PV_RGB_OBSOLETO_BLOQUEADO","No enviar RGB viejo durante obligacion de apagado");
    return;
   }
-  if(schedulerPV && pvOffObligation && cmd.brightness==0)pvOffInFlightSeq=cmd.sequence;
+  if(schedulerPV && pvOffObligation && cmd.brightness==0){
+   pvOffInFlightSeq=cmd.sequence;pvOffAttempts++;pvOffLastTry=now;
+   record("PV_POWER_OFF_INTENTO",String("Envio BLE intentado ")+String(pvOffAttempts)+"; resultado pendiente");
+  }
   const bool schedulerCH=cieloChRun&&timeOK()&&
     cmd.device==cielo::ble::Device::Chihiros&&cmd.action==cielo::ble::Action::Apply;
   if(!labTxEnabled()&&!schedulerPV&&!schedulerCH){
