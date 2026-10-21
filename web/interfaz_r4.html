@@ -38,6 +38,10 @@
 .conn-tick.wait{color:#eacda2;background:#94714350}
 .lamp.information .lamp-copy strong{display:inline-flex;align-items:center}
 #momentSub:empty{display:none}
+.chart-legend{display:flex;flex-wrap:wrap;gap:7px 15px;color:#bdc5c4;font-size:12px;padding:9px 0 5px}
+.chart-legend span{display:inline-flex;align-items:center;gap:6px}
+.chart-legend i{width:11px;height:3px;display:inline-block;border-radius:3px}
+.chart-inspector{font-size:12px;line-height:1.55;color:#dce2dc;background:#ffffff0b;border:1px solid #ffffff14;border-radius:12px;padding:9px 12px;margin:8px 0 6px}
 </style>
 </head><body>
 <div class="shell"><header class="top"><div class="brand">C I E L O</div><button id="openSettings" class="iconbtn" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/></svg></button></header>
@@ -48,7 +52,7 @@
 <div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#d6cbbf" stroke-width="1.6"><path d="M4 16h16M8 7l4-4 4 4M12 3v11m-8 5h16"/></svg></span><span class="lamp-copy"><strong>Chihiros <i class="conn-tick" id="chiLed" title="Sin respuesta BLE reciente">·</i></strong><small id="chiSub">AUTO</small></span><span class="lamp-side"><b id="chiPct">—</b><small><i class="color-dot" id="chiColor"></i><span id="chiInfo">Según programa</span></small></span></div>
 <div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#b5c5d4" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M6 15c4-3 7-3 12-6M5 11c5-3 8-2 14-2"/></svg></span><span class="lamp-copy"><strong>Pez Verde <i class="conn-tick" id="pezLed" title="Sin respuesta BLE reciente">·</i></strong><small id="pezSub">AUTO</small></span><span class="lamp-side"><b id="pezPct">—</b><small><i class="color-dot" id="pezColor"></i><span id="pezInfo">Según programa</span></small></span></div>
 </section></main>
-<main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curva de iluminación diaria" role="img"></svg><div class="plot-foot"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p>
+<main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curvas de iluminación: horas y porcentajes" role="img" tabindex="0"></svg><div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div><div id="chartInspector" class="chart-inspector" aria-live="polite">Selecciona una hora para consultar las dos luces.</div><div class="plot-foot"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p>
 <div class="editorActions" role="group" aria-label="Editar y guardar curvas">
 <button id="editCurve">Editar puntos</button><button id="saveCurve">Guardar</button><button id="loadProfile">Cargar</button><button id="exportProfile">Exportar</button>
 </div>
@@ -114,10 +118,17 @@ const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false
 let toastTimer;
 function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3600)}
 function vAt(points,t){if(t<points[0][0]||t>=1440)return points[0].slice(1).map(()=>0);for(let i=0;i<points.length-1;i++){let a=points[i],b=points[i+1];if(t>b[0])continue;let f=(t-a[0])/(b[0]-a[0]);return a.slice(1).map((v,j)=>Math.round(v+(b[j+1]-v)*f))}return points.at(-1).slice(1)}
-function scene(t){if(t<870)return ['En calma','Descanso'];if(t<935)return ['Amanecer','La luz despierta'];if(t<1270)return ['Luz natural','Pleno día'];if(t<1320)return ['Luz dorada','Tarde'];if(t<1380)return ['Atardecer','Última luz'];if(t<1440)return ['Luna','Noche'];return ['En calma','Descanso']}
+function scene(t){if(t<870)return ['Descanso nocturno','Luces en reposo'];if(t<935)return ['Amanecer','La luz despierta'];if(t<1270)return ['Luz natural','Pleno día'];if(t<1320)return ['Luz dorada','Tarde'];if(t<1380)return ['Atardecer','Última luz'];if(t<1440)return ['Descanso nocturno','Luces en reposo'];return ['Descanso nocturno','Luces en reposo']}
 function rgb(r,g,b){return '#'+[r,g,b].map(x=>clamp(x,0,255).toString(16).padStart(2,'0')).join('')}
 function nowMin(){let date=new Date();return date.getHours()*60+date.getMinutes()}
-function currentClock(){const s=state.status?.clock?.match(/(\d\d):(\d\d):(\d\d)/);return s?(Number(s[1])*60+Number(s[2])):nowMin()}
+function currentClock(){
+ // El ATOM es la referencia. Entre lecturas, su hora avanza localmente.
+ const match=state.status?.clock?.match(/(\d\d):(\d\d):(\d\d)/);
+ if(!match||!state.updated)return nowMin();
+ const seconds=Number(match[1])*3600+Number(match[2])*60+Number(match[3]);
+ const elapsed=Math.max(0,Math.floor((Date.now()-state.updated)/1000));
+ return Math.floor(((seconds+elapsed)%86400)/60);
+}
 function isLive(){return location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'||location.search.includes('live=1')}
 async function api(path,data){if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');const opt={cache:'no-store',credentials:'same-origin'};if(data){opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};opt.body=new URLSearchParams(data)}const r=await fetch(path,opt);const body=await r.text();if(!r.ok)throw Error(body||('Error '+r.status));try{return JSON.parse(body)}catch{return body}}
 async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}render()}catch(e){state.connected=false;render()}}
@@ -210,7 +221,54 @@ function render(){
  if($('chLiveOff'))$('chLiveOff').disabled=!d?.chContinuous&&!d?.chActive;
  drawChart();
 }
-function drawChart(){let svg=$('chart'),x=t=>5+t/1440*327,y=v=>181-v/100*157;const build=(pts,idx,max)=>{let d='';let last=pts[0][0];for(let t=0;t<=1440;t+=5){let a=vAt(pts,t);let v=idx<0?Math.max(...a):a[idx]/max*100;d+=(t?'L':'M')+x(t).toFixed(1)+' '+y(v).toFixed(1)+' ';last=t;}return d};let line=(d,col,w,op)=>`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" opacity="${op}" stroke-linecap="round" stroke-linejoin="round"/>`;let str='';for(let k=0;k<4;k++)str+=`<path d="M5 ${y(k*25)} H332" stroke="#ffffff13" stroke-dasharray="2 5"/>`;if(state.curve!=='chi'){str+=line(build(state.pez,3,100),'#e5b5a0',2.65,1);if(state.curve==='pez')str+=line(build(state.pez,2,255),'#758ac0',1.4,.45)}if(state.curve!=='pez'){str+=line(build(state.chi,-1,100),'#d6ded6',2.65,1);if(state.curve==='chi')str+=line(build(state.chi,2,100),'#7694bc',1.4,.5)}str+=`<path d="M${x(state.scrub)} 13 V181" stroke="#ffffff84" stroke-width="1" stroke-dasharray="3 4"/>`;svg.innerHTML=str}
+function drawChart(){
+ const svg=$('chart');
+ const left=29,right=331,top=24,bottom=181;
+ const x=t=>left+t/1440*(right-left);
+ const y=pct=>bottom-Math.max(0,Math.min(100,pct))/100*(bottom-top);
+ const build=(points,channel,scale)=>{
+  let path='';
+  for(let t=0;t<=1440;t+=5){
+   const values=vAt(points,t);
+   const value=channel<0?Math.max(...values):values[channel]/scale*100;
+   path+=(t?'L':'M')+x(t).toFixed(1)+' '+y(value).toFixed(1)+' ';
+  }
+  return path;
+ };
+ const path=(d,color,width,opacity)=>
+  '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="'+width+
+  '" opacity="'+opacity+'" stroke-linecap="round" stroke-linejoin="round"/>';
+ let content='';
+ for(const pct of [0,25,50,75,100]){
+  const at=y(pct);
+  content+='<path d="M'+left+' '+at+'H'+right+'" stroke="#ffffff20" stroke-dasharray="2 4"/>';
+  content+='<text x="'+(left-5)+'" y="'+(at+3)+'" fill="#b6bdbf" font-size="9" text-anchor="end">'+pct+'</text>';
+ }
+ const legend=[];
+ if(state.curve!=='chi'){
+  content+=path(build(state.pez,3,100),'#e5b5a0',2.7,1);
+  legend.push('<span><i style="background:#e5b5a0"></i>Pez Verde · brillo %</span>');
+  if(state.curve==='pez'){
+   content+=path(build(state.pez,2,255),'#758ac0',1.4,.7);
+   legend.push('<span><i style="background:#758ac0"></i>Azul PV · %</span>');
+  }
+ }
+ if(state.curve!=='pez'){
+  content+=path(build(state.chi,-1,100),'#d6ded6',2.7,1);
+  legend.push('<span><i style="background:#d6ded6"></i>Chihiros · máximo RGB %</span>');
+  if(state.curve==='chi'){
+   content+=path(build(state.chi,2,100),'#7694bc',1.4,.7);
+   legend.push('<span><i style="background:#7694bc"></i>Azul CH · %</span>');
+  }
+ }
+ content+='<path d="M'+x(state.scrub)+' '+top+'V'+bottom+'" stroke="#ffffffae" stroke-width="1" stroke-dasharray="3 4"/>';
+ svg.innerHTML=content;
+ $('chartLegend').innerHTML=legend.join('');
+ const pv=vAt(state.pez,state.scrub),ch=vAt(state.chi,state.scrub);
+ $('chartInspector').textContent=hourLabel(state.scrub)+
+  ' · Pez Verde RGB '+pv.slice(0,3).join('/')+', brillo '+pv[3]+' %'+
+  ' · Chihiros RGB '+ch.join('/')+' %';
+}
 function nav(n){state.view=n;document.querySelectorAll('.page').forEach(e=>e.classList.toggle('active',e.id==='view'+(n==='light'?'Light':n==='curves'?'Curves':n==='lab'?'Lab':'Service')));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===n));render();if(n==='lab'){labRefresh();serviceRefresh();}}
 function sheet(html){$('modalBody').innerHTML=html;$('modal').classList.add('open');document.body.style.overflow='hidden'}function close(){ $('modal').classList.remove('open');document.body.style.overflow='';}
 function input(id,label,value,max){return `<div class="field"><label for="${id}">${label}</label><input type="number" id="${id}" inputmode="numeric" step="1" min="0" max="${max}" value="${value}"></div>`}
@@ -839,7 +897,7 @@ try{const key=localStorage.getItem('cieloOtaKey');if(key){$('otaSecret').value=k
 $('labGuided').onclick=labGuided;
 $('chart').onclick=e=>{
  const rect=$('chart').getBoundingClientRect();
- const x=((e.clientX-rect.left)/rect.width*338-5)/327;
+ const x=((e.clientX-rect.left)/rect.width*338-29)/302;
  state.scrub=Math.max(0,Math.min(1440,Math.round(x*1440)));
  state.preview=state.scrub;$('scrub').value=state.scrub;render();
 };
