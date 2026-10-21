@@ -1580,7 +1580,20 @@ static void lightingTask(){
   record("V4_WATCHDOG_PAUSA","BLE no responde: no se garantiza retorno hasta recuperar radio");
   return;
  }
- if(now-lastScheduleAt<30000UL)return;lastScheduleAt=now;
+ if(cieloAlwaysOn && timeOK() && cielo96::profileValid(profile)){
+  const bool night=desiredPv().brightness==0;
+  if(night && !pvOffObligation){
+   pvOffObligation=true;pvOffNextTry=now;pvSafety=PvSafetyState::OffPending;
+   queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
+   record("PV_OFF_OBLIGATORIO","Consigna cero: POWER OFF prioritario; RGB anterior cancelado");
+  }else if(!night && pvOffObligation){
+   pvOffObligation=false;pvOffNextTry=0;pvSafety=PvSafetyState::Active;
+   queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
+   record("PV_DIA_REANUDADO","Curva actual recuperada; ningun RGB obsoleto");
+  }
+ }
+ if(now-lastScheduleAt<30000UL && !pvOffObligation)return;
+ if(now-lastScheduleAt>=30000UL)lastScheduleAt=now;
  if(!timeOK() || !cielo96::profileValid(profile)){
   if(cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
    cieloChRun=false;cieloPvRun=false;cieloFallbacks++;
@@ -1589,11 +1602,30 @@ static void lightingTask(){
   return;
  }
  if(!bleReady || !wifiCoexistReady() || rescueOpen)return;
+ const bool bleAlive=!cieloWatchdogTripped && (now-cielo96::ble_last_heartbeat()<15000UL);
+ if(pvOffObligation && cieloAlwaysOn && !otaBusy &&
+    otaTxn.phase!=OtaPhase::Preparing && otaTxn.phase!=OtaPhase::Ready &&
+    otaTxn.phase!=OtaPhase::Uploading && bleAlive &&
+    (int32_t)(now-pvOffNextTry)>=0 && !queue.busy() &&
+    !customResumePending && !cieloChReturnPending && !cieloChAwaitResponse){
+  queue.cancel_pending(cielo::ble::Device::PezVerde);
+  if(queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,0,0,0,0,now,90000UL)){
+   pvOffAttempts++;pvOffLastTry=now;
+   pvSafety=pvOffFailures?PvSafetyState::OffRetrying:PvSafetyState::OffPending;
+   pvOffNextTry=now+60000UL;
+   record("PV_POWER_OFF_INTENTO",String("Intento ")+String(pvOffAttempts)+" GATT pendiente");
+  }else pvOffNextTry=now+5000UL;
+ }
+ if(cieloAlwaysOn && !pvOffObligation && !cieloPvRun && bleAlive &&
+    (int32_t)(now-pvRetryNext)>=0 && otaTxn.phase==OtaPhase::Idle){
+  cieloPvRun=true;pvSafety=PvSafetyState::Degraded;lastPvDesired=false;
+  record("PV_RECONECTANDO","RGB actual; no reproducir consignas obsoletas");
+ }
  const int minute=minuteOfDay();
  const bool chWindow=true; // CIELO controla 24h, incluido RGB 0/0/0
  // 27 puntos PV, 21 CH. Interpolacion lineal ya probada en cielo_engine.h.
  // Refresco a lo sumo 1 vez cada 30s; con curva estable heartbeat cada 5min.
- if(cieloPvRun && !pezManual && !lab.txArmed && !queue.pending(cielo::ble::Device::PezVerde)){
+ if(cieloPvRun && !pvOffObligation && !pezManual && !lab.txArmed && !queue.pending(cielo::ble::Device::PezVerde)){
   const auto v=desiredPv();
   const bool changed=!lastPvDesired||memcmp(&v,&prevPv,sizeof(v))!=0;
   const bool heartbeat=now-lastPvDesiredAt>300000UL; // cada 5min incluso con brillo cero
