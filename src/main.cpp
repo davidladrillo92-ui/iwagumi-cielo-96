@@ -31,6 +31,7 @@
 #include "cielo_pwa_assets.h"
 #include "cielo_monitor_service.h"
 #include "cielo_maintenance.h"
+#include "cielo_ble_recovery.h"
 
 #if __has_include("local_config.h")
 #include "local_config.h"
@@ -45,7 +46,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1-B9-MONITOR";
+static constexpr const char* VERSION="11.1.0-RC5-B1-B9-RECOVERY";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -84,6 +85,10 @@ static void tracePhase(TracePhase p){
  rtcTrace.magic=RTC_TRACE_MAGIC;
 }
 
+// Conservado solo entre reinicios de software; nunca borrar NVS para recuperar BLE.
+RTC_NOINIT_ATTR static cielo96::recovery::Retained bleRecoveryRtc;
+static cielo96::recovery::Supervisor bleSupervisor;
+static bool bleRecoveryBoot=false,bleRecoveryBootPvSafe=false,bleRecoveryExhausted=false;
 static WebServer srv(80);
 static Preferences prefs;
 static cielo96::ProfileImage profile;
@@ -813,6 +818,11 @@ static void diagnosticJson(){
  j+=",\"meaning\":\"Los avisos historicos no significan que la luz haya fallado ahora\"}";
  j+=",\"pilot\":{\"ble_start_requires_button\":false,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null";
+ j+=",\"ble_recovery\":{\"enabled\":true,\"stall_limit_ms\":120000,\"restart_limit\":2,\"rearm_healthy_ms\":1800000";
+ j+=",\"attempts\":"+String(bleRecoveryRtc.attempts)+",\"exhausted\":"+String(bleRecoveryExhausted?"true":"false");
+ j+=",\"recovered_boot\":"+String(bleRecoveryBoot?"true":"false")+",\"pv_off_interlock\":"+String(bleRecoveryBootPvSafe?"true":"false");
+ j+=",\"last_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(bleRecoveryRtc.phase))+",\"last_device\":"+String(bleRecoveryRtc.device);
+ j+=",\"last_stall_ms\":"+String(bleRecoveryRtc.age_ms)+",\"optical_confirmation\":false}";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"fragmentation_pct\":"+(freeMem?String(cielo96::diag::fragmentationPct(freeMem,largest)):String("null"));
  j+=",\"fragmentation_definition\":\"100 x (1 - largest_free_block / free_heap), solo estimacion\"";
@@ -1835,7 +1845,7 @@ static void lightingTask(){
    pvOffObligation=true;pvOffNextTry=now;pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_OFF_OBLIGATORIO","Consigna cero: POWER OFF prioritario; RGB anterior cancelado");
-  }else if(!night && pvOffObligation){
+  }else if(!night && pvOffObligation && !bleRecoveryBootPvSafe){
    pvOffObligation=false;pvOffNextTry=0;pvOffInFlightSeq=0;pvSafety=PvSafetyState::Active;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_DIA_REANUDADO","Curva actual recuperada; ningun RGB obsoleto");
@@ -1866,7 +1876,7 @@ static void lightingTask(){
    cieloChRun=false;cieloPvRun=false;cieloFallbacks++;
    cieloRequestReturn("Hora o curva invalida: ceder a My Chihiros");
   }
-  return;
+  if(!bleRecoveryBootPvSafe)return;
  }
  if(!bleReady || !wifiCoexistReady() || rescueOpen)return;
  const bool bleAlive=!cieloWatchdogTripped && (now-cielo96::ble_last_heartbeat()<15000UL);
@@ -2038,8 +2048,33 @@ static void bleTick(){
   }
  }
 }
+static void bleRecoveryTick(){
+ const auto snapshot=cielo96::ble_worker_snapshot();
+ const bool inhibited=otaBusy || rescueOpen || otaTxn.phase==OtaPhase::Preparing ||
+  otaTxn.phase==OtaPhase::Ready || otaTxn.phase==OtaPhase::Uploading || otaTxn.phase==OtaPhase::Completed;
+ const auto decision=bleSupervisor.tick(millis(),bleReady,snapshot.heartbeat_age_ms,
+  snapshot.phase_age_ms,inhibited,bleRecoveryRtc);
+ if(decision==cielo96::recovery::Decision::Exhausted){
+  if(!bleRecoveryExhausted)record("BLE_RESCATE_AGOTADO","2 reinicios sin 30min estables: acceso web conservado; revisar luces");
+  bleRecoveryExhausted=true;return;
+ }
+ if(snapshot.heartbeat_age_ms<15000UL)bleRecoveryExhausted=false;
+ if(decision!=cielo96::recovery::Decision::Restart)return;
+ // No vTaskDelete, BLEDevice::deinit ni reset de colas con una llamada pendiente.
+ // Reiniciar el MCU entero elimina conjuntamente tareas, callbacks y radio.
+ cielo96::recovery::armRestart(bleRecoveryRtc,snapshot.phase,snapshot.device,snapshot.phase_age_ms);
+ record("BLE_REINICIO_CONTROL",String("Fase ")+cielo96::ble_worker_phase_name(snapshot.phase)+
+  ", dispositivo "+String(snapshot.device)+", bloqueo "+String(snapshot.phase_age_ms)+"ms");
+ // RTC conserva la evidencia aunque la cuota del journal NVS impida escribir ahora.
+ delay(50);ESP.restart();
+}
 void setup(){
  bootMs=millis();Serial.begin(115200);delay(100);
+ if(esp_reset_reason()!=ESP_RST_SW || !cielo96::recovery::valid(bleRecoveryRtc)){
+  bleRecoveryRtc=cielo96::recovery::Retained{};cielo96::recovery::seal(bleRecoveryRtc);
+ }
+ bleRecoveryBoot=bleRecoveryRtc.pending==1;
+ bleRecoveryRtc.pending=0;cielo96::recovery::seal(bleRecoveryRtc);
  uint32_t previousPhaseCode=rtcTrace.phase;
  lastResetTraceValid=(rtcTrace.magic==RTC_TRACE_MAGIC &&
   rtcTrace.check==(RTC_TRACE_MAGIC ^ RTC_TRACE_SALT ^ previousPhaseCode));
@@ -2098,6 +2133,12 @@ void setup(){
  cieloAlwaysOn=prefs.getBool("v5_always",false);
  pvControlDesired=prefs.getBool("pv_auto",cieloAlwaysOn);
  cieloResumePending=cieloAlwaysOn;
+ if(bleRecoveryBoot){
+  record("BLE_RESCATE_ARRANQUE",String("Reinicio automatico ")+String(bleRecoveryRtc.attempts)+"; sin confirmacion optica");
+  if(pvControlDesired){
+   bleRecoveryBootPvSafe=true;pvOffObligation=true;pvOffNextTry=millis();pvSafety=PvSafetyState::OffPending;
+  }
+ }
  if(prefs.getBool("v4_ch_takeover",false)){
   cieloChWasDriven=true;cieloChReturnPending=true;
   cieloReturnRetryAt=millis()+30000UL;
@@ -2225,8 +2266,15 @@ void loop(){
    record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
   }
  }
+ // Tras un rescate, encolar OFF antes que el retorno Chihiros, incluso sin hora.
+ if(bleRecoveryBootPvSafe)lightingTask();
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
- if(cieloResumePending && cieloAlwaysOn && currentBootMarkedHealthy &&
+ if(bleRecoveryBootPvSafe && pvOffLastGatt && currentBootMarkedHealthy && timeOK() &&
+    cielo96::profileValid(profile) && !cieloWatchdogTripped){
+  bleRecoveryBootPvSafe=false;
+  record("BLE_RESCATE_PV_OFF_OK","OFF GATT completado; reanudar consigna actual, optica pendiente");
+ }
+ if(cieloResumePending && cieloAlwaysOn && !bleRecoveryBootPvSafe && currentBootMarkedHealthy &&
     bleReady && timeOK() && wifiCoexistReady() && !rescueOpen &&
     cielo96::profileValid(profile) && !customResumePending &&
     !cieloChReturnPending && !cieloChAwaitResponse && !queue.busy()){
@@ -2241,6 +2289,7 @@ void loop(){
  cieloTrendTick();
  labTick();
  otaPreparationTick();
+ bleRecoveryTick();
  flushJournal(); // nunca escribir en flash por polling de diagnóstico
  tracePhase(TracePhase::Led);statusLedTick();
  tracePhase(TracePhase::Idle);delay(3);

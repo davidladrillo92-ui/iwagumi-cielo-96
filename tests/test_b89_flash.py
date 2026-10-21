@@ -24,6 +24,18 @@ class FlashTests(unittest.TestCase):
   i=flash.inspect_flash(self.raw);self.assertTrue(i['partition_table_md5_verified']);self.assertEqual(len(i['partitions']),6)
   self.assertRaises(ValueError,flash.inspect_flash,self.raw[:-1])
   bad=bytearray(self.raw);bad[0x800c]^=1;self.assertRaises(ValueError,flash.inspect_flash,bytes(bad))
+ def test_nvs_bitmap_metadata_only(self):
+  i=flash.inspect_flash(self.raw)
+  self.assertEqual(i['partitions'][0]['nvs_inventory']['pages'][0]['state'],'empty')
+  page=bytearray(b'\xff'*4096);struct.pack_into('<I',page,0,0xfffffffe)
+  page[32]=0b11000110  # written, invalid, erased, empty
+  page[64:80]=b'PRIVATE_PASSWORD'
+  report=flash.nvs_page_inventory(bytes(page));text=json.dumps(report)
+  self.assertNotIn('PRIVATE',text)
+  self.assertEqual(report['pages'][0]['slots_written'],1)
+  self.assertEqual(report['pages'][0]['slots_invalid'],1)
+  self.assertEqual(report['pages'][0]['slots_erased'],1)
+  page[:4]=b'????';self.assertEqual(flash.nvs_page_inventory(bytes(page))['pages'][0]['state'],'unknown')
  def test_overlap_and_oob(self):
   bad=bytearray(self.raw);struct.pack_into('<I',bad,0x8000+32+4,0x9000)
   self.assertRaises(ValueError,flash.inspect_flash,bytes(bad))

@@ -53,7 +53,7 @@ de iluminación; no improvisar una escritura.
 python3 tools/cielo_flash.py inspect /ruta/privada/CIELO_RC3_8MiB.cieloenc
 ```
 
-Muestra metadatos, SHA256 y particiones; no valores NVS, Wi-Fi o claves.
+Muestra metadatos, SHA256, particiones y bitmaps de ocupación NVS; no valores NVS, Wi-Fi o claves. Los bitmaps son una inspección parcial, no validación CRC ni lista de claves.
 Para listar archivos hay que usar la imagen offline y una utilidad SPIFFS compatible:
 
 ```sh

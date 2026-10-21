@@ -21,6 +21,31 @@ MAGIC = b'CIELO8M1\x00'
 PARTITIONS_OFFSET = 0x8000
 
 
+def nvs_page_inventory(raw):
+    """Solo cabeceras/bitmap NVS IDF4; no claves, valores ni descifrado."""
+    states = {0xfffffffe: 'active', 0xfffffffc: 'full', 0xfffffff8: 'freeing'}
+    pages = []
+    for offset in range(0, len(raw), 4096):
+        page = raw[offset:offset+4096]
+        if len(page) != 4096:
+            raise ValueError('NVS no alineada')
+        if page == b'\xff'*4096:
+            pages.append({'page': offset//4096, 'state': 'empty', 'slots_empty': 126})
+            continue
+        state = states.get(int.from_bytes(page[:4], 'little'), 'unknown')
+        entry = {'page': offset//4096, 'state': state}
+        if state != 'unknown':
+            counts = {'empty': 0, 'written': 0, 'erased': 0, 'invalid': 0}
+            labels = {3: 'empty', 2: 'written', 0: 'erased', 1: 'invalid'}
+            for n in range(126):
+                bits = (page[32+n//4] >> (2*(n%4))) & 3
+                counts[labels[bits]] += 1
+            entry.update({'slots_'+k: v for k, v in counts.items()})
+        pages.append(entry)
+    return {'method': 'NVS_PAGE_BITMAP_ONLY_NOT_KEY_OR_CRC_VALIDATION', 'pages': pages,
+            'note': 'Slots erased no son basura que borrar; NVS los recupera. No equivale a espacio util de un blob.'}
+
+
 def inspect_flash(raw):
     if len(raw) != FLASH_SIZE:
         raise ValueError('El respaldo debe tener exactamente 8388608 bytes')
@@ -48,7 +73,13 @@ def inspect_flash(raw):
             raise ValueError('Partición no alineada a sector')
         if typ == 0 and offset % 0x10000:
             raise ValueError('Aplicación no alineada')
-        entries.append(dict(label=name, type=typ, subtype=subtype, offset=offset, size=size, flags=flags))
+        entry = dict(label=name, type=typ, subtype=subtype, offset=offset, size=size, flags=flags)
+        body = raw[offset:offset+size]
+        entry['all_bytes_ff'] = body == b'\xff'*size
+        if typ == 1 and subtype == 2:
+            entry['nvs_inventory'] = ({'status': 'ENCRYPTED_NOT_INSPECTED'} if flags & 1
+                                      else nvs_page_inventory(body))
+        entries.append(entry)
         end = offset+size
         seen.add(name)
     required = {'nvs', 'otadata', 'app0', 'app1'}

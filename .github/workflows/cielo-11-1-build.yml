@@ -36,7 +36,9 @@ jobs:
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R monitor docs dist/
-          cp tools/cielo_flash.py tools/cielo_spiffs.py dist/
+          mkdir -p dist/tools dist/include
+          cp tools/cielo_flash.py tools/cielo_spiffs.py tools/sign_firmware.py dist/tools/
+          cp include/cielo_ota_signing_public.h dist/include/
           python tools/package_manifest.py .pio/build/atoms3_lite_c124/firmware.bin dist/BUILD_MANIFEST.json
           git archive --format=zip --output=dist/CIELO_11_1_FUENTES_COMPLETAS.zip HEAD
           sha256sum dist/CIELO_11_1_FUENTES_COMPLETAS.zip >> dist/SHA256.txt

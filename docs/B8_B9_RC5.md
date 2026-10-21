@@ -2,7 +2,7 @@
 
 Candidata de banco del 21/10/2026. Base exacta: PR #33, commit
 `4492f221f7d73cea796cb12b4acc0a819ff67486`. Versión nueva:
-`11.1.0-RC5-B1-B9-MONITOR`. Incluye los bloques 1, 5, 3, 2, 4, 6 y 7
+`11.1.0-RC5-B1-B9-RECOVERY`. Incluye los bloques 1, 5, 3, 2, 4, 6 y 7
 sin reiniciarlos ni sustituirlos. **Última instalación confirmada: RC3**.
 
 ## Qué implementa
@@ -49,7 +49,7 @@ El archivo `tests/fixtures/rc5_b7_immutable_sha256.json` fija SHA256 de referenc
 motor, codec, política nocturna, cola, almacenamiento y particiones respecto a la base.
 La suite falla si cambian. Referencia V5: PV34/CH31, FNV-1a32 `5814359c`;
 22:59 2/2/2 → 23:00 1/1/2, sin punto lunar 1/1/1. No autoimporta el perfil:
-el Informe Maestro 40 conserva evidencia de 34/32 en RC3.
+el Informe Maestro 40 tenía 34/32; los informes 41 y 42 ya muestran 34/31, generación 8.
 
 ## Verificación reproducible
 
@@ -89,3 +89,8 @@ Referencias primarias consultadas: [esptool v4 ESP32-S3](https://docs.espressif.
 [Telegram Bot API](https://core.telegram.org/bots/api#sendmessage),
 [Paho MQTT 2](https://eclipse.dev/paho/files/paho.mqtt.python/html/client.html),
 [MQTT Home Assistant](https://www.home-assistant.io/integrations/mqtt/).
+
+## Revisión por incidente 41/42
+
+La revisión RECOVERY incorpora recuperación limitada del bloqueo duro BLE. Véanse
+[análisis](INCIDENTE_41_42_Y_RECOVERY.md) y [guía de copia e instalación](INSTALACION_RC3_A_RC5_IPHONE.md).
