@@ -28,6 +28,13 @@ struct SharedLink { volatile bool connected=false;volatile bool released=false;v
 SharedLink shared[2]{};
 uint32_t linkTouched[2]{};
 static constexpr uint32_t BLE_IDLE_RELEASE_MS=5000UL;
+volatile uint32_t lastHeartbeat=0;
+volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
+volatile uint8_t workerDevice=255;
+volatile uint32_t phaseEnteredAt=0;
+void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
+ workerDevice=dev;phaseEnteredAt=millis();workerPhase=static_cast<uint8_t>(p);
+}
 void releaseTarget(uint8_t device,bool userRequested){
  setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  Target& t=targets[device];
@@ -47,13 +54,6 @@ void releaseIdleLinks(){
  for(uint8_t k=0;k<2;k++)
   if(linkTouched[k] && now-linkTouched[k]>=BLE_IDLE_RELEASE_MS)
    releaseTarget(k,false);
-}
-volatile uint32_t lastHeartbeat=0;
-volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
-volatile uint8_t workerDevice=255;
-volatile uint32_t phaseEnteredAt=0;
-void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
- workerDevice=dev;phaseEnteredAt=millis();workerPhase=static_cast<uint8_t>(p);
 }
 uint16_t chMessageId=1;
 uint8_t writesInCurrentOperation=0;
