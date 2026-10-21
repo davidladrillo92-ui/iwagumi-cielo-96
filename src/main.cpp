@@ -744,10 +744,10 @@ static void diagnosticJson(){
  uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
- bool critical=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
+ bool critical=(badReset&&!currentBootMarkedHealthy)||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
   workerUnavailable||profileRecovery||otaError||!timeOK()||
   (pvOffObligation&&pvOffFailures>=3); // Los errores BLE ya recuperados son historicos.
- bool historical=m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
+ bool historical=badReset||m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
  String j;j.reserve(22000);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
  j+=",\"boot_id\":"+String(previousBootCount+1);
@@ -869,6 +869,7 @@ static void diagnosticJson(){
   if(i)j+=",";
   const auto &b=bootHistory[idx];
   j+="{\"boot_id\":"+String(b.id)+",\"reset_code\":"+String(b.cause);
+  j+=",\"reset_name\":"+jsonQuote(resetReasonName((esp_reset_reason_t)b.cause));
   j+=",\"previous_clean\":"+String(b.previous_clean?"true":"false")+"}";
  }
  j+="],\"important_events\":[";
@@ -1364,7 +1365,7 @@ static void configureRoutes(){
   srv.send(307,"text/plain","CIELO: conecta por HTTPS. Confirma la huella de certificado por USB.");return;
  }++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
  srv.on("/api/status",HTTP_GET,statusJson);
- srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
+ srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition",srv.hasArg("share")?"attachment; filename=\"CIELO_INFORME_COMPARTIBLE.json\"":"attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
  srv.on("/api/service/report",HTTP_GET,diagnosticJson);
  srv.on("/api/lab/status",HTTP_GET,[]{jsonSend(200,labJson());});
  srv.on("/api/lab/start",HTTP_POST,[]{if(!requireAdminWrite())return;
