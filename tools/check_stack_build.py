@@ -11,8 +11,8 @@ symbols=subprocess.check_output([str(nms[0]),'-C',str(elf)],text=True)
 match=re.search(r'^([0-9a-fA-F]+)\s+T\s+getArduinoLoopTaskStackSize(?:\(\))?$',symbols,re.M)
 if not match:raise SystemExit('La reserva loopTask no tiene override fuerte enlazado')
 source=Path('src/main.cpp').read_text()
-if 'CIELO_LOOP_STACK_BYTES=32768' not in source or 'SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES)' not in source:
- raise SystemExit('La reserva loopTask no coincide con 32768 B')
+if 'CIELO_LOOP_STACK_BYTES=16384' not in source or 'SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES)' not in source:
+ raise SystemExit('La reserva loopTask no coincide con 16384 B')
 frames={}
 for unit,limit in [('main.cpp',8192),('cielo_https_proxy.cpp',4096)]:
  files=list((root/'src').glob(unit+'.su'))
@@ -26,9 +26,9 @@ for unit,limit in [('main.cpp',8192),('cielo_https_proxy.cpp',4096)]:
  records.sort(key=lambda v:v['frame_bytes'],reverse=True)
  if records[0]['frame_bytes']>=limit:raise SystemExit('Marco local excesivo: '+unit)
  frames[unit]=records[:8]
-report={'schema':'cielo-stack-build-v1','loop_task_bytes':32768,
+report={'schema':'cielo-stack-build-v1','loop_task_bytes':16384,
  'linked_override':{'symbol':'getArduinoLoopTaskStackSize','binding':'T','address':match[1]},
  'elf_sha256':hashlib.sha256(elf.read_bytes()).hexdigest(),'largest_compiler_frames':frames,
- 'limitation':'Static frames only; dynamic TLS high-water mark and physical first boot remain pending'}
+ 'limitation':'Static frames only; physical LAN/OTA/BLE high-water marks and stability remain pending'}
 Path('dist/STACK_REPORT.json').write_text(json.dumps(report,indent=2)+'\n')
 print(json.dumps(report,indent=2))

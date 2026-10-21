@@ -18,5 +18,11 @@ int main(){
  assert(sameOrigin("","iwagumi-cielo96.local")); // necesita token en backend
  assert(safeFetchSite("same-origin"));assert(safeFetchSite("none"));
  assert(!safeFetchSite("cross-site"));assert(!safeFetchSite("same-site"));
+ assert(sameLanOrigin("http://192.168.0.25","192.168.0.25"));
+ assert(sameLanOrigin("http://iwagumi-cielo96.local","iwagumi-cielo96.local"));
+ assert(sameLanOrigin("","192.168.0.25"));
+ assert(!sameLanOrigin("http://external.example","192.168.0.25"));
+ assert(!sameLanOrigin("https://192.168.0.25","192.168.0.25"));
+ assert(!sameLanOrigin("null","192.168.0.25"));
  return 0;
 }

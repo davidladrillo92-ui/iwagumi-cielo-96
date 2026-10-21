@@ -101,3 +101,46 @@ class AtomClient:
             raise PollError("transport") from None
         finally:
             conn.close()
+
+
+class LocalAtomClient:
+    """Explicit owner-selected LAN mode: HTTP, no certificate or read token."""
+    def __init__(self, url, timeout=5):
+        import ipaddress
+        self.url = urlsplit(url)
+        host = self.url.hostname or ""
+        try:
+            address = ipaddress.ip_address(host)
+            local = address.version == 4 and (address.is_private or address.is_loopback)
+        except ValueError:
+            local = host.endswith(".local")
+        if (self.url.scheme != "http" or not local or self.url.username
+                or self.url.password or self.url.path not in ("", "/")
+                or self.url.query or self.url.fragment):
+            raise ValueError("Modo LAN: URL HTTP local sin ruta ni credenciales")
+        self.timeout = timeout
+
+    def poll(self):
+        conn = http.client.HTTPConnection(self.url.hostname, self.url.port or 80, timeout=self.timeout)
+        try:
+            conn.request("GET", "/api/monitor", headers={"Cache-Control": "no-store", "Connection": "close"})
+            response = conn.getresponse()
+            if response.status != 200:
+                raise PollError("http")
+            raw = response.read(8193)
+            if len(raw) > 8192:
+                raise PollError("size")
+            return validate(json.loads(raw))
+        except PollError:
+            raise
+        except (OSError, ValueError, http.client.HTTPException):
+            raise PollError("transport") from None
+        finally:
+            conn.close()
+
+
+def configured_client(cfg):
+    if cfg.get("local_lan") is True:
+        return LocalAtomClient(cfg["atom_url"])
+    import os
+    return AtomClient(cfg["atom_url"], cfg["certificate_sha256"], os.environ.get("CIELO_MONITOR_TOKEN", ""))

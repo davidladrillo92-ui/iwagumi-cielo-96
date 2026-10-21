@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 
-def serve(store, token, port=8765):
+def serve(store, token="", port=8765):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -16,7 +16,10 @@ def serve(store, token, port=8765):
             if u.path == "/":
                 self.reply(200, Path(__file__).with_name("dashboard.html").read_bytes(), "text/html; charset=utf-8")
                 return
-            if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer "+token):
+            if u.path == "/api/access":
+                self.reply(200, json.dumps({"password_required": bool(token)}).encode())
+                return
+            if token and not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer "+token):
                 self.reply(401, b'{"error":"Acceso requerido"}')
                 return
             if u.path != "/api/history":

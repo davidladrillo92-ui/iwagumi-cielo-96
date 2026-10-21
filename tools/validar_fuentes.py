@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1-B9-STACKFIX1' in code
+assert '11.1.0-RC5-B1-B9-LAN1' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -126,7 +126,7 @@ assert 'if(rescueOpen)return fail(403' in code
 assert 'statusPixel' in code and 'CIELO_LED_GPIO=35' in code
 assert 'bleReady=false; // Do not start BLE' in code
 assert code.index('configureRoutes();') < code.index('bleReady=cielo96::ble_begin();')
-assert 'CIELO_ENABLE_OTA 1' in code and 'physicalOtaGrant()' in code
+assert 'CIELO_ENABLE_OTA 1' in code and 'otaNetworkReady()' in code
 assert 'X-Cielo-Sha256' in code and 'otaDigestOut' in code
 assert 'if(rescueOpen)return fail(403' in code
 assert 'Update.begin' in code and 'Update.end(true)' in code
@@ -155,7 +155,7 @@ assert 'id="releaseCh"' not in actual and 'id="releasePv"' not in actual
 assert 'id="curveChEvening"' not in actual
 assert 'function labGuided()' in actual and 'function previewNatural' not in actual
 assert 'function releaseLight' in actual
-assert "fetch(full?'/api/diagnostico/maestro?download=1'" in actual and "X-Cielo-Session" in actual
+assert "fetch(full?'/api/diagnostico/maestro?download=1'" in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
 import tempfile
 with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as js:
@@ -179,7 +179,7 @@ assert 'id="cieloPauseAll"' in actual
 # P0: toda ruta POST mutable queda protegida por la misma clave OTA.
 for protected_path in ['/api/lab/start','/api/lab/stop','/api/lab/scan','/api/lab/probe','/api/cielo/v4/start','/api/cielo/v4/return','/api/cielo/v4/pause','/api/chihiros/contrast/start','/api/chihiros/contrast/cancel','/api/chihiros/my-curve-test','/api/ble/release','/api/lab/preview','/api/lab/tx/arm','/api/lab/tx/disarm','/api/lab/browser-sample','/api/clock','/api/save','/api/reset','/api/chihiros/curve','/api/chihiros/curve/reset','/api/manual','/api/chihiros/manual','/api/chihiros/stop','/api/chihiros/evening/off','/api/chihiros/evening/on','/api/chihiros/live/stop','/api/wifi/scan','/api/wifi','/api/wifi/forget']:
  assert 'srv.on("'+protected_path+'",HTTP_POST,[]{if(!requireAdminWrite())return;' in code, protected_path
-assert 'X-Cielo-Key' in actual and 'requireAdminWrite()' in code
+assert 'sameLanOrigin' in code and 'requireAdminWrite()' in code
 
 assert 'Activar CIELO · siempre' in actual
 # El boton sigue existiendo, pero se ha trasladado a Emergencia con otro titulo.
@@ -187,8 +187,8 @@ assert 'id="chNightOff"' in actual
 assert 'id="cieloPauseAll"' in actual
 assert 'emergencyControls' in actual
 assert 'async function otaPreflightUi()' in actual
-assert 'async function otaPrepareLights(key)' in actual
-assert "otaPost('/api/ota/prepare',key)" in actual
+assert 'async function otaPrepareLights()' in actual
+assert "otaPost('/api/ota/prepare')" in actual
 assert 'otaPreparationTick();' in code
 assert 'otaCandidateBoot' in code
 assert 'otaBleHealthy()' in code
@@ -251,14 +251,12 @@ for name in ('test_codec_and_profile','test_ble_queue','test_ble_match'):
  subprocess.run([str(out)],check=True)
 print('Pruebas nativas correctas; compilacion ESP32-S3 pendiente de toolchain y hardware')
 
-# CIELO RC4: puerta HTTPS, PBKDF2 y autenticidad de firma obligatorios.
-assert 'cielo96::https_begin(prefs)' in code
-assert 'srv.client().remoteIP()!=IPAddress(127,0,0,1)' in code
-assert 'mbedtls_pkcs5_pbkdf2_hmac' in code and 'auth_salt' in code
-assert 'verifyFirmwareSignature(otaDigestOut' in code
-assert code.index('verifyFirmwareSignature(otaDigestOut') < code.index('Update.end(true)')
-assert 'id="otaSignatureFile"' in actual
-assert "x.setRequestHeader('X-Cielo-Signature',signature);" in actual
+# LAN1: propietario solicita acceso directo y OTA sin contrasena/firma.
+assert 'cielo96::https_begin(prefs)' not in code
+assert 'authSessionOpen' not in code and 'verifyFirmwareSignature' not in code
+assert 'compatiblePrefix(otaPrefix' in code
+assert 'id="otaSignatureFile"' not in actual and 'id="otaSecret"' not in actual
+assert 'X-Cielo-Sha256' in actual and 'sameLanOrigin' in code
 
 # RC5 B1: seguridad nocturna no equivale a confirmacion optica.
 assert 'PV_POWER_OFF_INTENTO' in code and 'PV_POWER_OFF_REINTENTO' in code

@@ -1,3 +1,7 @@
+# LAN1: configuración actual
+
+La configuración de ejemplo usa HTTP local (`local_lan: true`), sin clave de lectura ni certificado. El panel local abre sin contraseña; las instrucciones TLS siguientes describen el modo anterior opcional. Consulte [LAN1](../docs/LAN1_ACCESO_SIMPLE.md) antes de instalar o desplegar.
+
 # Observador CIELO · B8
 
 Servicio opcional e independiente. Solo lee al ATOMS3: **no cambia luz, reloj,

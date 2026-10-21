@@ -35,7 +35,7 @@ jobs:
           python tools/check_stack_build.py
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
-          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_STACKFIX1.bin
+          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_LAN1.bin
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R monitor docs dist/
           mkdir -p dist/tools dist/include
@@ -44,7 +44,7 @@ jobs:
           python tools/package_manifest.py .pio/build/atoms3_lite_c124/firmware.bin dist/BUILD_MANIFEST.json
           git archive --format=zip --output=dist/CIELO_11_1_FUENTES_COMPLETAS.zip HEAD
           sha256sum dist/CIELO_11_1_FUENTES_COMPLETAS.zip >> dist/SHA256.txt
-          printf '%s\n' "ATOMS3 Lite C124, fuente GitHub HEAD, firmware SOLO APLICACION, NO FIRMADO PARA OTA; NO FLASHEAR SIN BACKUP USB Y VALIDACION FISICA" > dist/LEEME_RECUPERACION.txt
+          printf '%s\n' "ATOMS3 Lite C124, fuente GitHub HEAD, firmware SOLO APLICACION, OTA LAN SIN CLAVE NI FIRMA OBLIGATORIA; BACKUP USB Y VALIDACION FISICA PENDIENTES" > dist/LEEME_RECUPERACION.txt
       - name: Publicar BIN candidato
         uses: actions/upload-artifact@v4
         with:
@@ -55,7 +55,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CIELO_STACKFIX1_DEBUG_ELF_MAP
+          name: CIELO_LAN1_DEBUG_ELF_MAP
           path: |
             .pio/build/atoms3_lite_c124/firmware.elf
             .pio/build/atoms3_lite_c124/firmware.map

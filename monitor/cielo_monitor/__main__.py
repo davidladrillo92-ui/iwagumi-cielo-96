@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from .transport import AtomClient, PollError
+from .transport import configured_client, PollError
 from .store import Store
 from .engine import Engine
 from .providers import Telegram, MQTT, Heartbeat, delivery_loop
@@ -33,11 +33,8 @@ def load_config(path):
 
 def run(cfg):
     os.umask(0o077)
-    token = env_required("CIELO_MONITOR_TOKEN")
-    panel_token = env_required("CIELO_PANEL_TOKEN")
-    if len(panel_token) < 32 or panel_token == token:
-        raise ValueError("Clave del panel independiente, mínimo 32 caracteres")
-    client = AtomClient(cfg["atom_url"], cfg["certificate_sha256"], token)
+    panel_token = os.environ.get("CIELO_PANEL_TOKEN", "")
+    client = configured_client(cfg)
     store = Store(cfg.get("database", "private/history.sqlite"))
     # Un solo observador propietario de esta DB; evita duplicados/429 si se inicia dos veces.
     lock = open(store.path+".lock", "a")
@@ -99,7 +96,7 @@ def main():
             writer.writerows(rows)
         return
     if args.check:
-        AtomClient(cfg["atom_url"], cfg["certificate_sha256"], env_required("CIELO_MONITOR_TOKEN"))
+        configured_client(cfg)
         print("Configuración de lectura válida; no se ha conectado ni enviado ningún aviso.")
         return
     run(cfg)

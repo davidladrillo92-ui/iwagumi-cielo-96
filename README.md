@@ -1,3 +1,7 @@
+# Candidata actual: RC5 LAN1
+
+Acceso local HTTP sin contraseñas, clave OTA, firma obligatoria ni pulsación física para actualizar, por decisión expresa del propietario. Corrige también la espera posarranque y evita iniciar HTTPS. [Uso, migración desde RC3 y ensayo físico](docs/LAN1_ACCESO_SIMPLE.md). V5 PV34/CH31 intacta. RECOVERY y STACKFIX1 quedan retiradas del ensayo.
+
 # IWAGUMI CIELO 96
 
 Control local de iluminación para M5Stack ATOMS3 Lite C124 / ESP32-S3.

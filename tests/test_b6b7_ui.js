@@ -29,9 +29,9 @@ assert.match(element('curvePending').textContent,/SIN GUARDAR/);
 assert.equal(element('saveCurve').disabled,true); // desconectado del ATOM
 assert.equal(element('undoCurve').disabled,false);
 // Invitado y admin informan del rol; guardar exige sesión API externa.
-assert.equal(element('authBadge').textContent,'Invitado');
-evalj("cieloSessionToken='123';updateEditorStatus()");
-assert.equal(element('authBadge').textContent,'Administrador');
+assert.equal(element('authBadge').textContent,'Local');
+evalj('updateEditorStatus()');
+assert.equal(element('accessAction').textContent,'Ajustes');
 // Reloj simulado y virtualización son funciones puramente visuales, no BLE.
 assert.ok(!/api\(|ble_dispatch|fetch\(/.test(evalj('drawChart.toString()')));
 assert.ok(/actualiz/.test('actualizaciones')); // token de test sencillo
