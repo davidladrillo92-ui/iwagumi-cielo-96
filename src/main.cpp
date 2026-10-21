@@ -681,13 +681,6 @@ static void labTick(){
   record("LAB_TX_CADUCADA","Envios bloqueados; restauracion optica NO garantizada");
  }
  if(pezManual && (int32_t)(now-pezManualUntil)>=0)pezManual=false;
- // No duplicar tareas BLE: si la MISMA tarea recupera latido, rearmar la curva.
- if(cieloWatchdogTripped && bleReady && !queue.busy() &&
-    now-cielo96::ble_last_heartbeat()<3000UL){
-  cieloWatchdogTripped=false;pvRetryNext=now;lastPvDesired=false;
-  if(cieloAlwaysOn)pvSafety=PvSafetyState::Degraded;
-  record("BLE_WORKER_RECUPERADO","Mismo trabajador BLE activo; reintentar seguridad nocturna");
- }
  if(chiManual && (int32_t)(now-chiManualUntil)>=0)chiManual=false;
  if(!lab.running || now-lab.lastSample<15000UL)return;
  lab.lastSample=now;lab.samples++;
@@ -1579,6 +1572,13 @@ static void cieloRequestReturn(const char* reason){
 }
 static void lightingTask(){
  const uint32_t now=millis();
+ // No duplicar tareas BLE: si la MISMA tarea recupera latido, rearmar la curva.
+ if(cieloWatchdogTripped && bleReady && !queue.busy() &&
+    now-cielo96::ble_last_heartbeat()<3000UL){
+  cieloWatchdogTripped=false;pvRetryNext=now;lastPvDesired=false;
+  if(cieloAlwaysOn)pvSafety=PvSafetyState::Degraded;
+  record("BLE_WORKER_RECUPERADO","Mismo trabajador BLE activo; reintentar seguridad nocturna");
+ }
  if(pezManual && (int32_t)(now-pezManualUntil)>=0)pezManual=false;
  if(chiManual && (int32_t)(now-chiManualUntil)>=0)chiManual=false;
  // Las verificaciones se hacen incluso si CIELO no controla las luces.
