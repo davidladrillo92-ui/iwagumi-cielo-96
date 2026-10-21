@@ -147,6 +147,9 @@
 <div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave una vez</button></div>
 <label style="display:block;margin:14px 0 4px" for="otaFile">Archivo (.bin)</label>
 <input id="otaFile" type="file" accept=".bin,application/octet-stream" style="width:100%;color:#e7ded4">
+<label style="display:block;margin:12px 0 4px" for="otaSignatureFile">Firma digital del firmware (.sig)</label>
+<input id="otaSignatureFile" type="file" accept=".sig,text/plain" style="width:100%;color:#e7ded4">
+<p class="note">Solo se instalará software firmado con la clave privada del propietario. No compartas esa clave.</p>
 <div class="liveButtons" style="margin-top:12px"><button id="otaInstall" disabled>Instalar BIN</button></div>
 <progress id="otaProgress" max="100" value="0" hidden style="width:100%;accent-color:#96d9ad;margin:12px 0 7px"></progress>
 <p id="otaState">Comprobando actualización local...</p>
@@ -918,8 +921,9 @@ async function otaPrepareLights(key){
  throw Error('La preparación superó el tiempo seguro. Revisa el Informe Maestro.');
 }
 async function otaInstallUi(){
- const file=$('otaFile').files?.[0],key=$('otaSecret').value;
+ const file=$('otaFile').files?.[0],sigFile=$('otaSignatureFile').files?.[0],key=$('otaSecret').value;
  if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Selecciona el firmware .bin');
+ if(!sigFile||!sigFile.name.toLowerCase().endsWith('.sig'))return toast('Selecciona su firma digital .sig');
  if(file.size<500000||file.size>0x330000)return toast('El tamaño del BIN no es compatible');
  if(key.length<12)return toast('Indica tu clave privada OTA');
  if(!await otaPreflightUi())return;
@@ -931,6 +935,9 @@ async function otaInstallUi(){
  try{
   output.textContent='Calculando SHA-256 antes de detener las luces…';
   const sha=await sha256Firmware(file);
+  const signature=(await sigFile.text()).trim();
+  if(!/^[a-fA-F0-9]{16,144}$/.test(signature)||signature.length%2)
+   throw Error('La firma .sig tiene formato incorrecto');
   // La clave se guarda en este iPhone solo si el usuario ha optado expresamente.
   if($('otaRemember')?.checked)try{localStorage.setItem('cieloOtaKey',key)}catch(_){}
   preparationStarted=true;
@@ -942,6 +949,7 @@ async function otaInstallUi(){
    x.open('POST','/api/ota/upload',true);
    x.setRequestHeader('X-Cielo-Key',key);
    x.setRequestHeader('X-Cielo-Sha256',sha);
+   x.setRequestHeader('X-Cielo-Signature',signature);
    x.upload.onprogress=ev=>{
     if(ev.lengthComputable){progress.value=Math.min(99,Math.round(ev.loaded/ev.total*99));
      output.textContent='Transfiriendo '+Math.round(ev.loaded/ev.total*100)+' % · esperando verificación interna';

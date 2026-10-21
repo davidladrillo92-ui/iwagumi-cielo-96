@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC3-ACCESO-LAN' in code
+assert '11.1.0-RC4-FIRMA-KDF' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -250,3 +250,12 @@ for name in ('test_codec_and_profile','test_ble_queue','test_ble_match'):
  subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-I'+str(r/'include'),str(r/'tests'/f'{name}.cpp'),'-o',str(out)],check=True)
  subprocess.run([str(out)],check=True)
 print('Pruebas nativas correctas; compilacion ESP32-S3 pendiente de toolchain y hardware')
+
+# CIELO RC4: puerta HTTPS, PBKDF2 y autenticidad de firma obligatorios.
+assert 'cielo96::https_begin(prefs)' in code
+assert 'srv.client().remoteIP()!=IPAddress(127,0,0,1)' in code
+assert 'mbedtls_pkcs5_pbkdf2_hmac' in code and 'auth_salt' in code
+assert 'verifyFirmwareSignature(otaDigestOut' in code
+assert code.index('verifyFirmwareSignature(otaDigestOut') < code.index('Update.end(true)')
+assert 'id="otaSignatureFile"' in actual
+assert "x.setRequestHeader('X-Cielo-Signature',signature);" in actual
