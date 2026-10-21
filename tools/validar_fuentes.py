@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC1-UX-DIAGNOSTICO' in code
+assert '11.1.0-RC2-SEGURIDAD-OTA' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -177,7 +177,20 @@ assert 'id="otaProgress"' in actual
 assert 'Activar CIELO · siempre' in actual
 assert 'id="cieloPauseAll"' in actual
 assert 'Activar CIELO · siempre' in actual
-assert 'Volver a My Chihiros' in actual
+# El boton sigue existiendo, pero se ha trasladado a Emergencia con otro titulo.
+assert 'id="chNightOff"' in actual
+assert 'id="cieloPauseAll"' in actual
+assert 'emergencyControls' in actual
+assert 'async function otaPreflightUi()' in actual
+assert 'async function otaPrepareLights(key)' in actual
+assert "otaPost('/api/ota/prepare',key)" in actual
+assert 'otaPreparationTick();' in code
+assert 'otaCandidateBoot' in code
+assert 'otaBleHealthy()' in code
+assert 'enum class BleWorkerPhase' in (r/'include/cielo_ble_worker.h').read_text()
+assert '/api/ota/prepare/status' in code
+assert '/api/ota/preflight' in code
+assert 'otaBleHealthy()' in code
 assert "await api('/api/cielo/v4/start',{confirm:'ACTIVAR_NATURAL_V4'})" in actual
 assert "await api('/api/cielo/v4/return',{confirm:'VOLVER_MY_CHIHIROS'})" in actual
 assert "await api('/api/cielo/v4/pause',{confirm:'PAUSAR_TODO'})" in actual

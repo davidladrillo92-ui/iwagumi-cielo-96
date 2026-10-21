@@ -1,7 +1,7 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021]
   workflow_dispatch:
 jobs:
   firmware:
@@ -26,6 +26,9 @@ jobs:
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
           cp partitions_8mb.csv dist/partitions_8mb.csv
+          git archive --format=zip --output=dist/CIELO_11_1_FUENTES_COMPLETAS.zip HEAD
+          sha256sum dist/CIELO_11_1_FUENTES_COMPLETAS.zip >> dist/SHA256.txt
+          printf '%s\n' "ATOMS3 Lite C124, fuente GitHub HEAD, firmware SOLO APLICACION, NO FLASHEAR SIN VALIDACION FISICA" > dist/LEEME_RECUPERACION.txt
       - name: Publicar BIN candidato
         uses: actions/upload-artifact@v4
         with:
