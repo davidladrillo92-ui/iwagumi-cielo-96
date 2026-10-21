@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.0.0-RC1-CONTINUO-24H";
+static constexpr const char* VERSION="11.1.0-RC1-UX-DIAGNOSTICO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -832,6 +832,34 @@ static bool physicalOtaGrant(){
  return CIELO_ENABLE_OTA && !rescueOpen && WiFi.status()==WL_CONNECTED &&
         otaPhysicalUntil && (int32_t)(otaPhysicalUntil-millis())>0;
 }
+// OTA preflight: read-only; never manipulates the lamps.
+static bool otaBleHealthy(){
+ return bleReady && !cieloWatchdogTripped &&
+        (millis()-cielo96::ble_last_heartbeat()<15000UL);
+}
+static String otaPreflightReason(){
+ if(!otaBleHealthy())return "Bluetooth sin respuesta; OTA bloqueada para proteger las luces";
+ if(!currentBootMarkedHealthy)return "Arranque no verificado";
+ if(!timeOK()||!cielo96::profileValid(profile))return "Hora o curvas no validas";
+ if(labTxEnabled()||lab.scanPending||lab.probePending||queue.busy())
+  return "Hay una operacion Bluetooth pendiente";
+ if(cieloChReturnPending||cieloChAwaitResponse)return "Retorno de Chihiros pendiente";
+ return "";
+}
+static void otaPreflight(){
+ if(rescueOpen)return fail(403,"Rescate solo lectura");
+ const String reason=otaPreflightReason();
+ String j="{\"ok\":true,\"ready\":";
+ j+=reason.length()?"false":"true";
+ j+=",\"reason\":"+jsonQuote(reason);
+ j+=",\"ota_paired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false");
+ j+=",\"physical_permission\":"+String(physicalOtaGrant()?"true":"false");
+ j+=",\"pv_active\":"+String(cieloPvRun?"true":"false");
+ j+=",\"ch_active\":"+String(cieloChRun?"true":"false");
+ j+=",\"return_pending\":"+String(cieloChReturnPending?"true":"false");
+ j+=",\"ble_heartbeat_age_ms\":"+String(millis()-cielo96::ble_last_heartbeat())+"}";
+ jsonSend(200,j);
+}
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
@@ -850,7 +878,7 @@ static void otaDigestStop(){
 }
 static void startOtaResponse(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA local desactivada por seguridad");
- if(!otaAllowed)return fail(403,"Clave OTA incorrecta");
+ if(!otaAllowed)return fail(403,lastOtaError.c_str());
  if(otaError)return fail(500,lastOtaError.c_str());
  if(!otaSuccess)return fail(500,"La imagen no se ha completado");
  srv.send(200,"text/plain","Firmware recibido y validado por Update; reiniciando");
@@ -863,7 +891,23 @@ static void otaUpload(){
              !labTxEnabled() && !queue.busy() && !otaBusy &&
              !cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse;
   otaSuccess=false;otaError=false;otaBytes=0;otaDigestStop();
-  if(!otaAllowed){lastOtaError="Requiere clave y permiso de 90s del boton ATOM";otaError=true;return;}
+  if(!otaAllowed){
+   // Diagnostico explicito: antes se informaba siempre "Clave OTA incorrecta",
+   // incluso con clave valida y retorno BLE bloqueado.
+   if(!tokenEqual())lastOtaError="Clave OTA incorrecta";
+   else if(!physicalOtaGrant())lastOtaError="Permiso fisico OTA caducado o no autorizado";
+   else if(!currentBootMarkedHealthy)lastOtaError="Arranque aun no verificado";
+   else if(cieloWatchdogTripped || (bleReady && millis()-cielo96::ble_last_heartbeat()>45000UL))
+     lastOtaError="Bluetooth bloqueado: no se puede actualizar de forma segura";
+   else if(cieloChReturnPending||cieloChAwaitResponse)
+     lastOtaError="Retorno a My Chihiros pendiente: actualizacion detenida";
+   else if(cieloPvRun||cieloChRun)
+     lastOtaError="Control de luces activo: prepara la actualizacion antes de cargar el BIN";
+   else if(queue.busy()||labTxEnabled())
+     lastOtaError="Operacion Bluetooth en curso: espera antes de actualizar";
+   else lastOtaError="Actualizacion no disponible en este momento";
+   otaError=true;record("OTA_RECHAZADA",lastOtaError);return;
+  }
   const String expected=srv.header("X-Cielo-Sha256");
   if(!hashLooksValid(expected) || !upload.filename.endsWith(".bin")){
    lastOtaError="BIN o SHA256 del navegador no valido";otaError=true;return;
@@ -1160,6 +1204,7 @@ static void configureRoutes(){
  });
  srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
+ srv.on("/api/ota/preflight",HTTP_GET,otaPreflight);
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
  srv.on("/api/ota/upload",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");

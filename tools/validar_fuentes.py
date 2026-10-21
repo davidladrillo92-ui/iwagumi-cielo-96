@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.0.0-RC1-CONTINUO-24H' in code
+assert '11.1.0-RC1-UX-DIAGNOSTICO' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
