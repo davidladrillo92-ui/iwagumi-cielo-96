@@ -5,8 +5,8 @@ src=Path('src/main.cpp').read_text()
 https=Path('src/cielo_https_proxy.cpp').read_text()
 ui=Path('web/interfaz_r4.html').read_text()
 workflow=Path('.github/workflows/cielo-11-1-build.yml').read_text()
-assert '11.1.0-RC5-B1B5B3-B2B4-CURVAS' in src
-assert '11.1.0-RC5-B1B5B3-B2B4-CURVAS' in Path('platformio.ini').read_text()
+assert '11.1.0-RC5-B1B5B3-B2B4-B6B7-UX' in src
+assert '11.1.0-RC5-B1B5B3-B2B4-B6B7-UX' in Path('platformio.ini').read_text()
 # Session only RAM (no persistent token or password URL): login needs TLS.
 assert 'static uint8_t adminSession[32]' in src
 assert 'esp_fill_random(adminSession,sizeof(adminSession))' in src

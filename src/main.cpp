@@ -28,6 +28,7 @@
 #include "cielo_security_policy.h"
 #include "cielo_diagnostic_policy.h"
 #include "cielo_ui.h"
+#include "cielo_pwa_assets.h"
 
 #if __has_include("local_config.h")
 #include "local_config.h"
@@ -42,7 +43,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-B2B4-CURVAS";
+static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-B2B4-B6B7-UX";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -1469,6 +1470,11 @@ static void configureWifi(){
  ok();
 }
 static void configureRoutes(){
+  // Recursos PWA de solo lectura. No habilitar cache de comandos u OTA offline.
+  srv.on("/manifest.webmanifest",HTTP_GET,[]{srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"application/manifest+json",CIELO_MANIFEST);});
+  srv.on("/icon.svg",HTTP_GET,[]{srv.sendHeader("Cache-Control","public, max-age=86400");srv.send_P(200,"image/svg+xml",CIELO_ICON_SVG);});
+  srv.on("/icon-180.png",HTTP_GET,[]{srv.sendHeader("Cache-Control","public, max-age=86400");srv.send_P(200,"image/png",reinterpret_cast<const char*>(CIELO_ICON_180_PNG),sizeof(CIELO_ICON_180_PNG));});
+
  const char*keys[]={"X-Cielo-Key","X-Cielo-Session","X-Cielo-Sha256","X-Cielo-Signature"};srv.collectHeaders(keys,4);
  srv.on("/",HTTP_GET,[]{if(!rescueOpen && srv.client().remoteIP()!=IPAddress(127,0,0,1)){
   srv.sendHeader("Location","https://iwagumi-cielo96.local/");

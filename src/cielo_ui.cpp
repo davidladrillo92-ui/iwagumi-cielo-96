@@ -2,9 +2,9 @@
 #include "cielo_ui.h"
 const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 <html lang="es"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101213"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Cielo"><meta name="description" content="IWAGUMI CIELO · Iluminación del acuario">
-<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png"><link rel="icon" type="image/svg+xml" href="/icon.svg">
 <title>CIELO 11 · Iwagumi en vivo</title>
 <style>
 :root{color-scheme:dark;--bg:#0c0d0e;--panel:#191b1e;--panel2:#222529;--line:#ffffff16;--text:#f4f2ee;--soft:#a8a9a7;--dim:#777a7d;--warm:#e7c4a7;--mint:#c7d6d0;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,Arial,sans-serif;font-synthesis:none}
@@ -68,17 +68,54 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 .health-secondary{margin-top:8px}
 .health-secondary button{background:#ffffff0d;color:#ccd1cd}
 @media(max-width:360px){.health-title{font-size:21px}.health-light{padding:11px 8px}}
+
+/* RC5 B6+B7: interaccion tactil, visualizacion honesta y VoiceOver. */
+:root{--focus:#f6caa2}
+button,select,input[type=checkbox]{touch-action:manipulation}
+button{min-height:44px}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,svg:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.access-pill{margin-left:auto;margin-right:10px;border:1px solid #b5b9b950;color:#e0e7e0;background:#283130;border-radius:18px;padding:5px 11px;font-size:11px;min-height:36px}
+.access-pill.admin{border-color:#8dc39a;color:#cef3d4}
+.measurement-disclaimer{margin-top:12px;color:#aeb7b7;font-size:11px;line-height:1.55}
+.chart-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:-6px 0 7px}
+.zoom-control{display:flex;gap:3px;background:#272b2e;border:1px solid #ffffff17;border-radius:11px;padding:3px;flex:1;max-width:290px}
+.zoom-control button{min-width:45px;min-height:40px;flex:1;border:0;border-radius:8px;background:none;color:#c5cccd;font-size:13px;font-weight:600}
+.zoom-control button.active{background:#d9c7b4;color:#11191b}
+.compare-control,.chart-point-actions button{border:1px solid #ffffff32;background:#303638;color:#eaf1ee;border-radius:10px;padding:9px 11px;font-size:12px}
+.compare-control[aria-pressed=true]{background:#314d49;border-color:#89c8b9}
+.chart-zoom-note{color:#b7c0c0;font-size:11px;line-height:1.4;margin:2px 0 6px}
+.chart-point-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 0 2px}
+.chart-point-actions span{font-size:11px;color:#a7b3b6;flex:1;min-width:115px;line-height:1.5}
+.chart-point-actions button:disabled{opacity:.5}
+.color-preview{display:flex;align-items:center;gap:9px;padding-top:8px;flex-wrap:wrap}
+.color-preview-swatch{width:34px;height:27px;border:1px solid #ffffff30;border-radius:9px;display:inline-block;box-shadow:inset 0 0 7px #0006}
+.color-preview p{font-size:11px;color:#afbaba;line-height:1.4;flex:1;min-width:160px;margin:0}
+.pending-state{border:1px solid #ffffff25;background:#ffffff08;border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.5;color:#dee4e1}
+.pending-state.unsaved{border-color:#e4bd7d80;background:#a87c3820;color:#ffe2b2}
+.access-summary{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#20272a;border:1px solid #ffffff23;border-radius:16px;padding:14px;margin:11px 0 16px}
+.access-summary strong{font-size:14px}.access-summary p{font-size:12px;line-height:1.45;color:#bac5c3;margin:5px 0 0}
+.access-summary button{flex-shrink:0;border:1px solid #ffffff4d;border-radius:10px;background:#31433d;color:#e9eee9;padding:8px 12px}
+.sheet-close{float:right;border:1px solid #ffffff25;border-radius:50%;background:#ffffff12;color:#ecefed;width:44px;height:44px;margin:-4px 0 7px 8px}
+.chart-point{cursor:pointer;stroke:#111819;stroke-width:1.5;touch-action:manipulation}
+.chart-point.selected{stroke:#fff7df;stroke-width:2.7}
+@media(max-width:380px){.shell{padding-left:15px;padding-right:15px}.bottom{padding-left:17px;padding-right:17px;gap:12px;justify-content:space-around}.tab{min-width:67px}.plot-wrap{padding-left:10px;padding-right:10px}.chart-tools{gap:5px}.zoom-control button{min-width:37px}.access-summary{align-items:flex-start}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+
+.pointNudge{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap;font-size:12px;color:#c8cdcc}
+.pointNudge button{border:1px solid #ffffff44;background:#293036;color:#f3eee7;border-radius:9px;min-width:90px;padding:9px}
+#modal .sheet{max-height:90dvh;overflow-y:auto;overscroll-behavior:contain}
+#modal .sheet input,#modal .sheet select{min-height:44px}
 </style>
 </head><body>
-<div class="shell"><header class="top"><div class="brand">C I E L O</div><button id="openSettings" class="iconbtn" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/></svg></button></header>
+<div class="shell"><header class="top"><div class="brand">C I E L O</div><button id="authBadge" class="access-pill" type="button" aria-label="Acceso: invitado, solo lectura. Pulsa para iniciar sesión">Invitado</button><button id="openSettings" class="iconbtn" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/></svg></button></header>
 <main id="viewLight" class="page active"><div class="quietHead"><div class="status offline" id="status"><i></i><span id="statusText">Vista previa</span></div></div>
 <section class="hero" aria-label="Paisaje del acuario"><div class="glow" id="glow"></div><svg class="hero-art" viewBox="0 0 360 306" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="sea" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#1f2d38"/><stop offset=".53" stop-color="#5c6974"/><stop offset="1" stop-color="#12232b"/></linearGradient><linearGradient id="stone" x1="0" x2="1"><stop stop-color="#1e2c30"/><stop offset=".56" stop-color="#657473"/><stop offset="1" stop-color="#222e32"/></linearGradient><linearGradient id="stone2" x1="0" x2="1"><stop stop-color="#334a4b"/><stop offset=".5" stop-color="#85918d"/><stop offset="1" stop-color="#2a393c"/></linearGradient><linearGradient id="floor" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#254f40"/><stop offset="1" stop-color="#142e2a"/></linearGradient><filter id="blur"><feGaussianBlur stdDeviation="15"/></filter></defs><rect width="360" height="306" fill="url(#sea)"/><ellipse cx="206" cy="102" rx="154" ry="63" fill="#f0d3a0" opacity=".12" filter="url(#blur)"/><path d="M0 225C79 212 119 218 173 219c80-11 128-7 187 3v87H0Z" fill="url(#floor)"/><path d="M-20 250C40 231 67 240 101 226l38-80 18 71 37-81 39 97 48-32 58 50 42-4v65H-20Z" fill="#162b2d" opacity=".44"/><path d="M55 229l25-74 27-48 22 49-6 67z" fill="url(#stone)"/><path d="M81 165l26-58 22 49-16-9Z" fill="#c2b8ac" opacity=".30"/><path d="M116 232l26-107 27-52 25 88-3 69Z" fill="url(#stone2)"/><path d="M142 125l27-52 25 88-16-25-18 8Z" fill="#d6d5c4" opacity=".35"/><path d="M172 229l38-87 19 40 20 53Z" fill="url(#stone)"/><path d="M210 142l19 40-17-10Z" fill="#c5cfc2" opacity=".32"/><path d="M247 238l37-62 32 64Z" fill="url(#stone2)"/><path d="M0 235q35-13 73-5t68 7q68-5 93-6t126 11v65H0Z" fill="#2b593f"/><path d="M0 243Q68 230 127 247Q150 254 173 253Q187 249 212 245Q263 237 360 252v55H0Z" fill="#376746" opacity=".8"/><path d="M160 308Q158 280 185 253Q198 246 210 245Q199 265 218 307Z" fill="#c3c3a6"/><path d="M168 307Q167 280 188 261Q195 255 202 254Q192 282 204 307Z" fill="#e1d9bf" opacity=".84"/><g fill="none" stroke="#9aba8b" stroke-width="2.3" opacity=".42"><path d="M3 245q40-17 70-9t46 11M219 251q72-18 142 1M20 263q59-20 106-5M225 266q79-9 137 7"/></g><rect width="360" height="306" fill="url(#sea)" opacity=".05"/></svg><div class="hero-tint" id="heroTint"></div>
 <div class="hero-caption"><div><strong id="moment">En calma</strong><span id="momentSub"></span></div><div class="hero-day" id="heroTime">22:20</div></div></section>
 <section class="lamps home-lamps">
 <div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#d6cbbf" stroke-width="1.6"><path d="M4 16h16M8 7l4-4 4 4M12 3v11m-8 5h16"/></svg></span><span class="lamp-copy"><strong>Chihiros <i class="conn-tick" id="chiLed" title="Sin respuesta BLE reciente">·</i></strong><small id="chiSub">AUTO</small></span><span class="lamp-side"><b id="chiPct">—</b><small><i class="color-dot" id="chiColor"></i><span id="chiInfo">Según programa</span></small></span></div>
 <div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#b5c5d4" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M6 15c4-3 7-3 12-6M5 11c5-3 8-2 14-2"/></svg></span><span class="lamp-copy"><strong>Pez Verde <i class="conn-tick" id="pezLed" title="Sin respuesta BLE reciente">·</i></strong><small id="pezSub">AUTO</small></span><span class="lamp-side"><b id="pezPct">—</b><small><i class="color-dot" id="pezColor"></i><span id="pezInfo">Según programa</span></small></span></div>
-</section></main>
-<main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curvas de iluminación: horas y porcentajes" role="img" tabindex="0"></svg><div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div><div id="chartInspector" class="chart-inspector" aria-live="polite">Selecciona una hora para consultar las dos luces.</div><div class="plot-foot"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p>
+</section><p class="measurement-disclaimer" id="confirmedNote">Los porcentajes muestran órdenes programadas o respuestas Bluetooth, nunca luz medida con un sensor.</p></main>
+<main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><div class="chart-tools"><div class="zoom-control" role="group" aria-label="Escala de tiempo del gráfico"><button data-zoom="1">1 h</button><button data-zoom="3">3 h</button><button data-zoom="6">6 h</button><button data-zoom="24" class="active" aria-pressed="true">24 h</button></div><button id="compareCurves" type="button" aria-pressed="false" class="compare-control">Comparar</button></div><p id="chartZoomNote" class="chart-zoom-note">Vista de 24 horas · pulsa un punto para inspeccionarlo</p><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curvas de iluminación: horas y porcentajes" role="img" tabindex="0"></svg><div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div><div id="chartInspector" class="chart-inspector" aria-live="polite">Selecciona una hora para consultar las dos luces.</div><div class="color-preview"><span id="colorPreviewPv" class="color-preview-swatch" role="img" aria-label="Color calculado de Pez Verde"></span><span id="colorPreviewChi" class="color-preview-swatch" role="img" aria-label="Color calculado de Chihiros"></span><p id="previewDisclaimer">Vista calculada: respeta el brillo de Pez Verde; no equivale a intensidad ni color ópticos medidos.</p></div><div class="plot-foot" id="chartAxisTimes"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div><div class="chart-point-actions"><button id="editSelectedPoint" type="button">Editar punto seleccionado</button><span id="selectedPointNote" aria-live="polite">Pulsa un círculo para escoger un punto.</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p><p id="curvePending" class="pending-state" role="status" aria-live="polite">Sin cambios pendientes de guardar</p>
 <div class="editorActions" role="group" aria-label="Editar y guardar curvas">
 <button id="editCurve">Editar puntos</button><button id="undoCurve">Deshacer</button><button id="redoCurve">Rehacer</button><button id="saveCurve">Guardar</button><button id="loadProfile">Cargar</button><button id="exportProfile">Exportar</button>
 </div>
@@ -101,7 +138,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 <div class="curveHelper" id="editMessage">Selecciona Chihiros o Pez Verde para editar.</div>
 <div class="lamps"><button class="lamp" data-lamp="chi"><span class="lamp-icon">☀</span><span class="lamp-copy"><strong>Chihiros</strong><small id="curveChiRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curveChiPct">0%</b></span><span class="chevron">›</span></button><button class="lamp" data-lamp="pez"><span class="lamp-icon">◐</span><span class="lamp-copy"><strong>Pez Verde</strong><small id="curvePezRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curvePezPct">0%</b></span><span class="chevron">›</span></button></div></main>
 <main id="viewLab" class="page">
-<div class="heading"><div><h1 class="h1">Centro.</h1></div></div>
+<div class="heading"><div><h1 class="h1">Centro.</h1></div></div><section class="access-summary" aria-label="Permisos del dispositivo"><div><strong id="accessTitle">Modo invitado · solo lectura</strong><p id="accessExplain">Puedes consultar la luz y simular curvas. Guardar o cambiar el controlador exige contraseña y sesión HTTPS.</p></div><button id="accessAction" type="button">Acceder</button></section>
 <section class="livePanel" id="cielo95Diagnostics" aria-label="Estado de CIELO">
  <div class="health-head"><div><strong>Estado de CIELO</strong><p class="health-head-note" id="diagUpdated">Esperando información del ATOM</p></div><span class="health-indicator" id="diagIndicator" aria-hidden="true"></span></div>
  <p class="health-title" id="diagState" role="status" aria-live="polite">Comprobando el sistema…</p>
@@ -161,13 +198,13 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 </details>
 </main>
 <nav class="bottom" aria-label="Secciones"><button class="tab active" data-view="light"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 17a9 9 0 1 1 12 0M9 20h6m-5 3h4"/></svg>Luz</button><button class="tab" data-view="curves"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 18L8 12l5 3 9-10M2 22h20"/></svg>Curvas</button><button class="tab" data-view="lab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3v6l-5 9a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3M8 3h8M7 15h10"/></svg>Centro</button></nav></div>
-<div class="sheet-bg" id="modal"><section class="sheet" aria-modal="true" role="dialog"><div class="handle"></div><div id="modalBody"></div></section></div><div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div class="sheet-bg" id="modal"><section class="sheet" aria-modal="true" role="dialog" aria-label="Panel de CIELO" tabindex="-1"><div class="handle"></div><button id="sheetClose" type="button" class="sheet-close" aria-label="Cerrar panel">✕</button><div id="modalBody"></div></section></div><div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
 'use strict';
 const $=s=>document.getElementById(s),clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),pad=n=>String(n).padStart(2,'0'),fmt=t=>(t===1440?'24:00':pad(Math.floor(t/60)%24)+':'+pad(Math.floor(t%60)));
 const CHI=[[870,0,0,0],[875,1,1,1],[880,2,2,2],[890,7,7,7],[900,18,18,18],[910,30,29,28],[920,44,42,40],[930,57,54,51],[940,70,65,60],[1270,70,65,60],[1290,68,64,60],[1310,63,60,57],[1330,54,53,52],[1340,47,47,46],[1350,40,40,40],[1360,29,29,29],[1365,22,22,22],[1370,15,15,15],[1375,7,7,7],[1380,0,0,0],[1440,0,0,0]];
 const PEZ=[[870,210,0,145,0],[875,225,130,145,1],[885,240,135,145,4],[895,250,130,120,9],[905,255,130,110,15],[915,255,145,110,22],[925,255,174,145,25],[935,240,238,230,20],[940,240,238,230,20],[1270,240,238,230,20],[1285,255,218,145,30],[1300,255,164,31,38],[1315,255,104,3,46],[1325,255,85,0,50],[1335,255,49,3,46],[1345,255,17,20,40],[1355,225,6,30,28],[1365,205,18,47,22],[1370,198,26,57,19],[1375,194,35,66,16],[1380,190,45,75,14],[1385,187,55,85,12],[1390,184,70,95,10],[1395,178,87,109,8],[1405,151,128,154,4],[1430,130,156,187,1],[1440,130,156,187,0]];
-const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false,status:null,view:'light',curve:'both',scrub:1340,preview:null,busy:false,updated:0,dirty:{chi:false,pez:false},profileGeneration:0,undoStack:[],redoStack:[],editWhich:'pez',editIndex:0};
+const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false,status:null,view:'light',curve:'both',scrub:1340,preview:null,busy:false,updated:0,dirty:{chi:false,pez:false},profileGeneration:0,undoStack:[],redoStack:[],editWhich:'pez',editIndex:0,zoomHours:24,compare:false,baseline:null,selectedPoint:null};
 let toastTimer;
 function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3600)}
 function vAt(points,t){if(t<points[0][0]||t>=1440)return points[0].slice(1).map(()=>0);for(let i=0;i<points.length-1;i++){let a=points[i],b=points[i+1];if(t>b[0])continue;let f=(t-a[0])/(b[0]-a[0]);return a.slice(1).map((v,j)=>Math.round(v+(b[j+1]-v)*f))}return points.at(-1).slice(1)}
@@ -197,7 +234,7 @@ async function cieloEnsureSession(force=false){
   if(!res.ok)throw Error((await res.text())||'No se ha podido abrir sesion');
   const d=await res.json();
   if(!/^[0-9a-f]{64}$/.test(d.session||''))throw Error('Token de sesion incompatible');
-  cieloSessionToken=d.session;cieloSessionOpened=Date.now();return cieloSessionToken;
+  cieloSessionToken=d.session;cieloSessionOpened=Date.now();if($('authBadge'))$('authBadge').textContent='Administrador';return cieloSessionToken;
  })();
  try{return await cieloSessionPending}finally{cieloSessionPending=null}
 }
@@ -222,7 +259,7 @@ async function api(path,data){
  if(!r.ok)throw Error(body||('Error '+r.status));
  try{return JSON.parse(body)}catch{return body}
 }
-async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(!state.dirty.pez&&!state.dirty.chi&&Number.isInteger(d.profileGeneration))state.profileGeneration=d.profileGeneration;setCadenceLabel(d.cadence);if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}render()}catch(e){state.connected=false;render()}}
+async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(!state.dirty.pez&&!state.dirty.chi&&Number.isInteger(d.profileGeneration))state.profileGeneration=d.profileGeneration;setCadenceLabel(d.cadence);if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}if(!state.dirty.pez&&!state.dirty.chi){state.baseline={pez:state.pez.map(p=>p.slice()),chi:state.chi.map(p=>p.slice())};}render()}catch(e){state.connected=false;render()}}
 function hourLabel(t){return fmt(clamp(t,0,1439))}
 function render(){
  const d=state.status,v4=d?.cieloV4||{},now=currentClock();
@@ -250,7 +287,7 @@ function render(){
  // Atardeceres cálidos: preservar el tono real de Pez Verde, sin grisarlo
  // por la mezcla con Chihiros. Si ambas están a cero, el fondo queda oscuro.
  const ambient=strength<5?'#13232e':
-   rgb(...[0,1,2].map(k=>Math.round(pvRgb[k]*pezWeight+chiRgb[k]*(1-pezWeight))));
+   rgb(...[0,1,2].map(k=>Math.round(dimmedPv[k]*pezWeight+chiRgb[k]*(1-pezWeight))));
  $('glow').style.setProperty('--sky',ambient);
  $('heroTint').style.setProperty('--ambient',ambient);
  $('heroTint').style.opacity=String(strength<5?.04:Math.min(.56,.12+strength/400));
@@ -259,16 +296,17 @@ function render(){
  $('chiColor').style.background=rgb(...chiRgb);
  $('pezColor').style.background=rgb(...pvRgb);
  $('chiInfo').textContent=!chiIsKnown?'Sin lectura de My Chihiros':
-   chi.join(' / ')+(chiRecent?' · enviado':preview?' · simulado':' · previsto');
+   chi.join(' / ')+(chiRecent?' · última orden solicitada (BLE reciente)':preview?' · simulado':' · previsto');
  $('pezInfo').textContent=!pvIsKnown?'Luz no controlada por CIELO':
-   pvRgb.join(' / ')+(pvRecent?' · enviado':preview?' · simulado':' · previsto');
- $('chiSub').textContent=preview?'Simulación · sin órdenes':!v4.chihiros_active?'My Chihiros · sin telemetría remota':chiRecent?'CIELO · orden BLE correcta':'CIELO · esperando datos';
- $('pezSub').textContent=preview?'Simulación · sin órdenes':v4.pez_verde_active?(pvRecent?'CIELO · orden BLE correcta':'CIELO · esperando datos'):'CIELO pausado';
+   pvRgb.join(' / ')+(pvRecent?' · última orden solicitada (BLE reciente)':preview?' · simulado':' · previsto');
+ $('chiSub').textContent=preview?'Simulación · sin órdenes':!v4.chihiros_active?'My Chihiros · sin telemetría remota':chiRecent?'CIELO · respuesta BLE reciente':'CIELO · esperando datos';
+ $('pezSub').textContent=preview?'Simulación · sin órdenes':v4.pez_verde_active?(pvRecent?'CIELO · respuesta BLE reciente':'CIELO · esperando datos'):'CIELO pausado';
  for(const [id,up] of [['chiLed',v4.chihiros_active&&v4.ch_online_recent],['pezLed',v4.pez_verde_active&&v4.pv_online_recent]]){
   const el=$(id);el.className='conn-tick'+(state.connected&&up&&!preview?' ok':' wait');
   el.textContent=state.connected&&up&&!preview?'✓':'·';
   el.title=up?'GATT correcto reciente. El enlace se libera entre envíos.':'No hay confirmación GATT reciente; no implica avería';
  }
+ $('confirmedNote').textContent=preview?'SIMULACIÓN: colores calculados; no se envía nada al ATOM.':'La pantalla muestra las órdenes y respuestas BLE recientes; no dispone de sensor óptico de color o intensidad.';
  $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+': la pantalla Luz muestra esta hora, sin cambiar la iluminación real.':'Vista del momento actual. Los colores reales son las últimas órdenes confirmadas por GATT.';
  const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
  $('scrubTime').textContent=hourLabel(state.scrub);
@@ -310,25 +348,59 @@ function render(){
  if($('chTestMetrics'))$('chTestMetrics').textContent=(d?.chLastSummary||'Sin ensayos')+' · Envíos: '+(d?.chTxCount||0)+' · Conexiones: '+(d?.chConnectCount||0)+' · Tramas: '+(d?.chFrameCount||0)+' · Fallos: '+(d?.chTestErrorCount||0)+' · Intervalo último/máximo: '+((d?.chGapMs||0)/1000).toFixed(1)+'/'+((d?.chGapMaxMs||0)/1000).toFixed(1)+' s · Envío último/máximo: '+((d?.chTxMs||0)/1000).toFixed(1)+'/'+((d?.chTxMaxMs||0)/1000).toFixed(1)+' s · Intentos AUTO: '+(d?.chAutoAttempts||0);
  document.querySelectorAll('[data-chi-test]').forEach(b=>b.disabled=!!d?.chContinuous||!!d?.chActive||!state.connected);
  if($('chLiveOff'))$('chLiveOff').disabled=!d?.chContinuous&&!d?.chActive;
+ updateEditorStatus();
  drawChart();
 }
+function chartWindow(hours=state.zoomHours,center=state.scrub){
+ const span=Math.min(1440,Math.max(60,Number(hours)*60));
+ const begin=clamp(Math.round(center-span/2),0,1440-span);
+ return {begin,end:begin+span,span};
+}
+function selectZoom(hours){
+ if(![1,3,6,24].includes(hours))return;
+ state.zoomHours=hours;document.querySelectorAll('[data-zoom]').forEach(b=>{
+  const active=Number(b.dataset.zoom)===hours;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
+ });render();
+}
+function updateEditorStatus(){
+ const edited=!!(state.dirty.pez||state.dirty.chi),n=$('curvePending');
+ if(n){n.classList.toggle('unsaved',edited);n.textContent=edited?'CAMBIOS SIN GUARDAR · '+(state.dirty.pez?'Pez Verde':'')+(state.dirty.pez&&state.dirty.chi?' y ':'')+(state.dirty.chi?'Chihiros':'')+'. No se han enviado a las luces.':'Sin cambios pendientes de guardar en el ATOM.';}
+ if($('undoCurve'))$('undoCurve').disabled=!state.undoStack.length;
+ if($('redoCurve'))$('redoCurve').disabled=!state.redoStack.length;
+ if($('saveCurve'))$('saveCurve').disabled=!edited||!state.connected;
+ const sel=state.selectedPoint;
+ if($('editSelectedPoint'))$('editSelectedPoint').disabled=!sel;
+ if($('selectedPointNote'))$('selectedPointNote').textContent=sel?`${sel.which==='chi'?'Chihiros':'Pez Verde'} · punto ${sel.index+1} · ${fmt(state[sel.which][sel.index]?.[0]??0)}`:'Pulsa un círculo para seleccionar un punto.';
+ const admin=!!cieloSessionToken;
+ if($('authBadge')){$('authBadge').textContent=admin?'Administrador':'Invitado';$('authBadge').classList.toggle('admin',admin);$('authBadge').setAttribute('aria-label',admin?'Sesión de administrador activa. Pulsa para ajustes':'Modo invitado: solo lectura del ATOM. Pulsa para acceder');}
+ if($('accessTitle'))$('accessTitle').textContent=admin?'Administrador · sesión HTTPS':'Modo invitado · solo lectura';
+ if($('accessExplain'))$('accessExplain').textContent=admin?'Puedes guardar perfiles con autorización y modificar ajustes. La sesión caduca.':'Puedes consultar y simular curvas. Los cambios reales exigen una sesión HTTPS; la edición local no toca las luces.';
+ if($('accessAction'))$('accessAction').textContent=admin?'Cerrar sesión':'Acceder';
+}
+function chartPointSelect(which,index){
+ if(which!=='pez'&&which!=='chi')return;
+ if(!Number.isInteger(index)||!state[which][index])return;
+ state.selectedPoint={which,index};state.scrub=state[which][index][0];state.preview=state.scrub;
+ $('scrub').value=state.scrub;render();
+}
 function drawChart(){
- const svg=$('chart');
- const left=29,right=331,top=24,bottom=181;
- const x=t=>left+t/1440*(right-left);
- const y=pct=>bottom-Math.max(0,Math.min(100,pct))/100*(bottom-top);
+ const svg=$('chart'),{begin,end,span}=chartWindow();
+ const left=29,right=331,top=24,bottom=174;
+ const x=t=>left+(t-begin)/span*(right-left);
+ const y=pct=>bottom-clamp(pct,0,100)/100*(bottom-top);
  const build=(points,channel,scale)=>{
-  let path='';
-  for(let t=0;t<=1440;t+=5){
+  let path='',first=true;
+  const step=Math.max(1,Math.round(span/180));
+  for(let t=begin;t<=end;t=Math.min(end,t+step)){
    const values=vAt(points,t);
    const value=channel<0?Math.max(...values):values[channel]/scale*100;
-   path+=(t?'L':'M')+x(t).toFixed(1)+' '+y(value).toFixed(1)+' ';
+   path+=(first?'M':'L')+x(t).toFixed(1)+' '+y(value).toFixed(1)+' ';
+   first=false;if(t===end)break;
   }
   return path;
  };
- const path=(d,color,width,opacity)=>
-  '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="'+width+
-  '" opacity="'+opacity+'" stroke-linecap="round" stroke-linejoin="round"/>';
+ const path=(d,color,width,opacity,dash='')=>
+   '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="'+width+'" opacity="'+opacity+'" '+(dash?'stroke-dasharray="'+dash+'" ':'')+'stroke-linecap="round" stroke-linejoin="round"/>';
  let content='';
  for(const pct of [0,25,50,75,100]){
   const at=y(pct);
@@ -336,32 +408,58 @@ function drawChart(){
   content+='<text x="'+(left-5)+'" y="'+(at+3)+'" fill="#b6bdbf" font-size="9" text-anchor="end">'+pct+'</text>';
  }
  const legend=[];
- if(state.curve!=='chi'){
+ const pvShown=state.curve!=='chi',chShown=state.curve!=='pez';
+ if(pvShown){
+  if(state.compare&&state.baseline){content+=path(build(state.baseline.pez,3,100),'#e5b5a0',1.6,.43,'5 5');}
   content+=path(build(state.pez,3,100),'#e5b5a0',2.7,1);
   legend.push('<span><i style="background:#e5b5a0"></i>Pez Verde · brillo %</span>');
-  if(state.curve==='pez'){
-   content+=path(build(state.pez,2,255),'#758ac0',1.4,.7);
-   legend.push('<span><i style="background:#758ac0"></i>Azul PV · %</span>');
-  }
+  if(state.curve==='pez')content+=path(build(state.pez,2,255),'#758ac0',1.4,.68);
  }
- if(state.curve!=='pez'){
+ if(chShown){
+  if(state.compare&&state.baseline){content+=path(build(state.baseline.chi,-1,100),'#d6ded6',1.6,.42,'5 5');}
   content+=path(build(state.chi,-1,100),'#d6ded6',2.7,1);
-  legend.push('<span><i style="background:#d6ded6"></i>Chihiros · máximo RGB %</span>');
-  if(state.curve==='chi'){
-   content+=path(build(state.chi,2,100),'#7694bc',1.4,.7);
-   legend.push('<span><i style="background:#7694bc"></i>Azul CH · %</span>');
+  legend.push('<span><i style="background:#d6ded6"></i>Chihiros · intensidad RGB programada %</span>');
+  if(state.curve==='chi')content+=path(build(state.chi,2,100),'#7694bc',1.4,.68);
+ }
+ if(state.compare&&state.baseline)legend.push('<span>Discontinuo: guardado · continuo: edición</span>');
+ // Círculos interactivos para selección táctil y ratón. No envían BLE.
+ for(const which of ['pez','chi']){
+  if((which==='pez'&&!pvShown)||(which==='chi'&&!chShown))continue;
+  for(let i=0;i<state[which].length;i++){
+   const p=state[which][i];if(p[0]<begin||p[0]>end)continue;
+   const val=which==='pez'?p[4]:Math.max(...p.slice(1));
+   const selected=state.selectedPoint?.which===which&&state.selectedPoint.index===i;
+   const cx=x(p[0]),cy=y(val),color=which==='pez'?'#eac6ae':'#e2efe3';
+   content+='<circle class="chart-point'+(selected?' selected':'')+'" cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(selected?6.3:4.6)+'" fill="'+color+'" data-which="'+which+'" data-index="'+i+'"/>';
   }
  }
- content+='<path d="M'+x(state.scrub)+' '+top+'V'+bottom+'" stroke="#ffffffae" stroke-width="1" stroke-dasharray="3 4"/>';
+ if(state.scrub>=begin&&state.scrub<=end)content+='<path d="M'+x(state.scrub).toFixed(1)+' '+top+'V'+bottom+'" stroke="#ffffff9e" stroke-width="1" stroke-dasharray="3 4" pointer-events="none"/>';
  svg.innerHTML=content;
  $('chartLegend').innerHTML=legend.join('');
+ const labels=[0,.25,.5,.75,1].map(f=>fmt(Math.round(begin+f*span)));
+ $('chartAxisTimes').innerHTML=labels.map(t=>'<span>'+t+'</span>').join('');
+ $('chartZoomNote').textContent='Zoom '+state.zoomHours+' h · '+fmt(begin)+' — '+fmt(end)+' · puntos visibles seleccionables';
  const pv=vAt(state.pez,state.scrub),ch=vAt(state.chi,state.scrub);
- $('chartInspector').textContent=hourLabel(state.scrub)+
-  ' · Pez Verde RGB '+pv.slice(0,3).join('/')+', brillo '+pv[3]+' %'+
-  ' · Chihiros RGB '+ch.join('/')+' %';
+ $('chartInspector').textContent='HORA SIMULADA '+hourLabel(state.scrub)+' · PV RGB '+pv.slice(0,3).join('/')+' · brillo '+pv[3]+' % · CH RGB '+ch.join('/')+' % · Sin órdenes BLE';
+ const scaledPv=pv.slice(0,3).map(c=>Math.round(c*pv[3]/100));
+ $('colorPreviewPv').style.background=rgb(...scaledPv);
+ $('colorPreviewPv').setAttribute('aria-label','Pez Verde: color RGB '+scaledPv.join(', ')+' calculado al brillo '+pv[3]+' %, no medido');
+ $('colorPreviewChi').style.background=rgb(...ch.map(v=>Math.round(v*2.55)));
+ $('colorPreviewChi').setAttribute('aria-label','Chihiros: RGB porcentual '+ch.join(', ')+' convertido para vista previa, no medido');
 }
 function nav(n){state.view=n;document.querySelectorAll('.page').forEach(e=>e.classList.toggle('active',e.id==='view'+(n==='light'?'Light':n==='curves'?'Curves':n==='lab'?'Lab':'Service')));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===n));render();if(n==='lab'){labRefresh();serviceRefresh();}}
-function sheet(html){$('modalBody').innerHTML=html;$('modal').classList.add('open');document.body.style.overflow='hidden'}function close(){ $('modal').classList.remove('open');document.body.style.overflow='';}
+let lastModalFocus=null;
+function sheet(html){lastModalFocus=document.activeElement;$('modalBody').innerHTML=html;$('modal').classList.add('open');document.body.style.overflow='hidden';$('sheetClose').focus();}
+function close(){$('modal').classList.remove('open');document.body.style.overflow='';if(lastModalFocus?.focus)lastModalFocus.focus();lastModalFocus=null;}
+function dialogKeydown(e){
+ if(!$('modal').classList.contains('open')||e.key!=='Tab')return;
+ const nodes=Array.from($('modal').querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex="0"]')).filter(el=>el.getClientRects().length);
+ if(!nodes.length)return;
+ const first=nodes[0],last=nodes.at(-1);
+ if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+ else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+}
+
 function input(id,label,value,max){return `<div class="field"><label for="${id}">${label}</label><input type="number" id="${id}" inputmode="numeric" step="1" min="0" max="${max}" value="${value}"></div>`}
 let picked='chi';
 function lampSheet(which){picked=which;let arr=vAt(state[which],state.preview??currentClock());let isPez=which==='pez';let base=isPez?arr:[...arr];sheet(`<h2 class="sheet-title">${isPez?'Pez Verde':'Chihiros'}</h2><p class="sheet-sub">${isPez?'Luz ambiente':'Luz principal'} · ${isPez?'RGB 255':'RGB 100'}</p><div class="fields ${isPez?'':'three'}">${input('r','Rojo',base[0],isPez?255:100)}${input('g','Verde',base[1],isPez?255:100)}${input('b','Azul',base[2],isPez?255:100)}${isPez?input('bright','Brillo',base[3],100):''}</div><div class="actions"><button id="previewButton" class="btn">Probar ${isPez?'20':'8'} s</button><button id="restoreButton" class="btn sub">Ceder conexión</button></div><p class="note" style="margin-top:18px">${isPez?'No hay retorno automático en laboratorio: utiliza la aplicación Pez Verde.':'CIELO no restaura AUTO: libera la conexion y recupera tu curva desde My Chihiros.'}</p>`);$('previewButton').onclick=()=>preview(which);$('restoreButton').onclick=()=>restore(which)}
@@ -481,13 +579,23 @@ function pointEditor(which){
  '<div class="fields '+(which==='chi'?'three':'')+'">'+
  input('pointR','Rojo',v[1],max)+input('pointG','Verde',v[2],max)+input('pointB','Azul',v[3],max)+
  (which==='pez'?input('pointBright','Brillo',v[4],100):'')+'</div>'+
+ '<div class="pointNudge"><span>Mover hora:</span><button id="pointBack" type="button" aria-label="Mover un minuto antes">−1 min</button><button id="pointForward" type="button" aria-label="Mover un minuto después">+1 min</button></div>'+ 
  '<div class="actions"><button class="btn" id="pointApply">Aplicar cambios</button><button class="btn sub" id="pointRemove">Eliminar</button></div>'+
  '<p class="note" style="margin-top:12px">Pulsa Guardar desde Curvas para conservar los cambios. El último punto de las 24:00 está protegido.</p>');
  $('pointPick').onchange=e=>{state.editIndex=Number(e.target.value);pointEditor(which)};
  $('pointApply').onclick=()=>applyPoint(which);
  $('pointAdd').onclick=()=>addPoint(which);
  $('pointRemove').onclick=()=>removePoint(which);
- if(pos===arr.length-1)$('pointRemove').disabled=true;
+ $('pointBack').onclick=()=>nudgePoint(-1);$('pointForward').onclick=()=>nudgePoint(1);
+ if(pos===arr.length-1){$('pointRemove').disabled=true;$('pointBack').disabled=true;$('pointForward').disabled=true;}
+}
+function nudgePoint(delta){
+ const which=state.editWhich,arr=state[which],i=state.editIndex;
+ if(i===arr.length-1)return toast('El cierre de 24:00 está protegido');
+ const target=Number($('hourH').value)*60+Number($('hourM').value)+delta;
+ if(target<0||target>=1440||(i>0&&target<=arr[i-1][0])||target>=arr[i+1][0])return toast('No cabe ese minuto entre los puntos vecinos');
+ $('hourH').value=String(Math.floor(target/60));$('hourM').value=String(target%60);
+ toast('Nueva hora '+fmt(target)+' · pulsa Aplicar cambios para confirmar');
 }
 function applyPoint(which){
  const arr=state[which],idx=state.editIndex,last=idx===arr.length-1,max=which==='chi'?100:255;
@@ -587,15 +695,15 @@ function manualChooser(){
 function settings(){
  const d=state.status||{};
  sheet(`<h2 class="sheet-title">Ajustes</h2>
- <p class="sheet-sub">ATOM · ${d.firmware||'CIELO'} </p>
+ <p class="sheet-sub">ATOM · ${cieloEscapeHtml(d.firmware||'CIELO')} </p>
  <div class="settings-row"><span>Wi-Fi</span><button id="wifiHome">${cieloEscapeHtml(d.homeSsid||'Elegir red')} ↗</button></div>
- <div class="settings-row"><span>IP local</span><small>${d.homeIp||'Sin dirección actual'}</small></div>
- <div class="settings-row"><span>Reloj de Madrid</span><small>${d.clockValid?d.clock:'Pendiente de sincronización'}</small></div>
+ <div class="settings-row"><span>IP local</span><small>${cieloEscapeHtml(d.homeIp||'Sin dirección actual')}</small></div>
+ <div class="settings-row"><span>Reloj de Madrid</span><small>${cieloEscapeHtml(d.clockValid?d.clock:'Pendiente de sincronización')}</small></div>
  <div class="settings-row"><span>Sincronizar hora</span><button id="syncClock">Sincronizar ↗</button></div>
  <details class="curveHelper"><summary>Recuperación y conexiones</summary>
  <p class="note">Punto de acceso: <strong>CIELO96-CONFIG</strong> · IP <strong>192.168.4.1</strong>.
  El Wi-Fi de casa puede cambiar de IP. La recuperación USB sigue disponible.
- Bluetooth se desconecta entre órdenes y la portada muestra la última respuesta GATT, no una conexión permanente.</p></details>`);
+ Bluetooth se desconecta entre órdenes y la portada muestra la última respuesta GATT, no una conexión permanente.</p><p class="note">Acceso actual: <strong>https://iwagumi-cielo96.local</strong>. Alias corto cielo.local pendiente de certificado y prueba mDNS; no se activa automáticamente para evitar avisos de Safari.</p><p class="note">Añadir a pantalla de inicio utiliza manifiesto e icono locales. La web no controla las luces sin conexión ni guarda órdenes en caché.</p></details>`);
  $('wifiHome').onclick=wifiSetup;
  $('syncClock').onclick=async()=>{
   try{await api('/api/clock',{epoch:Math.floor(Date.now()/1000)});toast('Hora del ATOM sincronizada con iPhone');close();await sync()}
@@ -921,6 +1029,23 @@ async function otaPreflightUi(){
   return true;
  }catch(e){toast('No se puede verificar si es seguro actualizar: '+e.message);return false;}
 }
+function accessUi(){
+ if(cieloSessionToken)return settings();
+ sheet('<h2 class="sheet-title">Acceso administrador</h2><p class="sheet-sub">Invitado: lectura y simulación. Solo el administrador puede guardar o enviar comandos. HTTPS es obligatorio.</p>'+
+ '<label for="accessPassword" style="display:block;margin:15px 0 6px">Contraseña de CIELO</label><input id="accessPassword" type="password" autocomplete="current-password" style="min-height:48px;width:100%;color:#fff;background:#171b20;border:1px solid #ffffff55;border-radius:12px;padding:12px" />'+
+ '<div class="actions"><button id="accessLogin" class="btn">Abrir sesión segura</button></div>');
+ $('accessLogin').onclick=async()=>{
+  const secret=$('accessPassword').value;
+  if(secret.length<12)return toast('Introduce la contraseña completa');
+  $('otaSecret').value=secret;
+  try{await cieloEnsureSession(true);$('accessPassword').value='';close();updateEditorStatus();toast('Sesión temporal abierta por HTTPS');}
+  catch(e){toast('No se ha podido acceder: '+e.message);}
+ };
+}
+async function accessActionUi(){
+ if(cieloSessionToken){await cieloLogoutUi();updateEditorStatus();return}
+ accessUi();
+}
 async function cieloLogoutUi(){
  try{
   if(cieloSessionToken)await fetch('/api/auth/logout',{method:'POST',cache:'no-store',headers:{'X-Cielo-Session':cieloSessionToken}});
@@ -928,7 +1053,7 @@ async function cieloLogoutUi(){
   cieloSessionToken='';cieloSessionOpened=0;
   try{localStorage.removeItem('cieloOtaKey')}catch(_){}
   $('otaSecret').value='';$('otaRemember').checked=false;
-  toast('Sesión terminada. Clave recordada eliminada del iPhone.');
+   updateEditorStatus();toast('Sesión terminada. Clave recordada eliminada del iPhone.');
  }
 }
 async function otaPairUi(){
@@ -1211,7 +1336,7 @@ async function cancelContrast(){
  }catch(e){toast(e.message)}
 }
 function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>nav(b.dataset.view));document.querySelectorAll('[data-lamp]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.lamp);state.editIndex=0;pointEditor(b.dataset.lamp)});
-document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('undoCurve').onclick=curveUndo;$('redoCurve').onclick=curveRedo;$('cadenceTrial').onclick=cadenceTrialUi;$('cadenceNormal').onclick=cadenceNormalUi;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;$('cieloPauseAll').onclick=cieloPauseAllUi;
+document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('authBadge').onclick=accessUi;$('accessAction').onclick=accessActionUi;$('sheetClose').onclick=close;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('editSelectedPoint').onclick=()=>{const sel=state.selectedPoint;if(sel){state.editIndex=sel.index;chooseCurve(sel.which);pointEditor(sel.which)}};document.querySelectorAll('[data-zoom]').forEach(b=>b.onclick=()=>selectZoom(Number(b.dataset.zoom)));$('compareCurves').onclick=()=>{state.compare=!state.compare;$('compareCurves').setAttribute('aria-pressed',String(state.compare));render()};$('saveCurve').onclick=saveProgram;$('undoCurve').onclick=curveUndo;$('redoCurve').onclick=curveRedo;$('cadenceTrial').onclick=cadenceTrialUi;$('cadenceNormal').onclick=cadenceNormalUi;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;$('cieloPauseAll').onclick=cieloPauseAllUi;
 $('diagView').onclick=diagViewUi;
 $('diagDownload').onclick=async()=>{
  try{
@@ -1231,11 +1356,21 @@ $('otaPair').onclick=otaPairUi;$('otaLogout').onclick=cieloLogoutUi;$('otaInstal
 try{const key=localStorage.getItem('cieloOtaKey');if(key){$('otaSecret').value=key;$('otaRemember').checked=true}}catch(_){};
 $('labGuided').onclick=labGuided;
 $('chart').onclick=e=>{
- const rect=$('chart').getBoundingClientRect();
- const x=((e.clientX-rect.left)/rect.width*338-29)/302;
- state.scrub=Math.max(0,Math.min(1440,Math.round(x*1440)));
+ const circle=e.target.closest?.('[data-which][data-index]');
+ if(circle){chartPointSelect(circle.dataset.which,Number(circle.dataset.index));return;}
+ const rect=$('chart').getBoundingClientRect(),window=chartWindow();
+ const rel=clamp(((e.clientX-rect.left)/rect.width*338-29)/302,0,1);
+ state.scrub=clamp(Math.round(window.begin+rel*window.span),0,1440);
  state.preview=state.scrub;$('scrub').value=state.scrub;render();
 };
-$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(state.preview===null){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000);setInterval(()=>{if(state.view==='lab'||$('diagReportText'))diagLoad().catch(()=>{});},15000);setInterval(()=>{if(state.view==='lab')labRefresh()},10000)}
+$('chart').onkeydown=e=>{
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+ e.preventDefault();const win=chartWindow();
+ if(e.key==='Home')state.scrub=win.begin;
+ else if(e.key==='End')state.scrub=win.end;
+ else state.scrub=clamp(state.scrub+(e.key==='ArrowLeft'?-1:1),0,1440);
+ state.preview=state.scrub;$('scrub').value=state.scrub;render();
+};
+$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close();dialogKeydown(e)});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(state.preview===null){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000);setInterval(()=>{if(state.view==='lab'||$('diagReportText'))diagLoad().catch(()=>{});},15000);setInterval(()=>{if(state.view==='lab')labRefresh()},10000)}
 window.addEventListener('DOMContentLoaded',init);
 </script></body></html>)CIELOUI_96";
