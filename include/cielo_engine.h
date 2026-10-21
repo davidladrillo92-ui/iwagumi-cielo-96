@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+// AtSecond: interpolacion temporal subminuto sin cambiar puntos RGB almacenados.
 namespace cielo {
 struct PvPoint { uint16_t minute; uint8_t r,g,b,brightness; };
 struct ChiPoint { uint16_t minute; uint8_t r,g,b; };
@@ -48,5 +49,31 @@ inline ChiValue at(const ChiPoint* p,size_t n,uint16_t minute){
  while(hi-lo>1){size_t mid=(lo+hi)/2;if(p[mid].minute<=minute)lo=mid;else hi=mid;}
  auto &a=p[lo],&b=p[hi];uint32_t d=uint32_t(b.minute-a.minute),t=uint32_t(minute-a.minute);
  return {mix(a.r,b.r,t,d),mix(a.g,b.g,t,d),mix(a.b,b.b,t,d)};
+}
+// La curva sigue usando minutos enteros: no se guardan claves temporales nuevas.
+// Solo el modo experimental 15s interpola por segundos para obtener pasos suaves.
+inline PvValue atSecond(const PvPoint* p,size_t n,uint32_t second){
+ if(!valid(p,n)||second>86400UL)return {0,0,0,0};
+ if(second<uint32_t(p[0].minute)*60UL)return {0,0,0,0};
+ if(second>=uint32_t(p[n-1].minute)*60UL)return {p[n-1].r,p[n-1].g,p[n-1].b,p[n-1].brightness};
+ size_t lo=0,hi=n-1;
+ while(hi-lo>1){size_t mid=(lo+hi)/2;if(uint32_t(p[mid].minute)*60UL<=second)lo=mid;else hi=mid;}
+ const PvPoint& a=p[lo];const PvPoint& b=p[hi];
+ const uint32_t len=uint32_t(b.minute-a.minute)*60UL,t=second-uint32_t(a.minute)*60UL;
+ return {mix(a.r,b.r,t,len),mix(a.g,b.g,t,len),mix(a.b,b.b,t,len),mix(a.brightness,b.brightness,t,len)};
+}
+inline ChiValue atSecond(const ChiPoint* p,size_t n,uint32_t second){
+ if(!valid(p,n)||second>86400UL)return {0,0,0};
+ if(second<uint32_t(p[0].minute)*60UL)return {0,0,0};
+ if(second>=uint32_t(p[n-1].minute)*60UL)return {p[n-1].r,p[n-1].g,p[n-1].b};
+ size_t lo=0,hi=n-1;
+ while(hi-lo>1){size_t mid=(lo+hi)/2;if(uint32_t(p[mid].minute)*60UL<=second)lo=mid;else hi=mid;}
+ const ChiPoint& a=p[lo];const ChiPoint& b=p[hi];
+ // Excepcion EXPLICITA V5: 22:59 2/2/2 -> 23:00 1/1/2, salto directo
+ // a la luna sin pasar por un RGB intermedio a las 22:59:15/30/45.
+ if(a.minute==1379 && b.minute==1380 && a.r==2 && a.g==2 && a.b==2 &&
+    b.r==1 && b.g==1 && b.b==2)return {2,2,2};
+ const uint32_t len=uint32_t(b.minute-a.minute)*60UL,t=second-uint32_t(a.minute)*60UL;
+ return {mix(a.r,b.r,t,len),mix(a.g,b.g,t,len),mix(a.b,b.b,t,len)};
 }
 } // namespace cielo

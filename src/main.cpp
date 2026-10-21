@@ -1,5 +1,3 @@
-// IWAGUMI CIELO 9.6 R4 development firmware
-// ESP32-S3 / ATOMS3 Lite C124. Source implementation; hardware NOT YET VERIFIED.
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -23,6 +21,7 @@
 #include "cielo_engine.h"
 #include "profiles_generated.h"
 #include "cielo_profile_store.h"
+#include "cielo_curve_policy.h"
 #include "cielo_ble_queue.h"
 #include "cielo_ble_worker.h"
 #include "cielo_night_safety.h"
@@ -43,9 +42,8 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-SEGURIDAD-R2";
+static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-B2B4-CURVAS";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
-// Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
  WebInit=60, Http=70, Button=80, WifiTick=90, Ble=100, Led=110,
@@ -104,7 +102,6 @@ static const char* wifiSleepName(){
  return "DESCONOCIDO";
 }
 static bool blePilotRequested=false, blePilotAttempted=false, rescueOpen=false;
-// Observacion paralela en RAM: las pruebas pasivas no generan trafico GATT.
 struct LabState {
  bool running=false;
  uint32_t started=0,lastSample=0,samples=0;
@@ -132,9 +129,6 @@ static bool customResumePending=false;
 static uint32_t customResumeRequested=0,customResumeOk=0,customResumeFailed=0;
 static String customResumeLast="Sin probar";
 static uint32_t customResumeLastMs=0;
-// Ensayo guiado: 0=reposo, 1=enviando 30, 2=GATT manual OK, 3=fallo manual,
-// 4=enviando curva guardada, 5=GATT retorno OK, 6=fallo retorno, 7=caducado.
-// El exito optico SOLO puede confirmarlo el propietario.
 static uint8_t contrastStage=0;
 static uint32_t contrastStartedAt=0,contrastManualAt=0;
 static bool contrastObserved=false;
@@ -167,7 +161,6 @@ static void statusLedTick(){
  statusPixel.setPixelColor(0,color);statusPixel.show();
 }
 static bool pezManual=false,chiManual=false,chiCieloNight=false,chiAutoPending=false;
-// Modo ACTIVADO EXPLICITAMENTE. Tras reinicio exige pulsar otra vez.
 static bool cieloPvRun=false,cieloChRun=false,cieloChWasDriven=false;
 static bool cieloAlwaysOn=false,cieloResumePending=false;
 enum class PvSafetyState:uint8_t {Paused,Active,Degraded,OffPending,OffRetrying,OffGattOk};
@@ -201,6 +194,13 @@ static const char* chSafetyName(){
 static uint32_t pezManualUntil=0,chiManualUntil=0;
 static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaRestarts=0,otaLastChunkAt=0;
 static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
+static bool cadenceTrial15=false;
+static uint32_t cadenceEndsAt=0,cadenceStartBleErrors=0,cadenceTicks15=0,cadenceTicks30=0;
+static uint32_t cadenceSkippedBusy=0,cadenceFallbacks=0;
+static String cadenceFallbackReason="Sin ensayo";
+static uint32_t activeCadenceMs(){return cadenceTrial15?15000UL:30000UL;}
+static int secondOfDay(){time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);return (x.tm_hour*60+x.tm_min)*60+x.tm_sec;}
+
 static uint32_t httpCount=0,bleResultCount=0,bleResultErrors=0,bleSoftTimeouts=0;
 static uint32_t bleSlowCount=0,bleDurationMax=0,wifiFailures=0;
 struct DevTelemetry {uint32_t completed=0,gatt_ok=0,write_calls=0,errors=0,slow=0,last_ms=0,max_ms=0;};
@@ -209,8 +209,6 @@ static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
 static bool otaBusy=false,otaAllowed=false,otaSuccess=false,otaError=false;
-// OTA protegida: PREPARAR -> CEDER AMBAS -> SUBIR -> VALIDAR -> REINICIAR.
-// Nunca llamar BLE desde una peticion HTTP; solo se encolan operaciones.
 enum class OtaPhase : uint8_t { Idle, Preparing, Ready, Uploading, Completed, Failed };
 struct OtaTransaction {
  OtaPhase phase=OtaPhase::Idle;
@@ -365,8 +363,8 @@ static String pointsCh(){String s;s.reserve(profile.chCount*20);
  s+=String(p.minute)+','+String(p.r)+','+String(p.g)+','+String(p.b);
  }return s;
 }
-static cielo::PvValue desiredPv(){return timeOK()?cielo::at(profile.pv,profile.pvCount,minuteOfDay()):cielo::PvValue{0,0,0,0};}
-static cielo::ChiValue desiredCh(){return timeOK()?cielo::at(profile.ch,profile.chCount,minuteOfDay()):cielo::ChiValue{0,0,0};}
+static cielo::PvValue desiredPv(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):cielo::at(profile.pv,profile.pvCount,minuteOfDay())):cielo::PvValue{0,0,0,0};}
+static cielo::ChiValue desiredCh(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):cielo::at(profile.ch,profile.chCount,minuteOfDay())):cielo::ChiValue{0,0,0};}
 
 static void loadProfile(){
  profile=cielo96::ProfileImage{};
@@ -382,7 +380,8 @@ static void loadProfile(){
  if(prefs.getBytesLength("curvesB")==sizeof(b)){
  prefs.getBytes("curvesB",&b,sizeof(b));vb=cielo96::profileValid(b);
  }
- if(va||vb){profile=va&&(!vb||int32_t(a.generation-b.generation)>0)?a:b;
+ const cielo96::ProfileImage* latest=cielo96::curves::newestValid(va?&a:nullptr,vb?&b:nullptr);
+ if(latest){profile=*latest;
   record("CURVAS_OK",String("NVS generacion=")+String(profile.generation));
  }else{
   bool corrupt=prefs.getBytesLength("curvesA")!=0 || prefs.getBytesLength("curvesB")!=0;
@@ -391,8 +390,7 @@ static void loadProfile(){
  }
 }
 static bool saveProfile(const cielo96::ProfileImage& candidate){
- if(!cielo96::profileValid(candidate))return false;
- // Write inactive slot, read back, verify hash; keep previous valid slot untouched.
+ if(!cielo96::curves::curveValid(candidate))return false;
  const char*key=(candidate.generation&1)?"curvesA":"curvesB";
  if(prefs.putBytes(key,&candidate,sizeof(candidate))!=sizeof(candidate)){
   lastBackupError="NVS escritura incompleta";record("CURVA_ERROR",lastBackupError);return false;
@@ -404,14 +402,11 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  }
  profile=candidate;profileRecovery=false;record("CURVA_GUARDADA",String("generacion=")+String(profile.generation));return true;
 }
-// Exact decimal parser: rejects empty, signs, trailing garbage and values outside bounds.
 static bool positiveInt(const String&s,unsigned& n){
  if(!s.length())return false;uint32_t x=0;
  for(size_t i=0;i<s.length();i++){char c=s[i];if(c<'0'||c>'9')return false;x=x*10+(c-'0');if(x>1440)return false;}
  n=x;return true;
 }
-// Los valores de latencia HTTP no son minutos: permitir hasta 60 segundos sin
-// reinterpretar mediciones reales como fallos de ruta/entrada de usuario.
 static bool parseBoundedUInt(const String&s,unsigned&n,unsigned maxValue){
  if(s.isEmpty()||s.length()>8)return false;
  uint32_t x=0;
@@ -449,15 +444,66 @@ static bool parsePoints(const String&serialized,bool isPv,cielo96::ProfileImage&
  return cielo::valid(out.ch,count) && out.ch[count-1].minute==1440
         && out.ch[count-1].r==0 && out.ch[count-1].g==0 && out.ch[count-1].b==0;
 }
-static void updateCurve(bool pv,bool reset){
+static bool uint32Strict(const String& s,uint32_t &v){
+ if(!s.length()||s.length()>10)return false;
+ uint64_t n=0;
+ for(size_t i=0;i<s.length();i++){
+  if(s[i]<'0'||s[i]>'9')return false;
+  n=n*10+(s[i]-'0');if(n>0xffffffffULL)return false;
+ }
+ v=(uint32_t)n;return true;
+}
+static void saveBothCurves(){
+ if(srv.arg("schema_version")!="2")return fail(400,"Formato incompatible: se requiere schema_version=2");
+ uint32_t expected=0;
+ if(!uint32Strict(srv.arg("generation"),expected))return fail(400,"Generacion no valida");
+ if(!cielo96::curves::expectedGeneration(profile.generation,expected))
+  return fail(409,"El perfil ha cambiado en ATOM: recarga antes de guardar");
+ const String pv=srv.arg("pv"),ch=srv.arg("ch"),tag=srv.arg("checksum");
+ if(pv.isEmpty()||ch.isEmpty()||pv.length()>1700||ch.length()>1700||tag.length()!=8)
+  return fail(400,"Curva incompleta o supera limites");
+ char digest[9];snprintf(digest,sizeof(digest),"%08lx",(unsigned long)cielo96::curves::wireHash(
+    pv.c_str(),pv.length(),ch.c_str(),ch.length()));
+ if(!tag.equalsIgnoreCase(digest))return fail(400,"Integridad del perfil incorrecta: nada guardado");
  cielo96::ProfileImage candidate=profile;
- if(reset){
-  if(pv){candidate.pvCount=cielo::pezverde_count;memcpy(candidate.pv,cielo::pezverde,sizeof(cielo::pezverde));}
-  else{candidate.chCount=cielo::chihiros_count;memcpy(candidate.ch,cielo::chihiros,sizeof(cielo::chihiros));}
- }else if(!parsePoints(srv.arg("points"),pv,candidate))return fail(400,"Puntos invalidos; no se ha modificado ninguna curva");
- candidate.generation=profile.generation+1;cielo96::profileSeal(candidate);
- if(!saveProfile(candidate))return fail(507,"La curva anterior sigue disponible; error de grabacion");
- lastPvDesired=false;lastChDesired=false;ok();
+ if(!parsePoints(pv,true,candidate)||!parsePoints(ch,false,candidate))
+  return fail(400,"Una curva contiene puntos incorrectos: nada guardado");
+ candidate.generation=profile.generation+1;
+ cielo96::profileSeal(candidate);
+ if(!cielo96::curves::curveValid(candidate))return fail(400,"Perfil completo no valido");
+ if(!saveProfile(candidate))return fail(507,"No se pudo comprobar la escritura NVS. Perfil previo conservado");
+ lastPvDesired=false;lastChDesired=false;
+ record("PERFIL_ATOMICO_GUARDADO",String("PV=")+String(profile.pvCount)+" CH="+String(profile.chCount)+" gen="+String(profile.generation));
+ jsonSend(200,String("{\"ok\":true,\"generation\":")+String(profile.generation)+",\"pv\":"+String(profile.pvCount)+",\"chi\":"+String(profile.chCount)+"}");
+}
+static String cadenceJson(){
+ String j="{\"interval_ms\":"+String(activeCadenceMs());
+ j+=",\"trial_active\":"+String(cadenceTrial15?"true":"false");
+ j+=",\"trial_remaining_sec\":"+String(cadenceTrial15?(uint32_t)(cadenceEndsAt-millis())/1000UL:0);
+ j+=",\"ticks_15s\":"+String(cadenceTicks15)+",\"ticks_30s\":"+String(cadenceTicks30);
+ j+=",\"skipped_busy\":"+String(cadenceSkippedBusy)+",\"automatic_fallbacks\":"+String(cadenceFallbacks);
+ j+=",\"fallback_reason\":"+jsonQuote(cadenceFallbackReason)+",\"optically_verified\":false}";
+ return j;
+}
+static void cadenceSet(){
+ if(srv.arg("mode")=="30"){
+  cadenceTrial15=false;cadenceFallbackReason="Restaurado manualmente a 30 s";
+  lastScheduleAt=millis()-30000UL;
+  record("CADENCIA_30S","Ensayo de 15s detenido");return jsonSend(200,cadenceJson());
+ }
+ if(srv.arg("mode")!="15"||srv.arg("confirm")!="ENSAYO_SUPERVISADO_15S")
+  return fail(403,"Activacion de ensayo supervisado requerida");
+ if(!bleReady||!timeOK()||!cielo96::curves::curveValid(profile)||!wifiCoexistReady()||otaTxn.phase!=OtaPhase::Idle||!currentBootMarkedHealthy||(!cieloPvRun&&!cieloChRun))
+  return fail(423,"Reloj, Bluetooth, OTA o arranque no preparados para 15 s");
+ const auto snap=cielo96::ble_worker_snapshot();
+ if(!cielo96::curves::secondsModeSafe(true,!cieloWatchdogTripped&&snap.heartbeat_age_ms<5000UL,true,
+       queue.busy()||cielo96::ble_request_queue_depth()>0,heap_caps_get_free_size(MALLOC_CAP_INTERNAL),0))
+  return fail(423,"Memoria o Bluetooth insuficientes para 15 s");
+ cadenceTrial15=true;cadenceEndsAt=millis()+1200000UL;
+ cadenceStartBleErrors=bleResultErrors;cadenceFallbackReason="Sin errores; ensayo 20 minutos";
+ lastScheduleAt=millis()-30000UL;lastPvDesired=false;lastChDesired=false;
+ record("CADENCIA_15S","Prueba limitada a 20 minutos, regreso automatico a 30s");
+ jsonSend(200,cadenceJson());
 }
 static String cieloModeJson(){
  String j="{\"pez_verde_active\":"+String(cieloPvRun?"true":"false");
@@ -517,6 +563,8 @@ static void statusJson(){
  j+=",\"manual\":"+String(pezManual?"true":"false")+",\"power\":"+String(p.brightness>0?"true":"false");
  j+=",\"rgb\":["+String(p.r)+","+String(p.g)+","+String(p.b)+"],\"brightness\":"+String(p.brightness);
  j+=",\"points\":"+jsonQuote(pointsPv())+",\"chiPoints\":"+jsonQuote(pointsCh());
+ j+=",\"profileGeneration\":"+String(profile.generation)+",\"profileSchemaVersion\":2";
+ j+=",\"cadence\":"+cadenceJson();
  j+=",\"cieloV4\":"+cieloModeJson();
  j+=",\"chActive\":"+String(cieloChRun?"true":"false")+",\"chEvening\":"+String(cieloChRun?"true":"false")+",\"chContinuous\":"+String(cieloChRun?"true":"false");
  j+=",\"chStatus\":"+jsonQuote(cieloChRun?"Natural V4: control por CIELO":cieloChReturnPending||cieloChAwaitResponse?"Restaurando curva de My Chihiros":"My Chihiros: curva personalizada");
@@ -721,8 +769,6 @@ static void labTick(){
  const uint32_t block=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  if(heap<lab.heapMin)lab.heapMin=heap;
  if(block<lab.heapLargestMin)lab.heapLargestMin=block;
- // Evaluacion real de ambas curvas en RAM; los resultados se guardan como
- // prueba verificable, pero NUNCA se trasladan a la cola GATT.
  if(timeOK()){
   const auto pv=cielo::at(profile.pv,profile.pvCount,minuteOfDay());
   const auto ch=cielo::at(profile.ch,profile.chCount,minuteOfDay());
@@ -838,6 +884,7 @@ static void diagnosticJson(){
  j+=",\"optically_off\":null,\"reason\":\"Una escritura GATT no mide la luz real\"}}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
+ j+=",\"cadence\":"+cadenceJson();
  j+=",\"security\":{\"https_ready\":"+String(cielo96::https_ready()?"true":"false")+",\"authentication\":\"PBKDF2-SHA256\",\"ota_signature\":\"ECDSA-P256\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
  j+=",\"last_ota_message\":"+jsonQuote(lastOtaError);
@@ -902,8 +949,6 @@ static void submitCh(cielo::ChiValue c,uint32_t ttl=90000){
  if(!queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,c.r,c.g,c.b,0,millis(),ttl))record("COLA_RECHAZADA","CH");
 }
 static void requestAuto(){
- // No conocemos si la Chihiros usa curva personalizada o escena.
- // 0x12 se deshabilita: apago fisicamente la WRGB Slim en la prueba 22.
  chiAutoPending=false;
  lab.txBlocked++;
  record("CH_AUTO_INSEGURO","Restauracion BLE bloqueada hasta verificar modo desde My Chihiros");
@@ -932,8 +977,6 @@ static void manualCh(){
 static bool sha256String(const String&str,uint8_t dest[32]){
  return mbedtls_sha256_ret((const unsigned char*)str.c_str(),str.length(),dest,0)==0;
 }
-// PBKDF2-HMAC-SHA256 con sal aleatoria por ATOM; 60000 iteraciones.
-// Se migra en el primer acceso exitoso con la clave antigua. Nunca guardar la clave en NVS.
 static constexpr unsigned CIELO_KDF_ROUNDS=60000;
 static bool constantTime32(const uint8_t*a,const uint8_t*b){
  uint8_t d=0;for(unsigned i=0;i<32;i++)d|=a[i]^b[i];return d==0;
@@ -950,13 +993,10 @@ static bool deriveCieloKey(const String&secret,const uint8_t salt[16],uint8_t ou
 static bool saveModernAuth(const String&secret){
  uint8_t salt[16],derived[32];esp_fill_random(salt,sizeof(salt));
  if(!deriveCieloKey(secret,salt,derived))return false;
- // Indicador de activacion SIEMPRE en ultimo lugar para evitar autenticacion parcial.
  if(prefs.putBytes("auth_salt",salt,16)!=16||
     prefs.putBytes("auth_pbk",derived,32)!=32)return false;
  return prefs.putBool("auth_v2",true);
 }
-// Sesion efimera, solamente en RAM; se pierde con un reinicio.
-// No hay cookies persistentes, ni clave en URL, ni token en NVS.
 static uint8_t adminSession[32]{};
 static bool adminSessionActive=false;
 static uint32_t adminSessionIssued=0,adminSessionLast=0;
@@ -992,8 +1032,6 @@ static bool sessionValid(){
  adminSessionLast=now;return true;
 }
 static bool tokenEqual(){
- // La contraseña JAMAS viaja por HTTP en claro por la red: solo bucle
- // interno desde la tarea HTTPS. El puerto 80 conserva diagnóstico de rescate.
  if(srv.client().remoteIP()!=IPAddress(127,0,0,1))return false;
  if(!CIELO_ENABLE_OTA)return false;
  if(prefs.getBytesLength("ota_sha")!=32)return false;
@@ -1006,8 +1044,6 @@ static bool tokenEqual(){
   if(!deriveCieloKey(provided,salt,given))return false;
   return constantTime32(given,stored);
  }
- // Compatibilidad temporal con 11.0/RC3: tras verificar, migrar sin perder el hash
- // antiguo requerido si se vuelve a la particion anterior.
  uint8_t given[32],stored[32];
  if(!sha256String(provided,given))return false;
  prefs.getBytes("ota_sha",stored,32);
@@ -1016,12 +1052,6 @@ static bool tokenEqual(){
  else record("ACCESO_KDF_AVISO","Migration no completada; rollback legado conservado");
  return true;
 }
-// Una sola clave local para cambios de curvas, luces, Wi-Fi y OTA.
-// Se conserva la huella OTA existente en NVS: migracion no destructiva.
-// Los cambios requieren cabecera personalizada, que una pagina externa
-// no puede introducir mediante un formulario HTML/CSRF corriente.
-// KDF PBKDF2 migrada. NOTA: HTTP no cifra el canal: las escrituras en red
-// no fiable deben pasar por un terminador TLS validado; no publicar puerto 80.
 static bool requireHttpsRead(){
  if(srv.client().remoteIP()!=IPAddress(127,0,0,1)){
   fail(426,"Usa HTTPS (iwagumi-cielo96.local) para consultar datos privados");return false;
@@ -1057,8 +1087,6 @@ static void authSessionClose(){
  if(!sessionValid())return fail(401,"La sesion ya no es valida");
  revokeAdminSession();ok();
 }
-// Todas las escrituras usan sesion temporal de RAM. Emparejar la primera
-// clave es la unica excepcion y exige boton fisico + conexion HTTPS.
 static bool requirePrivateRead(){
  if(!requireHttpsRead())return false;
  if(!sessionValid()){fail(401,"Consulta privada: abre sesion para leer el Informe Maestro completo");return false;}
@@ -1079,8 +1107,6 @@ static bool requireAdminWrite(){
  }
  return true;
 }
-// Pilot firmware: 3-7 seconds then release starts BLE only when web is available.
-// Holding >=8 sec enters temporary READ-ONLY rescue AP (no secret exposed).
 static void physicalButtonTask(){
  const uint32_t now=millis();
  const bool held=digitalRead(ATOMS3_BUTTON_GPIO)==LOW;
@@ -1115,11 +1141,9 @@ static void physicalButtonTask(){
  }
 }
 static bool physicalOtaGrant(){
- // Mantiene OTA inaccesible en AP abierta de rescate y sin Bambu.
  return CIELO_ENABLE_OTA && !rescueOpen && WiFi.status()==WL_CONNECTED &&
         otaPhysicalUntil && (int32_t)(otaPhysicalUntil-millis())>0;
 }
-// OTA preflight: read-only; never manipulates the lamps.
 static bool otaBleHealthy(){
  if(!bleReady||cieloWatchdogTripped)return false;
  const auto snap=cielo96::ble_worker_snapshot();
@@ -1164,8 +1188,6 @@ static void otaPreflight(){
  jsonSend(200,j);
 }
 static void otaResumePreviousControl(){
- // Solo reanudar al cancelar o fallar si BLE es utilizable. No inventar
- // confirmacion optica de la Chihiros.
  if(!otaBleHealthy()||!timeOK()||!cielo96::profileValid(profile)||
     cieloChReturnPending||cieloChAwaitResponse||customResumePending){
   record("OTA_REANUDACION_MANUAL","No es seguro reanudar: verificar My Chihiros en su app");
@@ -1241,7 +1263,6 @@ static void otaPrepare(){
  otaTxn.wasPv=cieloPvRun;otaTxn.wasCh=cieloChRun;otaTxn.wasAlwaysOn=cieloAlwaysOn;
  otaTxn.reason="Deteniendo nuevas ordenes y vaciando cola Bluetooth";
  cieloPvRun=false;cieloChRun=false;
- // v5_always se conserva para reanudar tras actualizar; no se desactiva en NVS.
  queue.cancel_pending(cielo::ble::Device::PezVerde);
  queue.cancel_pending(cielo::ble::Device::Chihiros);
  record("OTA_PREPARACION","Control detenido temporalmente; se conserva perfil Natural V4");
@@ -1289,8 +1310,6 @@ static bool hashLooksValid(const String& h){
  for(size_t i=0;i<h.length();i++)if(!isxdigit(static_cast<unsigned char>(h[i])))return false;
  return true;
 }
-// Firma ECDSA P-256 sobre SHA256 del BIN exacto; clave de confianza solo PUBLICA.
-// Se rechaza cualquier firma ausente, malformada o ajena al par del propietario.
 static char otaExpectedSignature[147]{};
 static bool hexSignatureDecode(const String&hex,uint8_t out[72],size_t&len){
  if(hex.length()<16||hex.length()>144||(hex.length()&1))return false;
@@ -1338,8 +1357,6 @@ static void otaUpload(){
              !cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse;
   otaSuccess=false;otaError=false;otaBytes=0;otaDigestStop();
   if(!otaAllowed){
-   // Diagnostico explicito: antes se informaba siempre "Clave OTA incorrecta",
-   // incluso con clave valida y retorno BLE bloqueado.
    if(otaTxn.phase!=OtaPhase::Ready)lastOtaError="Prepara las pantallas antes de cargar el BIN";
    else if(!sessionValid())lastOtaError="Sesion caducada: vuelve a autenticarte";
    else if(!physicalOtaGrant())lastOtaError="Permiso fisico OTA caducado o no autorizado";
@@ -1411,15 +1428,12 @@ static void otaUpload(){
    record("OTA_FIRMA_RECHAZADA","Imagen sin firma del propietario: no se instalara");
   }else if(prefs.putString("ota_prev",otaRunningPartition)!=otaRunningPartition.length() ||
            prefs.putUChar("ota_attempts",0)!=1){
-   // Guardar la ruta de vuelta ANTES de cambiar la particion de arranque.
-   // Si la NVS esta llena, no activamos la nueva imagen.
    lastOtaError="No se pudo guardar el retorno OTA en NVS: instalacion cancelada";
    otaError=true;Update.abort();
   }else if(!Update.end(true)){
    lastOtaError="BIN no validado como firmware ESP32-S3";
    otaError=true;Update.abort();prefs.remove("ota_prev");
   }else{
-   // El arranque anterior ya quedo registrado en NVS antes de activar el BIN.
    otaSuccess=true;otaTxn.phase=OtaPhase::Completed;
    otaTxn.reason="Firmware recibido y verificado por Update; reinicio pendiente";
    lastOtaError="SHA256 coincide, firma ECDSA verificada y Update acepta el BIN";
@@ -1439,7 +1453,6 @@ static void otaUpload(){
 }
 static void configureWifi(){
  String ssid=srv.arg("ssid"),pass=srv.arg("password");
- // Nunca permitir caracteres de control que puedan falsear un log o cabecera.
  for(size_t i=0;i<ssid.length();i++){
   const unsigned char c=(unsigned char)ssid[i];
   if(c<32||c==127)return fail(400,"Nombre Wi-Fi contiene caracteres de control");
@@ -1452,8 +1465,6 @@ static void configureWifi(){
  storedSSID=ssid;storedPass=pass;
  record("WIFI_NUEVA","Cambio solicitado; la clave no se expone en informes");
  lastWiFiAttempt=millis()-31000UL;
- // Antes solo almacenaba el SSID nuevo y quedaba conectado a la Wi-Fi vieja.
- // Se mantiene AP cifrada de rescate, visible en 192.168.4.1.
  WiFi.disconnect(false,false);
  ok();
 }
@@ -1573,8 +1584,6 @@ static void configureRoutes(){
                    30,30,30,0,millis(),45000)){
    lab.txArmed=false;return fail(503,"No se pudo enviar el contraste 30");
   }
-  // La programacion diaria de CIELO se desactiva durante este ensayo: no
-  // se debe superponer a la curva que administra My Chihiros.
   chiCieloNight=false;chiManual=true;chiManualUntil=millis()+120000UL;
   contrastStage=1;contrastObserved=false;contrastStartedAt=millis();contrastManualAt=0;
   record("CH_CONTRASTE_INICIO","Se solicita 30/30/30 y se espera confirmacion visual del usuario");
@@ -1665,16 +1674,23 @@ static void configureRoutes(){
  });
  srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaGrantSeconds\":"+String(physicalOtaGrant()?(otaPhysicalUntil-millis())/1000UL:0)+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
  srv.on("/api/clock",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
-   // epoch exceeds minute parser max, parse separately with strict digits
    String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
    for(unsigned i=0;i<s.length();i++)if(s[i]<'0'||s[i]>'9')return fail(400,"Epoch incorrecto");
    unsigned long long val=strtoull(s.c_str(),nullptr,10);if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
    struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
   }return fail(400,"Epoch demasiado corto");});
- srv.on("/api/save",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,false);});
- srv.on("/api/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,true);});
- srv.on("/api/chihiros/curve",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,false);});
- srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,true);});
+  srv.on("/api/curves/commit",HTTP_POST,[]{if(!requireAdminWrite())return;
+   if(rescueOpen||otaBusy||otaTxn.phase!=OtaPhase::Idle)return fail(423,"Cambios bloqueados durante rescate o OTA");
+   saveBothCurves();
+  });
+  srv.on("/api/cielo/cadence",HTTP_POST,[]{if(!requireAdminWrite())return;
+   if(rescueOpen)return fail(423,"Rescate de solo lectura");cadenceSet();
+  });
+  srv.on("/api/cielo/cadence",HTTP_GET,[]{if(requirePrivateRead())jsonSend(200,cadenceJson());});
+ srv.on("/api/save",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(410,"Ruta antigua retirada: guarda ambas luces con /api/curves/commit");});
+ srv.on("/api/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(410,"Ruta antigua retirada: guarda ambas luces con /api/curves/commit");});
+ srv.on("/api/chihiros/curve",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(410,"Ruta antigua retirada: guarda ambas luces con /api/curves/commit");});
+ srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(410,"Ruta antigua retirada: guarda ambas luces con /api/curves/commit");});
  srv.on("/api/manual",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");manualPv();});
  srv.on("/api/chihiros/manual",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");manualCh();});
  srv.on("/api/chihiros/stop",HTTP_POST,[]{if(!requireAdminWrite())return;
@@ -1757,8 +1773,6 @@ static void wifiTask(){
 
 }
 static void cieloRequestReturn(const char* reason){
- // Apartar inmediatamente TODAS las órdenes CH pendientes, aun cuando hay una
- // operacion BLE iniciada que debe terminar antes de mandar el selector 0x03.
  queue.cancel_pending(cielo::ble::Device::Chihiros);
  lastChDesired=false;chiManual=false;chiCieloNight=false;
  if(cieloChReturnPending||cieloChAwaitResponse)return;
@@ -1768,7 +1782,6 @@ static void cieloRequestReturn(const char* reason){
 }
 static void lightingTask(){
  const uint32_t now=millis();
- // No duplicar tareas BLE: si la MISMA tarea recupera latido, rearmar la curva.
  if(cieloWatchdogTripped && bleReady && !queue.busy() &&
     now-cielo96::ble_last_heartbeat()<3000UL){
   cieloWatchdogTripped=false;pvRetryNext=now;lastPvDesired=false;
@@ -1777,10 +1790,7 @@ static void lightingTask(){
  }
  if(pezManual && (int32_t)(now-pezManualUntil)>=0)pezManual=false;
  if(chiManual && (int32_t)(now-chiManualUntil)>=0)chiManual=false;
- // Las verificaciones se hacen incluso si CIELO no controla las luces.
  if(!cieloPvRun && !cieloChRun && !cieloChWasDriven && !pvOffObligation && !pvControlDesired)return;
- // Si la tarea propietaria BLE deja de responder, dejar de programar RGB.
- // La orden de retorno se pedira y se completara solo si el trabajador revive.
  if(bleReady && !cieloWatchdogTripped &&
     now-cielo96::ble_last_heartbeat()>45000UL){
   cieloWatchdogTripped=true;cieloPvRun=false;cieloChRun=false;
@@ -1803,8 +1813,26 @@ static void lightingTask(){
    record("PV_DIA_REANUDADO","Curva actual recuperada; ningun RGB obsoleto");
   }
  }
- if(now-lastScheduleAt<30000UL && !pvOffObligation)return;
- if(now-lastScheduleAt>=30000UL)lastScheduleAt=now;
+  if(cadenceTrial15){
+   const auto worker=cielo96::ble_worker_snapshot();
+   const bool safe=cielo96::curves::secondsModeSafe(wifiCoexistReady(),
+     bleReady&&!cieloWatchdogTripped&&worker.heartbeat_age_ms<15000UL,
+     otaTxn.phase==OtaPhase::Idle&&!otaBusy,
+     queue.busy()&&worker.phase_age_ms>11000UL,
+     heap_caps_get_free_size(MALLOC_CAP_INTERNAL),bleResultErrors-cadenceStartBleErrors);
+   if((int32_t)(now-cadenceEndsAt)>=0||!safe){
+    cadenceTrial15=false;cadenceFallbacks++;
+    cadenceFallbackReason=(int32_t)(now-cadenceEndsAt)>=0?"Ensayo 20 min terminado":"BLE, WiFi, OTA, cola o heap no seguros";
+    lastPvDesired=false;lastChDesired=false;
+    record("CADENCIA_RETORNO_30S",cadenceFallbackReason);
+   }
+  }
+  const uint32_t cadenceMs=activeCadenceMs();
+  if(now-lastScheduleAt<cadenceMs && !pvOffObligation)return;
+  if(now-lastScheduleAt>=cadenceMs){lastScheduleAt=now;
+    if(cadenceTrial15)cadenceTicks15++;else cadenceTicks30++;
+    if(queue.busy()||queue.pending(cielo::ble::Device::PezVerde)||queue.pending(cielo::ble::Device::Chihiros))cadenceSkippedBusy++;
+  }
  if(!timeOK() || !cielo96::profileValid(profile)){
   if(cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
    cieloChRun=false;cieloPvRun=false;cieloFallbacks++;
@@ -1834,8 +1862,6 @@ static void lightingTask(){
  }
  const int minute=minuteOfDay();
  const bool chWindow=true; // CIELO controla 24h, incluido RGB 0/0/0
- // 27 puntos PV, 21 CH. Interpolacion lineal ya probada en cielo_engine.h.
- // Refresco a lo sumo 1 vez cada 30s; con curva estable heartbeat cada 5min.
  if(cieloPvRun && !pvOffObligation && !pezManual && !lab.txArmed && !queue.pending(cielo::ble::Device::PezVerde)){
   const auto v=desiredPv();
   const bool changed=!lastPvDesired||memcmp(&v,&prevPv,sizeof(v))!=0;
@@ -1854,7 +1880,6 @@ static void lightingTask(){
   const bool changed=!lastChDesired||memcmp(&v,&prevCh,sizeof(v))!=0;
   const bool heartbeat=now-lastChDesiredAt>300000UL;
   if(changed||heartbeat){
-   // Recuperar My Chihiros al reiniciar tras tener control manual.
    bool markerReady=cieloChWasDriven||prefs.getBool("v4_ch_takeover",false);
    if(!markerReady)markerReady=prefs.putBool("v4_ch_takeover",true)!=0;
    if(!markerReady){
@@ -1877,7 +1902,6 @@ static void bleTick(){
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
   queue.complete(res.sequence,res.success,now);bleResultCount++;
-  // Los resultados de la curva Natural V4 no son ACK ópticos.
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
      (cieloPvRun||cieloChRun||cieloChWasDriven||pvOffObligation)){
    if(res.device==0 && (cieloPvRun||pvOffObligation)){
@@ -1933,7 +1957,6 @@ static void bleTick(){
  queue.tick(now);
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Web sigue activo; tarea BLE no liberada artificialmente");}
- // POWER OFF PV urgente se atiende antes del retorno CH, hasta 3 errores.
  const bool pvOffFirst=pvOffObligation && pvSafety!=PvSafetyState::OffGattOk &&
    pvOffFailures<3 && queue.pending(cielo::ble::Device::PezVerde);
  if(cieloChReturnPending && !pvOffFirst && !queue.busy() && !customResumePending &&
@@ -2006,7 +2029,6 @@ void setup(){
   prefs.getBytes("boot_hist",bootHistory,sizeof(bootHistory));
   for(const auto &e:bootHistory)if(e.id)bootHistoryCount++;
   if(bootHistoryCount>8)bootHistoryCount=8;
-  // Valid chronological ring; newest id determines next slot.
   uint32_t newest=0;uint8_t newestIndex=7;
   for(uint8_t i=0;i<8;i++)if(bootHistory[i].id>=newest){newest=bootHistory[i].id;newestIndex=i;}
   bootHistoryHead=(newestIndex+1)%8;
@@ -2019,7 +2041,6 @@ void setup(){
   if(journal.magic!=JOURNAL_MAGIC||journal.count>8||journal.head>=8)journal=JournalStore{JOURNAL_MAGIC,0,0,0,{}};
  }
 
- // One small write per boot; never on minute timer.
  prefs.putUInt("boots",previousBootCount+1);
  prefs.putBool("clean",false);
  const esp_partition_t *running=esp_ota_get_running_partition();
@@ -2050,17 +2071,12 @@ void setup(){
  pvControlDesired=prefs.getBool("pv_auto",cieloAlwaysOn);
  cieloResumePending=cieloAlwaysOn;
  if(prefs.getBool("v4_ch_takeover",false)){
-  // Al reiniciar: NO reactivar el programador; solo devolver el control
-  // personalizado a My Chihiros despues de establecer Bluetooth.
   cieloChWasDriven=true;cieloChReturnPending=true;
   cieloReturnRetryAt=millis()+30000UL;
   cieloReturnReason="Recuperacion preventiva tras reinicio del ATOM";
   record("V4_RECUPERACION_BOOT",cieloReturnReason);
  }
  storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
- // Recover credentials from the original 9.5.3 namespace, retained by application-only OTA.
- // Verified on owner's private 8MB flash: namespace "iwagumi-rgb", keys homeSsid/homePass.
- // Never embed passwords in firmware, logs, source repository, report or response.
  if(storedSSID.isEmpty()){
   Preferences legacy;
   if(legacy.begin("iwagumi-rgb",true)){
@@ -2076,8 +2092,6 @@ void setup(){
    }
   }
  }
- // Emergency AP secret is created from hardware randomness on first boot,
- // persisted in NVS, printed ONLY on the physical serial port.
  apPassword=prefs.getString("ap_secret","");
  if(apPassword.length()<12){
    static const char alphabet[]="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -2089,8 +2103,6 @@ void setup(){
  statusPixel.begin();statusPixel.setBrightness(32);statusPixel.clear();statusPixel.show();
  tracePhase(TracePhase::WifiInit);
  WiFi.mode(WIFI_AP_STA);
- // La politica por defecto es MIN_MODEM; configurar despues de arrancar WiFi.
- // WiFi.setSleep(true) antes de softAP/STA producia aviso prematuro.
  WiFi.setAutoReconnect(false);
  WiFi.setHostname("iwagumi-cielo96");
  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
@@ -2129,8 +2141,6 @@ void loop(){
   }
  }
  if(otaCandidateBoot && currentBootMarkedHealthy){
-  // Confirmamos transporte BLE real cuando el control 24 h estaba activo.
-  // No se infiere confirmacion optica de las pantallas.
   const bool gattReady=!otaCandidateNeedsGATT ||
    (cieloPvConfirmed>0 && cieloChConfirmed>0 &&
     !cieloWatchdogTripped && otaBleHealthy());
@@ -2153,13 +2163,10 @@ void loop(){
    record("OTA_ROLLBACK","Sin salud completa tras 10min; regreso a particion anterior");
    delay(150);ESP.restart();
   }else{
-   // Sin particion recuperable, no declarar nunca la actualizacion validada.
    record("OTA_ROLLBACK_IMPOSIBLE","Recuperar manualmente por USB");
    otaCandidateBoot=false;
   }
  }
- // Si una transferencia cae sin evento de cierre, liberar el estado y
- // recuperar la configuracion anterior sin confirmar un BIN incompleto.
  if(otaBusy && millis()-otaLastChunkAt>120000UL){
   Update.abort();otaBusy=false;otaAllowed=false;otaError=true;
   lastOtaError="OTA detenida por falta de datos durante 120 segundos";
@@ -2171,8 +2178,6 @@ void loop(){
  tracePhase(TracePhase::Http);srv.handleClient();
  tracePhase(TracePhase::Button);physicalButtonTask();
  tracePhase(TracePhase::WifiTick);wifiTask();
- // Arranque BLE automatico SIN transmisiones y solo tras 30 segundos con WiFi STA
- // listo. Se mantiene boton manual de respaldo (3–7 s) y rescate >=8 s.
  if(!blePilotRequested && !blePilotAttempted && !bleReady && !rescueOpen &&
     millis()-bootMs>=30000UL && WiFi.status()==WL_CONNECTED && wifiCoexistReady()){
   blePilotRequested=true;
@@ -2181,8 +2186,6 @@ void loop(){
  if(blePilotRequested && !blePilotAttempted && !rescueOpen){
   tracePhase(TracePhase::Ble);
   blePilotRequested=false;
-  // Do not create the BLE worker unless WiFi's coexistence requirement holds.
-  // Do not mark pilot as attempted if the guard blocked its creation.
   if(!wifiCoexistReady())WiFi.setSleep(true);
   if(!wifiCoexistReady()){
    record("BLE_COEX_BLOQUEADO","WiFi modem sleep obligatorio en ESP-IDF 4.4; sin iniciar BLE");
@@ -2194,10 +2197,7 @@ void loop(){
    record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
   }
  }
- // Invariante R4.4: iniciar Bluetooth NO habilita el programador de luces.
- // Pruebas de curvas se ejecutan solo en RAM en labTick().
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
- // Reanudar el modo guardado cuando BLE, perfil, hora y recuperación estén listos.
  if(cieloResumePending && cieloAlwaysOn && currentBootMarkedHealthy &&
     bleReady && timeOK() && wifiCoexistReady() && !rescueOpen &&
     cielo96::profileValid(profile) && !customResumePending &&

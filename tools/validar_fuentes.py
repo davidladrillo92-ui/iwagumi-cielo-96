@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1B5B3-SEGURIDAD-R2' in code
+assert '11.1.0-RC5-B1B5B3-B2B4-CURVAS' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -234,7 +234,7 @@ console.log('SHA256 UI verificado con Node');
 """
 subprocess.run(['node','-e',sha_code+'\n'+vectors],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 
-for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
+for route in ('/api/status','/api/curves/commit','/api/cielo/cadence','/api/manual',
               '/api/chihiros/manual','/api/ble/release','/api/chihiros/my-curve-test','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
  assert route in actual and route in (r/'src/main.cpp').read_text(),route
