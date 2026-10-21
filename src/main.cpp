@@ -25,6 +25,7 @@
 #include "cielo_profile_store.h"
 #include "cielo_ble_queue.h"
 #include "cielo_ble_worker.h"
+#include "cielo_night_safety.h"
 #include "cielo_ui.h"
 
 #if __has_include("local_config.h")
@@ -1581,7 +1582,7 @@ static void lightingTask(){
   return;
  }
  if(cieloAlwaysOn && timeOK() && cielo96::profileValid(profile)){
-  const bool night=desiredPv().brightness==0;
+  const bool night=cielo96::safety::offRequired(cieloAlwaysOn,timeOK(),cielo96::profileValid(profile),desiredPv().brightness);
   if(night && !pvOffObligation){
    pvOffObligation=true;pvOffNextTry=now;pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
@@ -1606,7 +1607,7 @@ static void lightingTask(){
  if(pvOffObligation && cieloAlwaysOn && !otaBusy &&
     otaTxn.phase!=OtaPhase::Preparing && otaTxn.phase!=OtaPhase::Ready &&
     otaTxn.phase!=OtaPhase::Uploading && bleAlive &&
-    (int32_t)(now-pvOffNextTry)>=0 && !queue.busy() &&
+    cielo96::safety::retryDue(now,pvOffNextTry) && !queue.busy() &&
     !customResumePending && !cieloChReturnPending && !cieloChAwaitResponse){
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,0,0,0,0,now,90000UL)){
@@ -1617,7 +1618,7 @@ static void lightingTask(){
   }else pvOffNextTry=now+5000UL;
  }
  if(cieloAlwaysOn && !pvOffObligation && !cieloPvRun && bleAlive &&
-    (int32_t)(now-pvRetryNext)>=0 && otaTxn.phase==OtaPhase::Idle){
+    cielo96::safety::retryDue(now,pvRetryNext) && otaTxn.phase==OtaPhase::Idle){
   cieloPvRun=true;pvSafety=PvSafetyState::Degraded;lastPvDesired=false;
   record("PV_RECONECTANDO","RGB actual; no reproducir consignas obsoletas");
  }
@@ -1670,7 +1671,7 @@ static void bleTick(){
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
      (cieloPvRun||cieloChRun||cieloChWasDriven||pvOffObligation)){
    if(res.device==0 && (cieloPvRun||pvOffObligation)){
-    const bool wasOffCommand=pvOffObligation && pvOffInFlightSeq!=0 && pvOffInFlightSeq==res.sequence;
+    const bool wasOffCommand=cielo96::safety::isOffAck(pvOffObligation,pvOffInFlightSeq,res.sequence);
     if(wasOffCommand)pvOffInFlightSeq=0;
     if(res.success){
      cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;
@@ -1681,7 +1682,7 @@ static void bleTick(){
      }else pvSafety=PvSafetyState::Active;
     }else if(wasOffCommand){
      ++pvOffFailures;
-     const uint32_t backoff=pvOffFailures<2?5000UL:pvOffFailures<4?15000UL:60000UL;
+     const uint32_t backoff=cielo96::safety::offRetryDelayMs(pvOffFailures);
      pvOffNextTry=now+backoff;pvSafety=PvSafetyState::OffRetrying;
      record("PV_POWER_OFF_REINTENTO",String("Fallo ")+String(pvOffFailures)+", reintento "+String(backoff/1000UL)+"s");
     }else if(++cieloPvConsecutiveFailures>=3){
@@ -1737,7 +1738,7 @@ static void bleTick(){
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
   const bool schedulerPV=(cieloPvRun||pvOffObligation)&&cmd.device==cielo::ble::Device::PezVerde&&cmd.action==cielo::ble::Action::Apply;
-  if(schedulerPV && pvOffObligation && cmd.brightness!=0){
+  if(schedulerPV && cielo96::safety::forbidStaleRgb(pvOffObligation,cmd.brightness)){
    queue.complete(cmd.sequence,false,now);
    record("PV_RGB_OBSOLETO_BLOQUEADO","No enviar RGB viejo durante obligacion de apagado");
    return;
