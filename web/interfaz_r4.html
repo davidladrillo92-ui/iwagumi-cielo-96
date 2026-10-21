@@ -633,29 +633,166 @@ async function pezImpactRestore(){
  try{await api('/api/pez/cielo94/restore',{});toast('Curva anterior recuperada');await sync()}catch(e){toast(e.message)}
 }
 
+
+function diagFacts(d){
+ const pv=d.bluetooth?.per_device?.pez_verde||{},ch=d.bluetooth?.per_device?.chihiros||{};
+ const v=d.lighting?.natural_v4||{},n=d.network||{},sy=d.system||{},al=d.alerts||{};
+ const num=x=>Number.isFinite(Number(x))?Number(x):0;
+ const up=num(d.uptime_sec),p=num(pv.gatt_ok),c=num(ch.gatt_ok);
+ const badWiFi=n.home_wifi_connected===false,badWorker=d.bluetooth?.worker_unresponsive===true;
+ const badClock=d.clock_diagnostics?.valid===false;
+ const critical=al.current_critical===true||d.status==='incidencia_actual';
+ let level='good',heading='CIELO funciona correctamente',why='Las luces están comunicando con el ATOM.';
+ let advice='No necesitas intervenir. Los avisos anteriores quedan conservados en el historial.';
+ if(p+c===0&&up<180){
+  level='wait';heading='El sistema está arrancando';why='Esperando las primeras transmisiones.';
+  advice='Espera unos tres minutos y actualiza el diagnóstico.';
+ }else if(badWiFi||badWorker||badClock||critical){
+  level='error';heading='CIELO requiere atención';
+  if(badWiFi){why='La red Wi-Fi doméstica está desconectada.';advice='Comprueba la Wi-Fi desde Ajustes; si cambiaste de router utiliza el acceso de recuperación.';}
+  else if(badWorker){why='La tarea Bluetooth dejó de responder.';advice='Comprueba la luz de ambas pantallas y descarga el Informe Maestro antes de reiniciar.';}
+  else if(badClock){why='El reloj no está sincronizado.';advice='Sincroniza la hora desde Ajustes.';}
+  else {why='El firmware ha señalado una incidencia.';advice='Descarga el Informe Maestro para revisar su causa. No modifiques las curvas mientras la analizamos.';}
+ }else if(p===0||c===0){
+  level='wait';heading='Esperando una pantalla';
+  why='Falta todavía una comunicación Bluetooth confirmada en este arranque.';
+  advice='Espera al siguiente envío y vuelve a actualizar.';
+ }
+ return {level,heading,why,advice,pv,ch,v,n,sy,al,up,p,c,num};
+}
+function diagDuration(sec){
+ const n=Math.max(0,Number(sec)||0);
+ return n>=3600?Math.floor(n/3600)+' h '+Math.floor(n%3600/60)+' min':Math.floor(n/60)+' min';
+}
+function diagMemoryTrend(d){
+ const o=d.daily_monitoring||{},rows=(Array.isArray(o.history)?o.history:[])
+  .filter(r=>Array.isArray(r)&&r.length>=6&&Number.isFinite(+r[0])&&Number.isFinite(+r[5])&&+r[5]>0);
+ const target=$('diagTrendChart');target.replaceChildren();
+ if(rows.length<2){
+  $('diagTrendNote').textContent='Aún no hay suficientes muestras. Se registra un dato cada 15 minutos.';
+  $('diagTrendStats').textContent='El histórico de RAM vuelve a empezar tras reiniciar el ATOM.';
+  return;
+ }
+ const values=rows.map(r=>+r[5]/1024);
+ const mn=Math.min(...values),mx=Math.max(...values),low=Math.max(0,mn-1),high=Math.max(mx+1,low+2);
+ const ns='http://www.w3.org/2000/svg';
+ const add=(name,attrs,text)=>{
+  const el=document.createElementNS(ns,name);
+  for(const key in attrs)el.setAttribute(key,String(attrs[key]));
+  if(text!==undefined)el.textContent=text;
+  target.appendChild(el);
+ };
+ const x=i=>34+i/Math.max(1,values.length-1)*278;
+ const y=v=>84-(v-low)/(high-low)*64;
+ for(const fraction of [0,.5,1]){
+  const yy=y(low+(high-low)*fraction);
+  add('path',{d:'M34 '+yy+'H314',stroke:'#ffffff21','stroke-dasharray':'3 4',fill:'none'});
+  add('text',{x:29,y:yy+3,'text-anchor':'end',fill:'#abb7b0','font-size':'9'},(low+(high-low)*fraction).toFixed(0));
+ }
+ add('polyline',{points:values.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' '),
+  fill:'none',stroke:'#a2d6b6','stroke-width':2.2,'stroke-linejoin':'round'});
+ add('circle',{cx:x(values.length-1),cy:y(values[values.length-1]),r:3,fill:'#d6f6dc'});
+ $('diagTrendNote').textContent=values.length+' muestras de memoria interna · últimos '+Math.round((rows.length-1)*(o.interval_min||15)/60*10)/10+' h disponibles.';
+ const delta=values[values.length-1]-values[0];
+ $('diagTrendStats').textContent='Inicial '+values[0].toFixed(1)+' KB · actual '+
+  values[values.length-1].toFixed(1)+' KB · cambio '+(delta>=0?'+':'')+delta.toFixed(1)+
+  ' KB. Esta variación por sí sola no demuestra una fuga de memoria.';
+}
+function diagEventLabel(s){
+ const names={
+  ARRANQUE_ESTABLE:'Arranque estable',V5_AUTO_REANUDADO:'Control reanudado',
+  V5_24H_ACTIVADA:'Control de 24 horas activado',V4_RETORNO_GATT_OK:'Retorno a My Chihiros',
+  V4_RETORNO_FALLO:'Error de retorno',V4_PV_FALLO:'Pez Verde: error de comunicación',
+  V4_WATCHDOG_PAUSA:'Control pausado por protección',BLE_SOFT_TIMEOUT:'Bluetooth más lento de lo habitual'
+ };
+ return names[s]||'Evento técnico registrado';
+}
+function diagRender(d){
+ const a=diagFacts(d),n=a.num,v=a.v,day=d.daily_monitoring||{};
+ const light=(name,item,active,recent,external)=>{
+  $('diag'+name+'Status').textContent=!active?external:
+    recent?'CIELO · respuesta reciente':'CIELO · esperando respuesta';
+  $('diag'+name+'Ops').textContent=n(item.gatt_ok)+' operaciones correctas · '+n(item.errors)+' errores';
+ };
+ light('Pv',a.pv,v.pez_verde_active===true,v.pv_online_recent===true,'En espera');
+ light('Ch',a.ch,v.chihiros_active===true,v.ch_online_recent===true,'My Chihiros / externo');
+ $('diagIndicator').className='health-indicator '+(a.level==='good'?'good':a.level==='error'?'error':'warning');
+ $('diagState').textContent=a.heading;
+ $('diagExplain').textContent=a.why;
+ $('diagAdvice').textContent=a.advice;
+ $('diagUpdated').textContent='Actualizado · '+(d.generated_at||'hora no disponible');
+ $('diagWifi').textContent=a.n.home_wifi_connected===true?'Conectada':
+  a.n.home_wifi_connected===false?'Sin conexión':'Sin datos';
+ $('diagHeap').textContent=Number.isFinite(+a.sy.heap_free)?(+a.sy.heap_free/1024).toFixed(1)+' KB':'—';
+ $('diagUptime').textContent=diagDuration(a.up);
+ $('diagRecovery').textContent=n(v.return_ok)+' correctas';
+ $('diagPastWarnings').textContent='Avisos anteriores: '+n(a.al.historical_soft_timeouts)+
+  ' esperas Bluetooth lentas, '+n(a.al.historical_slow_calls)+' operaciones lentas y '+
+  n(a.al.historical_persistent_faults)+' incidencias acumuladas. No equivalen a fallos actuales.';
+ diagMemoryTrend(d);
+ const area=$('diagRecentEvents');area.replaceChildren();
+ const events=Array.isArray(d.events)?d.events.slice(-5).reverse():[];
+ if(!events.length){const p=document.createElement('p');p.className='note';p.textContent='No hay eventos recientes.';area.appendChild(p);}
+ for(const evt of events){
+  const block=document.createElement('div');block.className='health-event';
+  const title=document.createElement('strong');title.textContent=diagEventLabel(evt.event);
+  const detail=document.createElement('span');detail.textContent=(evt.detail||'')+
+   (Number.isFinite(+evt.t_ms)?' · '+diagDuration(+evt.t_ms/1000)+' desde el arranque':'');
+  block.append(title,detail);area.appendChild(block);
+ }
+ $('diagDetails').textContent='Firmware '+(d.firmware||'sin identificar')+
+  '\nTiempo encendido '+diagDuration(a.up)+
+  '\nPez Verde: '+a.p+' GATT OK, '+n(a.pv.errors)+' fallos, última operación '+n(a.pv.last_ms)+' ms'+
+  '\nChihiros: '+a.c+' GATT OK, '+n(a.ch.errors)+' fallos, última operación '+n(a.ch.last_ms)+' ms'+
+  '\nWi-Fi: '+n(a.n.wifi_disconnects)+' desconexiones, señal '+n(a.n.wifi_rssi_dbm)+' dBm'+
+  '\nRAM '+(n(a.sy.heap_free)/1024).toFixed(1)+' KB · mínimo '+(n(a.sy.heap_minimum)/1024).toFixed(1)+' KB'+
+  '\nArranques acumulados: '+n(a.sy.boot_count)+' · '+(a.sy.reset_reason_name||'motivo desconocido')+
+  '\nCurvas: '+n(d.curves?.points_pv)+' puntos PV y '+n(d.curves?.points_ch)+' CH'+
+  '\nHistórico RAM: '+n(day.samples)+' muestras de '+n(day.capacity||96)+
+  '\nSondas GATT: '+(n(d.lab?.gatt_probe?.requested)===0?'No comprobadas': 'Ver resultados completos en Informe Maestro')+
+  '\nUna conexión liberada entre envíos es normal; GATT no mide la luz física.';
+}
 async function diagLoad(){
  try{
   const r=await fetch('/api/diagnostico/maestro',{cache:'no-store'});
   if(!r.ok)throw Error('HTTP '+r.status);
   const d=await r.json();window.cieloMasterSnapshot=d;
-  const sys=d.system||{},bt=d.bluetooth||{},net=d.network||{},live=d.lighting?.natural_v4||{},daily=d.daily_monitoring||{},alerts=d.alerts||{};
-  const pv=bt.per_device?.pez_verde||{},ch=bt.per_device?.chihiros||{};
-  const critical=alerts.current_critical;
-  $('diagState').textContent=
-   (critical?'Revisar incidencia':d.status==='avisos_historicos'?'Estable · avisos anteriores registrados':'Sistema estable')+
-   ' · PV '+(pv.gatt_ok||0)+' / CH '+(ch.gatt_ok||0)+' GATT · '+d.generated_at;
-  $('diagDetails').textContent=
-   'Versión '+d.firmware+' · funcionamiento '+Math.floor((d.uptime_sec||0)/3600)+' h '+Math.floor((d.uptime_sec||0)%3600/60)+' min'+
-   '\nPez Verde '+(pv.gatt_ok||0)+' OK / '+(pv.errors||0)+' errores · Chihiros '+(ch.gatt_ok||0)+' OK / '+(ch.errors||0)+' errores'+
-   '\nRetornos My Chihiros '+(live.return_ok||0)+' correctos / '+(live.return_failed||0)+' fallidos'+
-   '\nWi-Fi '+(net.home_wifi_connected?'conectada':'desconectada')+', caídas '+(net.wifi_disconnects||0)+
-   '\nRAM '+Math.round((sys.heap_free||0)/1024)+' KB · mínima '+Math.round((sys.heap_minimum||0)/1024)+' KB'+
-   '\nMuestras cada 15 min '+(daily.samples||0)+' (noche '+(daily.night_samples||0)+')'+
-   '\nAvisos de conexión inicial '+(alerts.historical_soft_timeouts||0)+
-   ' · incidentes persistentes anteriores '+(alerts.historical_persistent_faults||0)+
-   '\nLa confirmación GATT no mide el brillo físico.';
-  return d;
- }catch(e){$('diagState').textContent='Diagnóstico no disponible: '+e.message;throw e}
+  diagRender(d);return d;
+ }catch(e){
+  $('diagIndicator').className='health-indicator warning';
+  $('diagState').textContent='No se puede consultar CIELO';
+  $('diagExplain').textContent='El diagnóstico no está disponible en este momento.';
+  $('diagAdvice').textContent='Comprueba que tu iPhone está en la misma red Wi-Fi que el ATOM y vuelve a intentarlo.';
+  $('diagUpdated').textContent='Sin datos recientes';
+  throw e;
+ }
+}
+async function diagCopyUi(){
+ try{
+  const d=window.cieloMasterSnapshot||await diagLoad(),a=diagFacts(d),n=a.num;
+  const info=[
+   'CIELO · Resumen de diagnóstico',
+   'Versión: '+(d.firmware||'desconocida'),
+   'Estado: '+a.heading,
+   'Tiempo encendido: '+diagDuration(a.up),
+   'Pez Verde '+a.p+' GATT OK / '+n(a.pv.errors)+' errores',
+   'Chihiros '+a.c+' GATT OK / '+n(a.ch.errors)+' errores',
+   'Wi-Fi: '+(a.n.home_wifi_connected?'conectada':'sin conexión o sin datos')+
+    ', cortes '+n(a.n.wifi_disconnects),
+   'RAM: '+(n(a.sy.heap_free)/1024).toFixed(1)+' KB',
+   'Muestras: '+n(d.daily_monitoring?.samples),
+   'Avisos históricos BLE: '+n(a.al.historical_soft_timeouts),
+   'Recomendación: '+a.advice
+  ].join('\n');
+  if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(info);
+  else{
+   const t=document.createElement('textarea');t.value=info;t.style.position='fixed';t.style.opacity='0';
+   document.body.appendChild(t);t.select();
+   if(!document.execCommand('copy'))throw Error('Copia bloqueada por el navegador');
+   t.remove();
+  }
+  toast('Resumen copiado, puedes pegarlo en ChatGPT');
+ }catch(e){toast('No se pudo copiar el resumen: '+e.message)}
 }
 async function diagViewUi(){
  try{
@@ -938,7 +1075,7 @@ function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()
 document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;$('cieloPauseAll').onclick=cieloPauseAllUi;
 $('diagView').onclick=diagViewUi;
 $('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1','_blank');
-$('serviceRefresh').onclick=serviceRefresh;
+$('serviceRefresh').onclick=serviceRefresh;$('diagCopy').onclick=diagCopyUi;
 $('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;
 try{const key=localStorage.getItem('cieloOtaKey');if(key){$('otaSecret').value=key;$('otaRemember').checked=true}}catch(_){};
 $('labGuided').onclick=labGuided;
