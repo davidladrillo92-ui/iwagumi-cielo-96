@@ -832,6 +832,34 @@ static bool physicalOtaGrant(){
  return CIELO_ENABLE_OTA && !rescueOpen && WiFi.status()==WL_CONNECTED &&
         otaPhysicalUntil && (int32_t)(otaPhysicalUntil-millis())>0;
 }
+// OTA preflight: read-only; never manipulates the lamps.
+static bool otaBleHealthy(){
+ return bleReady && !cieloWatchdogTripped &&
+        (millis()-cielo96::ble_last_heartbeat()<15000UL);
+}
+static String otaPreflightReason(){
+ if(!otaBleHealthy())return "Bluetooth sin respuesta; OTA bloqueada para proteger las luces";
+ if(!currentBootMarkedHealthy)return "Arranque no verificado";
+ if(!timeOK()||!cielo96::profileValid(profile))return "Hora o curvas no validas";
+ if(labTxEnabled()||lab.scanPending||lab.probePending||queue.busy())
+  return "Hay una operacion Bluetooth pendiente";
+ if(cieloChReturnPending||cieloChAwaitResponse)return "Retorno de Chihiros pendiente";
+ return "";
+}
+static void otaPreflight(){
+ if(rescueOpen)return fail(403,"Rescate solo lectura");
+ const String reason=otaPreflightReason();
+ String j="{\"ok\":true,\"ready\":";
+ j+=reason.length()?"false":"true";
+ j+=",\"reason\":"+jsonQuote(reason);
+ j+=",\"ota_paired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false");
+ j+=",\"physical_permission\":"+String(physicalOtaGrant()?"true":"false");
+ j+=",\"pv_active\":"+String(cieloPvRun?"true":"false");
+ j+=",\"ch_active\":"+String(cieloChRun?"true":"false");
+ j+=",\"return_pending\":"+String(cieloChReturnPending?"true":"false");
+ j+=",\"ble_heartbeat_age_ms\":"+String(millis()-cielo96::ble_last_heartbeat())+"}";
+ jsonSend(200,j);
+}
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
@@ -1176,6 +1204,7 @@ static void configureRoutes(){
  });
  srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
+ srv.on("/api/ota/preflight",HTTP_GET,otaPreflight);
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
  srv.on("/api/ota/upload",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
