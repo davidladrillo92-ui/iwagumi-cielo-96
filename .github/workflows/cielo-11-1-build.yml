@@ -52,6 +52,7 @@ jobs:
           path: dist/
           if-no-files-found: error
       - name: Guardar símbolos de depuración y mapa
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: CIELO_STACKFIX1_DEBUG_ELF_MAP
@@ -59,4 +60,4 @@ jobs:
             .pio/build/atoms3_lite_c124/firmware.elf
             .pio/build/atoms3_lite_c124/firmware.map
             dist/STACK_REPORT.json
-          if-no-files-found: error
+          if-no-files-found: warn

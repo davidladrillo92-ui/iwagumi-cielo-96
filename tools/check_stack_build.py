@@ -8,7 +8,7 @@ root=Path('.pio/build/atoms3_lite_c124');elf=root/'firmware.elf'
 nms=list((Path.home()/'.platformio/packages').rglob('xtensa-esp32s3-elf-nm'))
 if not nms:raise SystemExit('No se localiza nm de ESP32-S3')
 symbols=subprocess.check_output([str(nms[0]),'-C',str(elf)],text=True)
-match=re.search(r'^([0-9a-fA-F]+)\s+T\s+getArduinoLoopTaskStackSize$',symbols,re.M)
+match=re.search(r'^([0-9a-fA-F]+)\s+T\s+getArduinoLoopTaskStackSize(?:\(\))?$',symbols,re.M)
 if not match:raise SystemExit('La reserva loopTask no tiene override fuerte enlazado')
 source=Path('src/main.cpp').read_text()
 if 'CIELO_LOOP_STACK_BYTES=32768' not in source or 'SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES)' not in source:
