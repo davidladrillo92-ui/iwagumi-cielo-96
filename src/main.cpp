@@ -1783,7 +1783,14 @@ static void bleTick(){
     queue.complete(cmd.sequence,false,now);
     lab.txBlocked++;record("LAB_TX_BLOQUEADA","Cola BLE abortada: autorizacion caducada");
   }else if(!cielo96::ble_dispatch(cmd)){
-    queue.complete(cmd.sequence,false,now);record("BLE_COLA_LLENA","No se envio comando al worker");
+    queue.complete(cmd.sequence,false,now);
+    if(pvOffObligation && pvOffInFlightSeq==cmd.sequence){
+     pvOffInFlightSeq=0;pvOffFailures++;
+     pvOffNextTry=now+cielo96::safety::offRetryDelayMs(pvOffFailures);
+     pvSafety=PvSafetyState::OffRetrying;
+     record("PV_POWER_OFF_REINTENTO","Cola BLE rechazada: apagado sigue pendiente");
+    }
+    record("BLE_COLA_LLENA","No se envio comando al worker");
   }
  }
 }
