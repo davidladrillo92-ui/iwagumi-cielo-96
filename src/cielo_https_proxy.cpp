@@ -2,7 +2,6 @@
 #include <esp_https_server.h>
 #include <esp_system.h>
 #include <mbedtls/pk.h>
-#include <mbedtls/pkwrite.h>
 #include <mbedtls/ecp.h>
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/x509.h>
