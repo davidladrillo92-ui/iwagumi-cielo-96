@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include "cielo_ui.h"
-const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
+const char CIELO_UI[] PROGMEM = R"CIELOUI_96<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#101213"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Cielo"><meta name="description" content="IWAGUMI CIELO · Iluminación del acuario">
@@ -94,7 +94,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 <p id="chNightMetrics" class="note">Control RGB en vivo, también durante la noche.</p>
 <details class="curveHelper"><summary>Emergencia y más información</summary>
 <p>CIELO mantiene el control día y noche. Si falla la conexión, registra el problema e intenta devolver Chihiros a My Chihiros. Sin alimentación no puede enviar órdenes.</p>
-<div class="liveButtons"><button id="chNightOff">Volver a My Chihiros</button><button id="cieloPauseAll">Pausar ambas</button></div></details>
+<details class="emergencyControls"><summary>Emergencia · controles excepcionales</summary><p class="note">Solo si las luces no responden. No es necesario pausar para actualizar.</p><div class="liveButtons"><button id="chNightOff">Devolver control a My Chihiros</button><button id="cieloPauseAll">Detener control de ambas</button></div></details></details>
 </section>
 <p class="note" id="pez95DefaultNote">Pez Verde usa por defecto el cielo intenso: amanecer magenta, anochecer dorado/cobre y luna azul. Puedes editar la curva cuando queramos afinarla; no hay que aplicar un perfil aparte.</p>
 <input type="file" accept=".json,application/json" id="importFile" hidden>
@@ -838,6 +838,15 @@ async function serviceCopy(onlyErrors){
  }catch(e){toast(e.message+' · prueba Descargar historial')}
 }
 
+async function otaPreflightUi(){
+ try{
+  const r=await fetch('/api/ota/preflight',{cache:'no-store'});
+  if(!r.ok)throw Error('No se pudo comprobar el estado del ATOM');
+  const d=await r.json();
+  if(!d.ready){toast('Actualización detenida: '+(d.reason||'revisión necesaria'));return false;}
+  return true;
+ }catch(e){toast('No se puede verificar si es seguro actualizar: '+e.message);return false;}
+}
 async function otaPairUi(){
  const key=$('otaSecret').value;
  if(key.length<12||key.length>64)return toast('Clave: de 12 a 64 caracteres');
@@ -889,7 +898,8 @@ async function otaInstallUi(){
  if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Selecciona el firmware .bin');
  if(file.size<500000||file.size>0x330000)return toast('El tamaño del BIN no es compatible');
  if(key.length<12)return toast('Indica tu clave privada OTA');
- if(!confirm('Primero PAUSA las curvas de CIELO desde Curvas → Emergencia. Selecciona solo BIN oficial del proyecto. Después pulsa el botón del ATOM durante 3–7 segundos. ¿Continuar?'))return;
+ if(!await otaPreflightUi())return;
+ if(!confirm('Comprobación Bluetooth superada. Esta versión todavía requiere detener las curvas y autorizar la actualización con el botón del ATOM durante 3–7 segundos. ¿Continuar?'))return;
  $('otaInstall').disabled=true;
  const output=$('otaState'),progress=$('otaProgress');
  progress.value=0;progress.hidden=false;
