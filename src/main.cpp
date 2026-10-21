@@ -1059,6 +1059,11 @@ static void authSessionClose(){
 }
 // Todas las escrituras usan sesion temporal de RAM. Emparejar la primera
 // clave es la unica excepcion y exige boton fisico + conexion HTTPS.
+static bool requirePrivateRead(){
+ if(!requireHttpsRead())return false;
+ if(!sessionValid()){fail(401,"Consulta privada: abre sesion para leer el Informe Maestro completo");return false;}
+ return true;
+}
 static bool requireAdminWrite(){
  if(srv.client().remoteIP()!=IPAddress(127,0,0,1)){
   fail(426,"Usa HTTPS para modificar CIELO; HTTP permite solo diagnostico");return false;
@@ -1463,9 +1468,9 @@ static void configureRoutes(){
  srv.on("/api/auth/status",HTTP_GET,[]{if(!requireHttpsRead())return;
   jsonSend(200,String("{\"authenticated\":")+String(sessionValid()?"true":"false")+"}");});
  srv.on("/api/status",HTTP_GET,[]{if(requireHttpsRead())statusJson();});
- srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(!requireHttpsRead())return;if(srv.hasArg("download"))srv.sendHeader("Content-Disposition",srv.hasArg("share")?"attachment; filename=\"CIELO_INFORME_COMPARTIBLE.json\"":"attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
- srv.on("/api/service/report",HTTP_GET,[]{if(requireHttpsRead())diagnosticJson();});
- srv.on("/api/lab/status",HTTP_GET,[]{if(requireHttpsRead())jsonSend(200,labJson());});
+ srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(!requireHttpsRead())return;if(!srv.hasArg("share")&&!requirePrivateRead())return;if(srv.hasArg("download"))srv.sendHeader("Content-Disposition",srv.hasArg("share")?"attachment; filename=\"CIELO_INFORME_COMPARTIBLE.json\"":"attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
+ srv.on("/api/service/report",HTTP_GET,[]{if(requireHttpsRead()&&(srv.hasArg("share")||requirePrivateRead()))diagnosticJson();});
+ srv.on("/api/lab/status",HTTP_GET,[]{if(requirePrivateRead())jsonSend(200,labJson());});
  srv.on("/api/lab/start",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   if(lab.scanPending)return fail(409,"Termina primero el escaneo BLE");
@@ -1688,7 +1693,7 @@ static void configureRoutes(){
   record("WIFI_BUSQUEDA","Escaneo asincrono a peticion del usuario, no modifica red actual");
   ok();
  });
- srv.on("/api/wifi/networks",HTTP_GET,[]{if(!requireHttpsRead())return;
+ srv.on("/api/wifi/networks",HTTP_GET,[]{if(!requirePrivateRead())return;
   const int count=WiFi.scanComplete();
   String j="{\"pending\":"+String(count==-1?"true":"false")+",\"ssid\":"+jsonQuote(WiFi.SSID());
   j+=",\"ip\":"+jsonQuote(WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():"");

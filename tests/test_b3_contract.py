@@ -24,12 +24,15 @@ assert 'authNextAttempt=now+1000UL' in src and 'authLockUntil=now+120000UL' in s
 # Port 80 must NOT expose passwords, private reports, SSID and browser write controls.
 for mark in ('srv.on("/api/status",HTTP_GET,[]{if(requireHttpsRead())statusJson();});',
              'srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(!requireHttpsRead())return;',
-             'srv.on("/api/wifi/networks",HTTP_GET,[]{if(!requireHttpsRead())return;'):
+             'srv.on("/api/wifi/networks",HTTP_GET,[]{if(!requirePrivateRead())return;'):
     assert mark in src, mark
 assert 'sameOrigin(origin.c_str(),host.c_str())' in https
 assert 'safeFetchSite(site.c_str())' in https
 assert 'X-Frame-Options' in https and 'Referrer-Policy' in https
 assert 'Nombre Wi-Fi contiene caracteres de control' in src
+assert 'srv.hasArg("share")&&!requirePrivateRead()' in src
+assert 'srv.on("/api/wifi/networks",HTTP_GET,[]{if(!requirePrivateRead())return;' in src
+assert "?share=1" in ui
 assert 'cieloEscapeHtml(d.homeSsid' in ui
 # OTA: physical gate + BLE preflight + cryptographic signature BEFORE boot partition flips.
 assert 'physicalOtaGrant() && currentBootMarkedHealthy' in src

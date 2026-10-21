@@ -199,6 +199,7 @@ async function api(path,data){
  if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');
  const write=!!data,pair=path==='/api/ota/pair';
  const opt={cache:'no-store',credentials:'same-origin'};
+ if(!write&&cieloSessionToken)opt.headers={'X-Cielo-Session':cieloSessionToken};
  if(write){
   opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};
   if(pair)opt.headers['X-Cielo-Key']=$('otaSecret')?.value||'';
@@ -809,7 +810,11 @@ function diagRender(d){
 }
 async function diagLoad(){
  try{
-  const r=await fetch('/api/diagnostico/maestro',{cache:'no-store'});
+  // Compartible por defecto; el informe privado exige sesión y contraseña.
+  const privateReport=!!($('otaSecret')?.value||cieloSessionToken);
+  const token=privateReport?await cieloEnsureSession():'';
+  const r=await fetch(privateReport?'/api/diagnostico/maestro':'/api/diagnostico/maestro?share=1',
+   {cache:'no-store',headers:token?{'X-Cielo-Session':token}:{}});
   if(!r.ok)throw Error('HTTP '+r.status);
   const d=await r.json();window.cieloMasterSnapshot=d;
   diagRender(d);
@@ -875,7 +880,7 @@ async function serviceRefresh(){
 }
 async function serviceCopy(onlyErrors){
  try{
-  const res=await fetch('/api/service/report'+(onlyErrors?'?errors=1':''),{cache:'no-store'});
+  const res=await fetch('/api/service/report?share=1'+(onlyErrors?'&errors=1':''),{cache:'no-store'});
   if(!res.ok)throw Error('No hay informe');
   const txt=await res.text();
   if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(txt);}
@@ -1190,7 +1195,18 @@ async function cancelContrast(){
 function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>nav(b.dataset.view));document.querySelectorAll('[data-lamp]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.lamp);state.editIndex=0;pointEditor(b.dataset.lamp)});
 document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;$('cieloPauseAll').onclick=cieloPauseAllUi;
 $('diagView').onclick=diagViewUi;
-$('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1','_blank');
+$('diagDownload').onclick=async()=>{
+ try{
+  const full=!!($('otaSecret')?.value||cieloSessionToken);
+  const token=full?await cieloEnsureSession():'';
+  const res=await fetch(full?'/api/diagnostico/maestro?download=1':'/api/diagnostico/maestro?share=1&download=1',
+   {cache:'no-store',headers:token?{'X-Cielo-Session':token}:{}});
+  if(!res.ok)throw Error('HTTP '+res.status);
+  const u=URL.createObjectURL(await res.blob()),a=document.createElement('a');
+  a.href=u;a.download=full?'CIELO_INFORME_PRIVADO.json':'CIELO_INFORME_COMPARTIBLE.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(u),1500);
+ }catch(e){toast('No se pudo descargar: '+e.message)}
+};
 $('diagCopy').onclick=diagCopyUi;
 $('diagShare').onclick=()=>window.open('/api/diagnostico/maestro?share=1&download=1','_blank');
 $('otaPair').onclick=otaPairUi;$('otaLogout').onclick=cieloLogoutUi;$('otaInstall').onclick=otaInstallUi;

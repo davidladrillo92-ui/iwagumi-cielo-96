@@ -155,7 +155,7 @@ assert 'id="releaseCh"' not in actual and 'id="releasePv"' not in actual
 assert 'id="curveChEvening"' not in actual
 assert 'function labGuided()' in actual and 'function previewNatural' not in actual
 assert 'function releaseLight' in actual
-assert 'window.open(\'/api/diagnostico/maestro?download=1\'' in actual
+assert "fetch(full?'/api/diagnostico/maestro?download=1'" in actual and "X-Cielo-Session" in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
 import tempfile
 with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as js:
