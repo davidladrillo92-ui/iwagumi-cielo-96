@@ -893,41 +893,71 @@ async function sha256Firmware(file){
  }
  return sha256Local(new Uint8Array(a)); // Safari por HTTP: sin WebCrypto en origen no seguro
 }
+async function otaPost(path,key){
+ const response=await fetch(path,{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'X-Cielo-Key':key}});
+ const body=await response.text();
+ if(!response.ok)throw Error(body||'HTTP '+response.status);
+ try{return JSON.parse(body)}catch{return body}
+}
+async function otaPrepareLights(key){
+ const output=$('otaState');
+ output.textContent='Preparando Bluetooth y cediendo temporalmente las dos pantallas…';
+ await otaPost('/api/ota/prepare',key);
+ const until=Date.now()+54000;
+ while(Date.now()<until){
+  const r=await fetch('/api/ota/prepare/status',{cache:'no-store'});
+  if(!r.ok)throw Error('El ATOM no responde al preparar las luces');
+  const d=await r.json();
+  if(d.reason)output.textContent='Preparación: '+d.reason;
+  if(d.phase==='ready')return;
+  if(d.phase==='failed')throw Error(d.reason||'Preparación detenida por seguridad');
+  await new Promise(resolve=>setTimeout(resolve,900));
+ }
+ throw Error('La preparación superó el tiempo seguro. Revisa el Informe Maestro.');
+}
 async function otaInstallUi(){
  const file=$('otaFile').files?.[0],key=$('otaSecret').value;
  if(!file||!file.name.toLowerCase().endsWith('.bin'))return toast('Selecciona el firmware .bin');
  if(file.size<500000||file.size>0x330000)return toast('El tamaño del BIN no es compatible');
  if(key.length<12)return toast('Indica tu clave privada OTA');
  if(!await otaPreflightUi())return;
- if(!confirm('Comprobación Bluetooth superada. Esta versión todavía requiere detener las curvas y autorizar la actualización con el botón del ATOM durante 3–7 segundos. ¿Continuar?'))return;
+ if(!confirm('CIELO detendrá temporalmente las dos curvas, devolverá Chihiros a su programación guardada y liberará Pez Verde antes de instalar. La autorización física del ATOM seguirá siendo necesaria. ¿Continuar?'))return;
  $('otaInstall').disabled=true;
  const output=$('otaState'),progress=$('otaProgress');
  progress.value=0;progress.hidden=false;
+ let preparationStarted=false;
  try{
-  output.textContent='Calculando integridad SHA-256 del BIN…';
+  output.textContent='Calculando SHA-256 antes de detener las luces…';
   const sha=await sha256Firmware(file);
-  const form=new FormData();form.append('firmware',file,file.name);
+  // La clave se guarda en este iPhone solo si el usuario ha optado expresamente.
   if($('otaRemember')?.checked)try{localStorage.setItem('cieloOtaKey',key)}catch(_){}
-  output.textContent='Preparado. Transfiriendo BIN al ATOM…';
+  preparationStarted=true;
+  await otaPrepareLights(key);
+  const form=new FormData();form.append('firmware',file,file.name);
+  output.textContent='Luces cedidas por Bluetooth. Transfiriendo BIN al ATOM…';
   await new Promise((resolve,reject)=>{
    const x=new XMLHttpRequest();
    x.open('POST','/api/ota/upload',true);
    x.setRequestHeader('X-Cielo-Key',key);
    x.setRequestHeader('X-Cielo-Sha256',sha);
-   x.upload.onprogress=e=>{
-    if(e.lengthComputable){progress.value=Math.min(100,Math.round(e.loaded/e.total*100));
-     output.textContent='Transferencia '+progress.value+' %. A continuación CIELO verificará SHA-256 y reiniciará.';
+   x.upload.onprogress=ev=>{
+    if(ev.lengthComputable){progress.value=Math.min(99,Math.round(ev.loaded/ev.total*99));
+     output.textContent='Transfiriendo '+Math.round(ev.loaded/ev.total*100)+' % · esperando verificación interna';
     }
    };
    x.onload=()=>x.status>=200&&x.status<300?resolve():reject(new Error(x.responseText||'HTTP '+x.status));
-   x.onerror=()=>reject(new Error('Se perdió el enlace con ATOM; comprueba la versión tras reiniciar antes de repetir'));
-   x.ontimeout=()=>reject(new Error('Tiempo agotado; comprueba si ATOM reinició'));
+   x.onerror=()=>reject(new Error('Conexión interrumpida. Comprueba la versión instalada antes de repetir'));
+   x.ontimeout=()=>reject(new Error('Tiempo agotado. Comprueba el estado tras reinicio'));
    x.timeout=120000;x.send(form);
   });
-  output.textContent='Transferencia aceptada. Espera a que ATOM verifique el firmware y reinicie; comprueba después la versión.';
-  toast('Actualización enviada. No cortes alimentación.');
- }catch(e){output.textContent='No se pudo confirmar la actualización: '+e.message;toast('Comprueba la versión antes de repetir')}
- finally{$('otaInstall').disabled=false}
+  progress.value=100;
+  output.textContent='Firmware transferido y aceptado; esperando reinicio. Comprueba después la versión y la salud BLE en Centro.';
+  toast('Transferencia aceptada; verificaremos el arranque después');
+ }catch(e){
+  output.textContent='Actualización no confirmada: '+e.message;
+  if(preparationStarted)try{await otaPost('/api/ota/prepare/cancel',key)}catch(_){}
+  toast('Comprueba las luces y el Informe Maestro antes de repetir');
+ }finally{$('otaInstall').disabled=false}
 }
 async function chiAuroraApply(){
  if(!state.connected)return toast('ATOM desconectado');
