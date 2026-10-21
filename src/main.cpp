@@ -34,7 +34,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC2-SEGURIDAD-OTA";
+static constexpr const char* VERSION="11.1.0-RC3-ACCESO-LAN";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -820,6 +820,23 @@ static bool tokenEqual(){
  prefs.getBytes("ota_sha",stored,32);uint8_t diff=0;
  for(unsigned i=0;i<32;i++)diff|=stored[i]^given[i];return diff==0;
 }
+// Una sola clave local para cambios de curvas, luces, Wi-Fi y OTA.
+// Se conserva la huella OTA existente en NVS: migracion no destructiva.
+// Los cambios requieren cabecera personalizada, que una pagina externa
+// no puede introducir mediante un formulario HTML/CSRF corriente.
+// Pendiente: TLS y KDF con sal por dispositivo; nunca tratar HTTP como cifrado.
+static bool requireAdminWrite(){
+ if(rescueOpen){fail(403,"Rescate es solo lectura");return false;}
+ if(prefs.getBytesLength("ota_sha")!=32){
+  fail(423,"Primero configura la clave privada en Centro > Actualizaciones, con autorizacion fisica");
+  return false;
+ }
+ if(!tokenEqual()){
+  fail(401,"Acceso protegido: introduce la misma clave de CIELO en Centro > Actualizaciones");
+  return false;
+ }
+ return true;
+}
 // Pilot firmware: 3-7 seconds then release starts BLE only when web is available.
 // Holding >=8 sec enters temporary READ-ONLY rescue AP (no secret exposed).
 static void physicalButtonTask(){
@@ -1144,16 +1161,16 @@ static void configureRoutes(){
  srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
  srv.on("/api/service/report",HTTP_GET,diagnosticJson);
  srv.on("/api/lab/status",HTTP_GET,[]{jsonSend(200,labJson());});
- srv.on("/api/lab/start",HTTP_POST,[]{
+ srv.on("/api/lab/start",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   if(lab.scanPending)return fail(409,"Termina primero el escaneo BLE");
   labStart();ok();
  });
- srv.on("/api/lab/stop",HTTP_POST,[]{
+ srv.on("/api/lab/stop",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   lab.running=false;lab.txArmed=false;record("LAB_PARADA","Muestreo y transmision manual detenidos");ok();
  });
- srv.on("/api/lab/scan",HTTP_POST,[]{
+ srv.on("/api/lab/scan",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA bloquea nuevos escaneos BLE");
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
@@ -1162,7 +1179,7 @@ static void configureRoutes(){
   if(!cielo96::ble_scan_request()){lab.scanRejects++;return fail(503,"Cola de escaneos no disponible");}
   lab.scanRequests++;lab.scanPending=true;lab.scanStartedMs=millis();record("LAB_SCAN_START","Escaneo BLE activo 5s; sin conectar ni escribir GATT");ok();
  });
- srv.on("/api/lab/probe",HTTP_POST,[]{
+ srv.on("/api/lab/probe",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA bloquea sondas BLE");
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
@@ -1178,7 +1195,7 @@ static void configureRoutes(){
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
  srv.on("/api/cielo/v4/status",HTTP_GET,[]{jsonSend(200,cieloModeJson());});
- srv.on("/api/cielo/v4/start",HTTP_POST,[]{
+ srv.on("/api/cielo/v4/start",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA preparando o instalando");
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
@@ -1203,7 +1220,7 @@ static void configureRoutes(){
   record("V5_24H_ACTIVADA","Curvas activas 24h: PV 27, CH 21, RGB cero nocturno, heartbeat 5min");
   ok();
  });
- srv.on("/api/cielo/v4/return",HTTP_POST,[]{
+ srv.on("/api/cielo/v4/return",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA preparando o instalando");
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
@@ -1217,7 +1234,7 @@ static void configureRoutes(){
   record("V4_BOTON_MYCHIHIROS","Pez Verde sigue usando Natural V4 si estaba activa");
   ok();
  });
- srv.on("/api/cielo/v4/pause",HTTP_POST,[]{
+ srv.on("/api/cielo/v4/pause",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA ya gestiona las luces: no pulses pausa");
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
@@ -1229,7 +1246,7 @@ static void configureRoutes(){
   record("V4_PAUSA_TOTAL","Pez Verde queda en su ultimo estado; sin nuevos envios de CIELO");
   ok();
  });
- srv.on("/api/chihiros/contrast/start",HTTP_POST,[]{
+ srv.on("/api/chihiros/contrast/start",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(cieloPvRun||cieloChRun)return fail(409,"Pausa Natural V4 antes de ejecutar contrastes");
   if(srv.arg("confirm")!="ENSAYO_30_30_30")return fail(403,"Confirmacion necesaria");
@@ -1248,7 +1265,7 @@ static void configureRoutes(){
   record("CH_CONTRASTE_INICIO","Se solicita 30/30/30 y se espera confirmacion visual del usuario");
   ok();
  });
- srv.on("/api/chihiros/contrast/cancel",HTTP_POST,[]{
+ srv.on("/api/chihiros/contrast/cancel",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(queue.busy()||contrastStage==1||contrastStage==4)
    return fail(409,"Espera a que termine el envío Bluetooth antes de cancelar");
@@ -1258,7 +1275,7 @@ static void configureRoutes(){
   record("CH_CONTRASTE_ABORTADO","Ensayo cancelado: recuperar desde My Chihiros si es necesario");
   ok();
  });
- srv.on("/api/chihiros/my-curve-test",HTTP_POST,[]{
+ srv.on("/api/chihiros/my-curve-test",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(!bleReady || !labTxEnabled())return fail(423,"Bluetooth no preparado o ensayo sin autorizacion de 90 segundos");
   if(srv.arg("confirm")!="PROBAR_CURVA_MY_CHIHIROS")return fail(403,"Se requiere confirmacion explicita");
@@ -1272,7 +1289,7 @@ static void configureRoutes(){
   record("CH_CURVA_MYCH_ENSAYO","0x05 [03 FF FF] seleccion curva personalizada; no modifica los puntos; NO probado opticamente");
   ok();
  });
- srv.on("/api/ble/release",HTTP_POST,[]{
+ srv.on("/api/ble/release",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(!bleReady)return fail(423,"Bluetooth aun no inicializado");
   if(queue.busy()||lab.probePending||lab.scanPending)return fail(409,"Espera a que termine la operacion Bluetooth");
@@ -1285,7 +1302,7 @@ static void configureRoutes(){
   record("BLE_CEDER",device+" liberacion solicitada sin ordenes RGB");
   ok();
  });
- srv.on("/api/lab/preview",HTTP_POST,[]{
+ srv.on("/api/lab/preview",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(cieloPvRun||cieloChRun)return fail(409,"Pausa Natural V4 antes del modo laboratorio");
   if(!labTxEnabled()||srv.arg("confirm")!="ENSAYO_CURVA")return fail(423,"Autoriza primero el ensayo de curva (90 s)");
@@ -1310,7 +1327,7 @@ static void configureRoutes(){
   }else return fail(400,"Pantalla no valida");
   ok();
  });
- srv.on("/api/lab/tx/arm",HTTP_POST,[]{
+ srv.on("/api/lab/tx/arm",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   if(cieloPvRun||cieloChRun)return fail(409,"Primero pausa el modo Natural V4");
   if(srv.arg("confirm")!="HABILITAR_MANUAL")return fail(403,"Confirmacion explicita requerida");
@@ -1318,10 +1335,10 @@ static void configureRoutes(){
   lab.txArmed=true;lab.txUntil=millis()+LAB_TX_WINDOW_MS;lab.txArmCount++;
   record("LAB_TX_ARMADA","Solo ordenes manuales 90 segundos; scheduler desconectado");ok();
  });
- srv.on("/api/lab/tx/disarm",HTTP_POST,[]{
+ srv.on("/api/lab/tx/disarm",HTTP_POST,[]{if(!requireAdminWrite())return;
   lab.txArmed=false;record("LAB_TX_DESARMADA","Transmision manual bloqueada");ok();
  });
- srv.on("/api/lab/browser-sample",HTTP_POST,[]{
+ srv.on("/api/lab/browser-sample",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   unsigned count=0,avg=0,maximum=0;
   if(!parseBoundedUInt(srv.arg("count"),count,40)||count<1||
@@ -1332,27 +1349,27 @@ static void configureRoutes(){
   record("LAB_HTTP","Latencia desde navegador media "+String(avg)+" ms max "+String(maximum)+" ms");ok();
  });
  srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false")+",\"otaGrantSeconds\":"+String(physicalOtaGrant()?(otaPhysicalUntil-millis())/1000UL:0)+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
- srv.on("/api/clock",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
+ srv.on("/api/clock",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
    // epoch exceeds minute parser max, parse separately with strict digits
    String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
    for(unsigned i=0;i<s.length();i++)if(s[i]<'0'||s[i]>'9')return fail(400,"Epoch incorrecto");
    unsigned long long val=strtoull(s.c_str(),nullptr,10);if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
    struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
   }return fail(400,"Epoch demasiado corto");});
- srv.on("/api/save",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,false);});
- srv.on("/api/reset",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,true);});
- srv.on("/api/chihiros/curve",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,false);});
- srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,true);});
- srv.on("/api/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualPv();});
- srv.on("/api/chihiros/manual",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");manualCh();});
- srv.on("/api/chihiros/stop",HTTP_POST,[]{
+ srv.on("/api/save",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,false);});
+ srv.on("/api/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,true);});
+ srv.on("/api/chihiros/curve",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,false);});
+ srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,true);});
+ srv.on("/api/manual",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");manualPv();});
+ srv.on("/api/chihiros/manual",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");manualCh();});
+ srv.on("/api/chihiros/stop",HTTP_POST,[]{if(!requireAdminWrite())return;
   record("CH_AUTO_INSEGURO","Solicitud rechazado: 0x12 activa escenas y produjo apagado fisico");
   return fail(423,"AUTO Chihiros bloqueado: el modo 0x12 apaga DYSL60; restaura desde My Chihiros");
  });
- srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; usa Laboratorio para AUTO manual");});
- srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; activacion pendiente de pruebas opticas");});
- srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Usa Laboratorio con autorizacion para AUTO manual");});
- srv.on("/api/wifi/scan",HTTP_POST,[]{
+ srv.on("/api/chihiros/evening/off",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; usa Laboratorio para AUTO manual");});
+ srv.on("/api/chihiros/evening/on",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Programador detenido en R4.4; activacion pendiente de pruebas opticas");});
+ srv.on("/api/chihiros/live/stop",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");return fail(423,"Usa Laboratorio con autorizacion para AUTO manual");});
+ srv.on("/api/wifi/scan",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(queue.busy()||otaBusy)return fail(409,"Espera al final de la transmision o actualizacion");
   WiFi.scanDelete();
@@ -1375,8 +1392,8 @@ static void configureRoutes(){
   }
   j+="]}";jsonSend(200,j);
  });
- srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
- srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
+ srv.on("/api/wifi",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
+ srv.on("/api/wifi/forget",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
  srv.on("/api/ota/preflight",HTTP_GET,otaPreflight);
  srv.on("/api/ota/prepare",HTTP_POST,otaPrepare);
  srv.on("/api/ota/prepare/status",HTTP_GET,otaPrepareStatus);
