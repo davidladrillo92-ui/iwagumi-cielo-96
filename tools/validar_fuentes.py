@@ -48,7 +48,7 @@ for guarded in ('static void submitPv(', 'static void submitCh('):
 assert 'lab_manual' in code and 'LAB_TX_BLOQUEADA' in code
 assert 'ble_scan_request()' in code and 'ble_scan_result(result)' in code
 assert 'lab.running' in code and 'profileValid(profile)' in code
-assert 'j+=",\\\"lab\\\":"+labJson();' in code
+assert 'srv.hasArg("share")?String("null"):labJson()' in code
 assert 'LAB_TX_WINDOW_MS=90000UL' in code
 assert 'parseBoundedUInt(srv.arg("avg"),avg,60000)' in code
 assert 'parseBoundedUInt(srv.arg("max"),maximum,60000)' in code
