@@ -186,6 +186,19 @@ static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
 static bool otaBusy=false,otaAllowed=false,otaSuccess=false,otaError=false;
+// OTA protegida: PREPARAR -> CEDER AMBAS -> SUBIR -> VALIDAR -> REINICIAR.
+// Nunca llamar BLE desde una peticion HTTP; solo se encolan operaciones.
+enum class OtaPhase : uint8_t { Idle, Preparing, Ready, Uploading, Completed, Failed };
+struct OtaTransaction {
+ OtaPhase phase=OtaPhase::Idle;
+ uint32_t started=0;
+ bool wasPv=false,wasCh=false,wasAlwaysOn=false;
+ bool returnAsked=false,releaseAsked=false;
+ String reason="Sin preparacion OTA";
+};
+static OtaTransaction otaTxn{};
+static void otaPreparationTick();
+static void otaAbortPreparation(const char* reason);
 static char otaExpectedSha[65]{};
 static mbedtls_sha256_context otaDigest;
 static bool otaDigestStarted=false;
@@ -870,6 +883,115 @@ static void otaPreflight(){
  j+=",\"ble_device\":"+String(bleSnap.device)+"}";
  jsonSend(200,j);
 }
+static void otaResumePreviousControl(){
+ // Solo reanudar al cancelar o fallar si BLE es utilizable. No inventar
+ // confirmacion optica de la Chihiros.
+ if(!otaBleHealthy()||!timeOK()||!cielo96::profileValid(profile)||
+    cieloChReturnPending||cieloChAwaitResponse||customResumePending){
+  record("OTA_REANUDACION_MANUAL","No es seguro reanudar: verificar My Chihiros en su app");
+  return;
+ }
+ cieloAlwaysOn=otaTxn.wasAlwaysOn;
+ cieloPvRun=otaTxn.wasPv;
+ cieloChRun=otaTxn.wasCh;
+ if(cieloChRun&&!prefs.putBool("v4_ch_takeover",true)){
+  cieloChRun=false;
+  record("OTA_REANUDACION_PARCIAL","NVS no disponible: Chihiros requiere My Chihiros");
+ }
+ if(cieloAlwaysOn) prefs.putBool("v5_always",true);
+ lastPvDesired=false;lastChDesired=false;lastScheduleAt=millis()-30000UL;
+ record("OTA_CONTROL_REANUDADO","Control previo solicitado (sin confirmacion optica)");
+}
+static void otaAbortPreparation(const char* reason){
+ if(otaTxn.phase==OtaPhase::Uploading||otaTxn.phase==OtaPhase::Completed)return;
+ if(otaTxn.phase==OtaPhase::Idle)return;
+ otaTxn.phase=OtaPhase::Failed;
+ otaTxn.reason=reason;
+ record("OTA_PREPARACION_ABORTADA",otaTxn.reason);
+ otaResumePreviousControl();
+}
+static void otaPreparationTick(){
+ if(otaTxn.phase!=OtaPhase::Preparing&&otaTxn.phase!=OtaPhase::Ready)return;
+ const uint32_t now=millis();
+ if(now-otaTxn.started>90000UL || !physicalOtaGrant()){
+  otaAbortPreparation("Tiempo de preparacion o permiso fisico agotado");return;
+ }
+ if(!otaBleHealthy()){
+  otaAbortPreparation("Bluetooth dejo de responder; verificar My Chihiros");return;
+ }
+ if(otaTxn.phase==OtaPhase::Ready)return;
+ if(queue.busy()||lab.scanPending||lab.probePending||customResumePending ||
+    cieloChAwaitResponse||cieloChReturnPending)return;
+ if(cieloChWasDriven){
+  if(otaTxn.returnAsked){
+   otaAbortPreparation("No se pudo confirmar el retorno GATT de My Chihiros");return;
+  }
+  otaTxn.returnAsked=true;
+  cieloRequestReturn("Actualizacion OTA: ceder Chihiros a My Chihiros");
+  otaTxn.reason="Devolviendo el control personalizado a My Chihiros";
+  return;
+ }
+ if(!otaTxn.releaseAsked){
+  if(!cielo96::ble_release_request(0))return;
+  otaTxn.releaseAsked=true;
+  otaTxn.reason="Liberando la conexion de Pez Verde";
+  return;
+ }
+ if(!cielo96::ble_link_status(0).released_to_app)return;
+ otaTxn.phase=OtaPhase::Ready;
+ otaTxn.reason="Ambas conexiones cedidas; listo para recibir firmware";
+ record("OTA_PREPARADA","Worker libre; Chihiros curva personalizada GATT OK, no verificacion optica");
+}
+static void otaPrepare(){
+ if(!CIELO_ENABLE_OTA)return fail(503,"OTA desactivada");
+ if(rescueOpen)return fail(403,"Rescate solo lectura");
+ if(!tokenEqual())return fail(403,"Clave de actualizacion incorrecta");
+ if(!physicalOtaGrant())return fail(403,"Autoriza desde el boton ATOM 3-7 segundos");
+ if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready ||
+    otaTxn.phase==OtaPhase::Uploading || otaBusy)
+  return fail(409,"Ya existe una preparacion o carga OTA");
+ if(!otaBleHealthy()||!currentBootMarkedHealthy||!timeOK()||
+    !cielo96::profileValid(profile) || !wifiCoexistReady()||
+    labTxEnabled()||lab.scanPending||lab.probePending||
+    customResumePending||cieloChReturnPending||cieloChAwaitResponse)
+  return fail(423,"No es seguro preparar OTA: consulta comprobacion previa");
+ otaTxn=OtaTransaction{};
+ otaTxn.phase=OtaPhase::Preparing;otaTxn.started=millis();
+ otaTxn.wasPv=cieloPvRun;otaTxn.wasCh=cieloChRun;otaTxn.wasAlwaysOn=cieloAlwaysOn;
+ otaTxn.reason="Deteniendo nuevas ordenes y vaciando cola Bluetooth";
+ cieloPvRun=false;cieloChRun=false;
+ // v5_always se conserva para reanudar tras actualizar; no se desactiva en NVS.
+ queue.cancel_pending(cielo::ble::Device::PezVerde);
+ queue.cancel_pending(cielo::ble::Device::Chihiros);
+ record("OTA_PREPARACION","Control detenido temporalmente; se conserva perfil Natural V4");
+ ok();
+}
+static void otaPrepareStatus(){
+ String j="{\"phase\":";
+ const char*phase="idle";
+ switch(otaTxn.phase){
+  case OtaPhase::Preparing:phase="preparing";break;
+  case OtaPhase::Ready:phase="ready";break;
+  case OtaPhase::Uploading:phase="uploading";break;
+  case OtaPhase::Completed:phase="completed";break;
+  case OtaPhase::Failed:phase="failed";break;
+  default:break;
+ }
+ j+=jsonQuote(phase)+",\"reason\":"+jsonQuote(otaTxn.reason);
+ j+=",\"age_ms\":"+String(otaTxn.started?millis()-otaTxn.started:0);
+ j+=",\"ble_ok\":"+String(otaBleHealthy()?"true":"false");
+ j+=",\"return_pending\":"+String(cieloChReturnPending||cieloChAwaitResponse?"true":"false")+"}";
+ jsonSend(200,j);
+}
+static void otaPrepareCancel(){
+ if(!tokenEqual())return fail(403,"No autorizado");
+ if(otaTxn.phase==OtaPhase::Uploading||otaBusy||otaTxn.phase==OtaPhase::Completed)
+  return fail(409,"La instalacion ya esta en curso o completada");
+ if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready)
+  otaAbortPreparation("Cancelada desde iPhone");
+ else if(otaTxn.phase==OtaPhase::Failed)otaResumePreviousControl();
+ ok();
+}
 static void otaPair(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
@@ -897,7 +1019,8 @@ static void startOtaResponse(){
 static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
-  otaAllowed=tokenEqual() && physicalOtaGrant() && currentBootMarkedHealthy &&
+  otaAllowed=otaTxn.phase==OtaPhase::Ready && tokenEqual() &&
+             physicalOtaGrant() && currentBootMarkedHealthy &&
              otaBleHealthy() && !labTxEnabled() && !queue.busy() && !otaBusy &&
              !lab.scanPending && !lab.probePending && !customResumePending &&
              !cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse;
@@ -905,7 +1028,8 @@ static void otaUpload(){
   if(!otaAllowed){
    // Diagnostico explicito: antes se informaba siempre "Clave OTA incorrecta",
    // incluso con clave valida y retorno BLE bloqueado.
-   if(!tokenEqual())lastOtaError="Clave OTA incorrecta";
+   if(otaTxn.phase!=OtaPhase::Ready)lastOtaError="Prepara las pantallas antes de cargar el BIN";
+   else if(!tokenEqual())lastOtaError="Clave OTA incorrecta";
    else if(!physicalOtaGrant())lastOtaError="Permiso fisico OTA caducado o no autorizado";
    else if(!currentBootMarkedHealthy)lastOtaError="Arranque aun no verificado";
    else if(!otaBleHealthy())
@@ -934,7 +1058,9 @@ static void otaUpload(){
    lastOtaError="No se pudo iniciar SHA256";otaError=true;Update.abort();mbedtls_sha256_free(&otaDigest);return;
   }
   otaDigestStarted=true;
-  otaBusy=true;record("OTA_START","BIN manual, SHA256 y autorizacion fisica");
+  otaBusy=true;otaTxn.phase=OtaPhase::Uploading;
+  otaTxn.reason="Recibiendo firmware y comprobando integridad SHA-256";
+  record("OTA_START","BIN local; control de luces temporalmente cedido");
  }else if(upload.status==UPLOAD_FILE_WRITE){
   if(!otaAllowed||otaError)return;
   const esp_partition_t* target=esp_ota_get_next_update_partition(nullptr);
@@ -944,7 +1070,14 @@ static void otaUpload(){
    lastOtaError="Escritura OTA interrumpida o supera la particion";otaError=true;Update.abort();otaDigestStop();
   }else otaBytes+=upload.currentSize;
  }else if(upload.status==UPLOAD_FILE_END){
-  if(!otaAllowed||otaError){otaBusy=false;otaDigestStop();return;}
+  if(!otaAllowed||otaError){
+   otaBusy=false;otaDigestStop();
+   if(otaTxn.phase==OtaPhase::Uploading) {
+    otaTxn.phase=OtaPhase::Ready;
+    otaAbortPreparation(lastOtaError.c_str());
+   }
+   return;
+  }
   if(!otaDigestStarted || mbedtls_sha256_finish_ret(&otaDigest,otaDigestOut)!=0){
    otaError=true;lastOtaError="SHA256 no disponible";Update.abort();otaDigestStop();otaBusy=false;return;
   }
@@ -961,13 +1094,21 @@ static void otaUpload(){
    // garantiza rescate de una imagen que ni siquiera llegue a ejecutar setup().
    prefs.putString("ota_prev",otaRunningPartition);
    prefs.putUChar("ota_attempts",0);
-   otaSuccess=true;lastOtaError="SHA256 coincide y Update acepta el BIN";
+   otaSuccess=true;otaTxn.phase=OtaPhase::Completed;
+   otaTxn.reason="Firmware recibido y verificado por Update; reinicio pendiente";
+   lastOtaError="SHA256 coincide y Update acepta el BIN";
    otaPhysicalUntil=0;
    record("OTA_OK",String("bytes=")+String(otaBytes)+" validado");
   }
   otaBusy=false;
+  if(otaError&&otaTxn.phase==OtaPhase::Uploading){
+   otaTxn.phase=OtaPhase::Ready;otaAbortPreparation(lastOtaError.c_str());
+  }
  }else if(upload.status==UPLOAD_FILE_ABORTED){
   otaError=true;otaBusy=false;lastOtaError="OTA abortada";Update.abort();otaDigestStop();
+  if(otaTxn.phase==OtaPhase::Uploading){
+   otaTxn.phase=OtaPhase::Ready;otaAbortPreparation("Carga OTA interrumpida");
+  }
  }
 }
 static void configureWifi(){
@@ -1216,6 +1357,9 @@ static void configureRoutes(){
  srv.on("/api/wifi",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
  srv.on("/api/ota/preflight",HTTP_GET,otaPreflight);
+ srv.on("/api/ota/prepare",HTTP_POST,otaPrepare);
+ srv.on("/api/ota/prepare/status",HTTP_GET,otaPrepareStatus);
+ srv.on("/api/ota/prepare/cancel",HTTP_POST,otaPrepareCancel);
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
  srv.on("/api/ota/upload",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate solo lectura");
@@ -1562,6 +1706,7 @@ void loop(){
  lightingTask();
  cieloTrendTick();
  labTick();
+ otaPreparationTick();
  tracePhase(TracePhase::Led);statusLedTick();
  tracePhase(TracePhase::Idle);delay(3);
 }
