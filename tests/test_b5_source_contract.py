@@ -42,3 +42,5 @@ print('B5 source contracts: PASS')
 assert 'resetReasonName((esp_reset_reason_t)b.cause)' in s
 assert '(badReset&&!currentBootMarkedHealthy)' in s
 assert 'CIELO_INFORME_COMPARTIBLE.json' in s
+
+assert 'srv.hasArg("share")?String("null"):labJson()' in s
