@@ -170,7 +170,7 @@ static bool cieloAlwaysOn=false,cieloResumePending=false;
 enum class PvSafetyState:uint8_t {Paused,Active,Degraded,OffPending,OffRetrying,OffGattOk};
 static PvSafetyState pvSafety=PvSafetyState::Paused;
 static bool pvOffObligation=false;
-static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffFailures=0,pvRetryNext=0;
+static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
 static uint32_t cieloLastNightSample=0;
@@ -1587,7 +1587,7 @@ static void lightingTask(){
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_OFF_OBLIGATORIO","Consigna cero: POWER OFF prioritario; RGB anterior cancelado");
   }else if(!night && pvOffObligation){
-   pvOffObligation=false;pvOffNextTry=0;pvSafety=PvSafetyState::Active;
+   pvOffObligation=false;pvOffNextTry=0;pvOffInFlightSeq=0;pvSafety=PvSafetyState::Active;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_DIA_REANUDADO","Curva actual recuperada; ningun RGB obsoleto");
   }
@@ -1668,16 +1668,18 @@ static void bleTick(){
   queue.complete(res.sequence,res.success,now);bleResultCount++;
   // Los resultados de la curva Natural V4 no son ACK ópticos.
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
-     (cieloPvRun||cieloChRun||cieloChWasDriven)){
+     (cieloPvRun||cieloChRun||cieloChWasDriven||pvOffObligation)){
    if(res.device==0 && (cieloPvRun||pvOffObligation)){
+    const bool wasOffCommand=pvOffObligation && pvOffInFlightSeq!=0 && pvOffInFlightSeq==res.sequence;
+    if(wasOffCommand)pvOffInFlightSeq=0;
     if(res.success){
      cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;
-     if(pvOffObligation){
+     if(wasOffCommand){
       pvOffLastGatt=now;pvOffFailures=0;pvSafety=PvSafetyState::OffGattOk;
       pvOffNextTry=now+300000UL;
       record("PV_POWER_OFF_GATT_OK","POWER OFF GATT OK; sin verificacion optica");
      }else pvSafety=PvSafetyState::Active;
-    }else if(pvOffObligation){
+    }else if(wasOffCommand){
      ++pvOffFailures;
      const uint32_t backoff=pvOffFailures<2?5000UL:pvOffFailures<4?15000UL:60000UL;
      pvOffNextTry=now+backoff;pvSafety=PvSafetyState::OffRetrying;
@@ -1734,7 +1736,13 @@ static void bleTick(){
     lab.scanPending||lab.probePending)return;
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
-  const bool schedulerPV=cieloPvRun&&cmd.device==cielo::ble::Device::PezVerde&&cmd.action==cielo::ble::Action::Apply;
+  const bool schedulerPV=(cieloPvRun||pvOffObligation)&&cmd.device==cielo::ble::Device::PezVerde&&cmd.action==cielo::ble::Action::Apply;
+  if(schedulerPV && pvOffObligation && cmd.brightness!=0){
+   queue.complete(cmd.sequence,false,now);
+   record("PV_RGB_OBSOLETO_BLOQUEADO","No enviar RGB viejo durante obligacion de apagado");
+   return;
+  }
+  if(schedulerPV && pvOffObligation && cmd.brightness==0)pvOffInFlightSeq=cmd.sequence;
   const bool schedulerCH=cieloChRun&&timeOK()&&
     cmd.device==cielo::ble::Device::Chihiros&&cmd.action==cielo::ble::Action::Apply;
   if(!labTxEnabled()&&!schedulerPV&&!schedulerCH){
