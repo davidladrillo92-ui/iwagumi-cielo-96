@@ -1735,8 +1735,10 @@ static void bleTick(){
  queue.tick(now);
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Web sigue activo; tarea BLE no liberada artificialmente");}
- // Selector My Chihiros 0x03 tiene prioridad sobre cualquier nueva orden RGB.
- if(cieloChReturnPending && !queue.busy() && !customResumePending &&
+ // POWER OFF PV urgente se atiende antes del retorno CH, hasta 3 errores.
+ const bool pvOffFirst=pvOffObligation && pvSafety!=PvSafetyState::OffGattOk &&
+   pvOffFailures<3 && queue.pending(cielo::ble::Device::PezVerde);
+ if(cieloChReturnPending && !pvOffFirst && !queue.busy() && !customResumePending &&
     !lab.scanPending && !lab.probePending &&
     (int32_t)(now-cieloReturnRetryAt)>=0){
    if(cielo96::ble_custom_resume_request()){
@@ -1747,11 +1749,16 @@ static void bleTick(){
     cieloReturnRetryAt=now+2500UL;
    }
  }
- if(cieloChReturnPending||cieloChAwaitResponse||customResumePending||
+ if((cieloChReturnPending && !pvOffFirst)||cieloChAwaitResponse||customResumePending||
     lab.scanPending||lab.probePending)return;
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd)){
   const bool schedulerPV=(cieloPvRun||pvOffObligation)&&cmd.device==cielo::ble::Device::PezVerde&&cmd.action==cielo::ble::Action::Apply;
+  if(cieloChReturnPending && pvOffFirst && cmd.device!=cielo::ble::Device::PezVerde){
+   queue.complete(cmd.sequence,false,now);
+   record("PV_OFF_PRIORIDAD","La orden POWER OFF de Pez Verde precede al retorno My Chihiros");
+   return;
+  }
   if(schedulerPV && cielo96::safety::forbidStaleRgb(pvOffObligation,cmd.brightness)){
    queue.complete(cmd.sequence,false,now);
    record("PV_RGB_OBSOLETO_BLOQUEADO","No enviar RGB viejo durante obligacion de apagado");
