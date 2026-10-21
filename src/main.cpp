@@ -26,6 +26,7 @@
 #include "cielo_ble_queue.h"
 #include "cielo_ble_worker.h"
 #include "cielo_night_safety.h"
+#include "cielo_security_policy.h"
 #include "cielo_diagnostic_policy.h"
 #include "cielo_ui.h"
 
@@ -42,7 +43,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1B5-DIAGNOSTICO";
+static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-SEGURIDAD-R2";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -198,7 +199,7 @@ static const char* chSafetyName(){
  return "CONTROL_CEDIDO";
 }
 static uint32_t pezManualUntil=0,chiManualUntil=0;
-static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaRestarts=0;
+static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaRestarts=0,otaLastChunkAt=0;
 static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
 static uint32_t httpCount=0,bleResultCount=0,bleResultErrors=0,bleSoftTimeouts=0;
 static uint32_t bleSlowCount=0,bleDurationMax=0,wifiFailures=0;
@@ -954,6 +955,42 @@ static bool saveModernAuth(const String&secret){
     prefs.putBytes("auth_pbk",derived,32)!=32)return false;
  return prefs.putBool("auth_v2",true);
 }
+// Sesion efimera, solamente en RAM; se pierde con un reinicio.
+// No hay cookies persistentes, ni clave en URL, ni token en NVS.
+static uint8_t adminSession[32]{};
+static bool adminSessionActive=false;
+static uint32_t adminSessionIssued=0,adminSessionLast=0;
+static uint8_t authFailures=0;
+static uint32_t authLockUntil=0,authNextAttempt=0;
+static constexpr uint32_t SESSION_IDLE_MS=15UL*60UL*1000UL;
+static constexpr uint32_t SESSION_MAX_MS=2UL*60UL*60UL*1000UL;
+static void revokeAdminSession(){
+ memset(adminSession,0,sizeof(adminSession));adminSessionActive=false;
+ adminSessionIssued=0;adminSessionLast=0;
+}
+static int hexDigit(char c){
+ if(c>='0'&&c<='9')return c-'0';
+ if(c>='a'&&c<='f')return c-'a'+10;
+ if(c>='A'&&c<='F')return c-'A'+10;
+ return -1;
+}
+static bool sessionValid(){
+ if(srv.client().remoteIP()!=IPAddress(127,0,0,1)||!adminSessionActive)return false;
+ const uint32_t now=millis();
+ if(!cielo96::security::sessionFresh(adminSessionActive,now,adminSessionIssued,adminSessionLast)){
+  revokeAdminSession();return false;
+ }
+ const String supplied=srv.header("X-Cielo-Session");
+ if(supplied.length()!=64)return false;
+ uint8_t decoded[32];uint8_t invalid=0;
+ for(size_t i=0;i<32;i++){
+  int hi=hexDigit(supplied[i*2]),lo=hexDigit(supplied[i*2+1]);
+  invalid|=(uint8_t)((hi<0)||(lo<0));
+  decoded[i]=(uint8_t)(((hi<0?0:hi)<<4)|(lo<0?0:lo));
+ }
+ if(invalid||!constantTime32(decoded,adminSession))return false;
+ adminSessionLast=now;return true;
+}
 static bool tokenEqual(){
  // La contraseña JAMAS viaja por HTTP en claro por la red: solo bucle
  // interno desde la tarea HTTPS. El puerto 80 conserva diagnóstico de rescate.
@@ -985,6 +1022,48 @@ static bool tokenEqual(){
 // no puede introducir mediante un formulario HTML/CSRF corriente.
 // KDF PBKDF2 migrada. NOTA: HTTP no cifra el canal: las escrituras en red
 // no fiable deben pasar por un terminador TLS validado; no publicar puerto 80.
+static bool requireHttpsRead(){
+ if(srv.client().remoteIP()!=IPAddress(127,0,0,1)){
+  fail(426,"Usa HTTPS (iwagumi-cielo96.local) para consultar datos privados");return false;
+ }
+ return true;
+}
+static void authSessionOpen(){
+ if(!requireHttpsRead())return;
+ if(rescueOpen)return fail(403,"Rescate es solo lectura");
+ if(prefs.getBytesLength("ota_sha")!=32)return fail(423,"Primero configura la clave OTA con el boton fisico");
+ const uint32_t now=millis();
+ if(cielo96::security::retryBefore(now,authLockUntil))
+  return fail(429,"Demasiados intentos. Espera dos minutos antes de autenticarte");
+ if(cielo96::security::retryBefore(now,authNextAttempt))
+  return fail(429,"Espera un segundo antes de otro intento");
+ authNextAttempt=now+1000UL;
+ if(!tokenEqual()){
+  if(authFailures<20)authFailures++;
+  if(authFailures>=6){authFailures=0;authLockUntil=now+120000UL;}
+  record("AUTH_RECHAZADA","Credencial incorrecta. No guardar valores ni IP");
+  return fail(401,"Clave incorrecta; la sesion no se ha abierto");
+ }
+ authFailures=0;authLockUntil=0;
+ esp_fill_random(adminSession,sizeof(adminSession));
+ adminSessionActive=true;adminSessionIssued=now;adminSessionLast=now;
+ const char*hex="0123456789abcdef";char textToken[65];
+ for(size_t i=0;i<32;i++){textToken[2*i]=hex[adminSession[i]>>4];textToken[2*i+1]=hex[adminSession[i]&15];}
+ textToken[64]=0;
+ jsonSend(200,String("{\"session\":")+jsonQuote(textToken)+",\"idle_seconds\":900,\"max_seconds\":7200}");
+}
+static void authSessionClose(){
+ if(!requireHttpsRead())return;
+ if(!sessionValid())return fail(401,"La sesion ya no es valida");
+ revokeAdminSession();ok();
+}
+// Todas las escrituras usan sesion temporal de RAM. Emparejar la primera
+// clave es la unica excepcion y exige boton fisico + conexion HTTPS.
+static bool requirePrivateRead(){
+ if(!requireHttpsRead())return false;
+ if(!sessionValid()){fail(401,"Consulta privada: abre sesion para leer el Informe Maestro completo");return false;}
+ return true;
+}
 static bool requireAdminWrite(){
  if(srv.client().remoteIP()!=IPAddress(127,0,0,1)){
   fail(426,"Usa HTTPS para modificar CIELO; HTTP permite solo diagnostico");return false;
@@ -994,8 +1073,8 @@ static bool requireAdminWrite(){
   fail(423,"Primero configura la clave privada en Centro > Actualizaciones, con autorizacion fisica");
   return false;
  }
- if(!tokenEqual()){
-  fail(401,"Acceso protegido: introduce la misma clave de CIELO en Centro > Actualizaciones");
+ if(!sessionValid()){
+  fail(401,"Sesion caducada: vuelve a autenticarte en Centro > Actualizaciones");
   return false;
  }
  return true;
@@ -1048,12 +1127,19 @@ static bool otaBleHealthy(){
         (!snap.in_operation||snap.phase_age_ms<15000UL);
 }
 static String otaPreflightReason(){
+ if(!cielo96::https_ready())return "HTTPS no disponible; revisar certificado o acceso desde Safari";
  if(!otaBleHealthy())return "Bluetooth sin respuesta; revisa fase BLE del Informe Maestro";
- if(!currentBootMarkedHealthy)return "Arranque no verificado";
+ if(!currentBootMarkedHealthy){
+  if(millis()-bootMs<180000UL)
+   return String("Arranque en observacion: faltan ")+String((180000UL-(millis()-bootMs)+999UL)/1000UL)+" segundos";
+  return "Arranque sin validacion: consulta el Informe Maestro";
+ }
  if(!timeOK()||!cielo96::profileValid(profile))return "Hora o curvas no validas";
  if(labTxEnabled()||lab.scanPending||lab.probePending||queue.busy())
   return "Hay una operacion Bluetooth pendiente";
  if(cieloChReturnPending||cieloChAwaitResponse)return "Retorno de Chihiros pendiente";
+ if(pvOffObligation && pvSafety!=PvSafetyState::OffGattOk)
+  return "Pez Verde tiene POWER OFF nocturno pendiente; espera GATT o usa su app";
  return "";
 }
 static void otaPreflight(){
@@ -1063,7 +1149,9 @@ static void otaPreflight(){
  j+=reason.length()?"false":"true";
  j+=",\"reason\":"+jsonQuote(reason);
  j+=",\"ota_paired\":"+String(prefs.getBytesLength("ota_sha")==32?"true":"false");
+ j+=",\"boot_observation_remaining_s\":"+String(!currentBootMarkedHealthy && millis()-bootMs<180000UL?(180000UL-(millis()-bootMs)+999UL)/1000UL:0);
  j+=",\"physical_permission\":"+String(physicalOtaGrant()?"true":"false");
+ j+=",\"physical_remaining_s\":"+String(physicalOtaGrant()?(otaPhysicalUntil-millis())/1000UL:0);
  j+=",\"pv_active\":"+String(cieloPvRun?"true":"false");
  j+=",\"ch_active\":"+String(cieloChRun?"true":"false");
  j+=",\"return_pending\":"+String(cieloChReturnPending?"true":"false");
@@ -1071,7 +1159,8 @@ static void otaPreflight(){
  j+=",\"ble_heartbeat_age_ms\":"+String(bleSnap.heartbeat_age_ms);
  j+=",\"ble_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(bleSnap.phase));
  j+=",\"ble_phase_age_ms\":"+String(bleSnap.phase_age_ms);
- j+=",\"ble_device\":"+String(bleSnap.device)+"}";
+ j+=",\"ble_device\":"+String(bleSnap.device);
+ j+=",\"ota_boot_recovery\":\"app_rollback_when_setup_runs\"}";
  jsonSend(200,j);
 }
 static void otaResumePreviousControl(){
@@ -1137,7 +1226,7 @@ static void otaPreparationTick(){
 static void otaPrepare(){
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA desactivada");
  if(rescueOpen)return fail(403,"Rescate solo lectura");
- if(!tokenEqual())return fail(403,"Clave de actualizacion incorrecta");
+ if(!requireAdminWrite())return;
  if(!physicalOtaGrant())return fail(403,"Autoriza desde el boton ATOM 3-7 segundos");
  if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready ||
     otaTxn.phase==OtaPhase::Uploading || otaBusy)
@@ -1176,7 +1265,7 @@ static void otaPrepareStatus(){
  jsonSend(200,j);
 }
 static void otaPrepareCancel(){
- if(!tokenEqual())return fail(403,"No autorizado");
+ if(!requireAdminWrite())return;
  if(otaTxn.phase==OtaPhase::Uploading||otaBusy||otaTxn.phase==OtaPhase::Completed)
   return fail(409,"La instalacion ya esta en curso o completada");
  if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready)
@@ -1185,6 +1274,7 @@ static void otaPrepareCancel(){
  ok();
 }
 static void otaPair(){
+ if(!requireHttpsRead())return;
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA bloqueada en version experimental");
  if(srv.client().remoteIP()!=IPAddress(127,0,0,1))return fail(426,"El alta de clave requiere HTTPS");
  if(prefs.getBytesLength("ota_sha")==32)return fail(409,"La clave OTA ya esta configurada");
@@ -1241,7 +1331,7 @@ static void startOtaResponse(){
 static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
-  otaAllowed=otaTxn.phase==OtaPhase::Ready && tokenEqual() &&
+  otaAllowed=otaTxn.phase==OtaPhase::Ready && sessionValid() &&
              physicalOtaGrant() && currentBootMarkedHealthy &&
              otaBleHealthy() && !labTxEnabled() && !queue.busy() && !otaBusy &&
              !lab.scanPending && !lab.probePending && !customResumePending &&
@@ -1251,7 +1341,7 @@ static void otaUpload(){
    // Diagnostico explicito: antes se informaba siempre "Clave OTA incorrecta",
    // incluso con clave valida y retorno BLE bloqueado.
    if(otaTxn.phase!=OtaPhase::Ready)lastOtaError="Prepara las pantallas antes de cargar el BIN";
-   else if(!tokenEqual())lastOtaError="Clave OTA incorrecta";
+   else if(!sessionValid())lastOtaError="Sesion caducada: vuelve a autenticarte";
    else if(!physicalOtaGrant())lastOtaError="Permiso fisico OTA caducado o no autorizado";
    else if(!currentBootMarkedHealthy)lastOtaError="Arranque aun no verificado";
    else if(!otaBleHealthy())
@@ -1286,7 +1376,7 @@ static void otaUpload(){
    lastOtaError="No se pudo iniciar SHA256";otaError=true;Update.abort();mbedtls_sha256_free(&otaDigest);return;
   }
   otaDigestStarted=true;
-  otaBusy=true;otaTxn.phase=OtaPhase::Uploading;
+  otaBusy=true;otaLastChunkAt=millis();otaTxn.phase=OtaPhase::Uploading;
   otaTxn.reason="Recibiendo firmware y comprobando integridad SHA-256";
   record("OTA_START","BIN firmado ECDSA; control de luces temporalmente cedido");
  }else if(upload.status==UPLOAD_FILE_WRITE){
@@ -1296,7 +1386,7 @@ static void otaUpload(){
     mbedtls_sha256_update_ret(&otaDigest,upload.buf,upload.currentSize)!=0 ||
     Update.write(upload.buf,upload.currentSize)!=upload.currentSize){
    lastOtaError="Escritura OTA interrumpida o supera la particion";otaError=true;Update.abort();otaDigestStop();
-  }else otaBytes+=upload.currentSize;
+  }else {otaBytes+=upload.currentSize;otaLastChunkAt=millis();}
  }else if(upload.status==UPLOAD_FILE_END){
   if(!otaAllowed||otaError){
    otaBusy=false;otaDigestStop();
@@ -1319,13 +1409,17 @@ static void otaUpload(){
    lastOtaError="FIRMA NO VALIDA: BIN no autorizado por el propietario";
    otaError=true;Update.abort();
    record("OTA_FIRMA_RECHAZADA","Imagen sin firma del propietario: no se instalara");
+  }else if(prefs.putString("ota_prev",otaRunningPartition)!=otaRunningPartition.length() ||
+           prefs.putUChar("ota_attempts",0)!=1){
+   // Guardar la ruta de vuelta ANTES de cambiar la particion de arranque.
+   // Si la NVS esta llena, no activamos la nueva imagen.
+   lastOtaError="No se pudo guardar el retorno OTA en NVS: instalacion cancelada";
+   otaError=true;Update.abort();
   }else if(!Update.end(true)){
-   lastOtaError="BIN no validado como firmware ESP32-S3";otaError=true;Update.abort();
+   lastOtaError="BIN no validado como firmware ESP32-S3";
+   otaError=true;Update.abort();prefs.remove("ota_prev");
   }else{
-   // Pista para regreso automatico ante reinicios tempranos repetidos. No
-   // garantiza rescate de una imagen que ni siquiera llegue a ejecutar setup().
-   prefs.putString("ota_prev",otaRunningPartition);
-   prefs.putUChar("ota_attempts",0);
+   // El arranque anterior ya quedo registrado en NVS antes de activar el BIN.
    otaSuccess=true;otaTxn.phase=OtaPhase::Completed;
    otaTxn.reason="Firmware recibido y verificado por Update; reinicio pendiente";
    lastOtaError="SHA256 coincide, firma ECDSA verificada y Update acepta el BIN";
@@ -1337,7 +1431,7 @@ static void otaUpload(){
    otaTxn.phase=OtaPhase::Ready;otaAbortPreparation(lastOtaError.c_str());
   }
  }else if(upload.status==UPLOAD_FILE_ABORTED){
-  otaError=true;otaBusy=false;lastOtaError="OTA abortada";Update.abort();otaDigestStop();
+  otaError=true;otaBusy=false;otaAllowed=false;otaSuccess=false;lastOtaError="Carga OTA interrumpida; no se instalo firmware";Update.abort();otaDigestStop();
   if(otaTxn.phase==OtaPhase::Uploading){
    otaTxn.phase=OtaPhase::Ready;otaAbortPreparation("Carga OTA interrumpida");
   }
@@ -1345,6 +1439,11 @@ static void otaUpload(){
 }
 static void configureWifi(){
  String ssid=srv.arg("ssid"),pass=srv.arg("password");
+ // Nunca permitir caracteres de control que puedan falsear un log o cabecera.
+ for(size_t i=0;i<ssid.length();i++){
+  const unsigned char c=(unsigned char)ssid[i];
+  if(c<32||c==127)return fail(400,"Nombre Wi-Fi contiene caracteres de control");
+ }
  if(ssid.length()<1||ssid.length()>32||pass.length()<8||pass.length()>63)
   return fail(400,"SSID o clave WPA2 fuera de rango");
  if(prefs.putString("ssid",ssid)!=ssid.length() ||
@@ -1359,15 +1458,19 @@ static void configureWifi(){
  ok();
 }
 static void configureRoutes(){
- const char*keys[]={"X-Cielo-Key","X-Cielo-Sha256","X-Cielo-Signature"};srv.collectHeaders(keys,3);
+ const char*keys[]={"X-Cielo-Key","X-Cielo-Session","X-Cielo-Sha256","X-Cielo-Signature"};srv.collectHeaders(keys,4);
  srv.on("/",HTTP_GET,[]{if(!rescueOpen && srv.client().remoteIP()!=IPAddress(127,0,0,1)){
   srv.sendHeader("Location","https://iwagumi-cielo96.local/");
   srv.send(307,"text/plain","CIELO: conecta por HTTPS. Confirma la huella de certificado por USB.");return;
  }++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
- srv.on("/api/status",HTTP_GET,statusJson);
- srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition",srv.hasArg("share")?"attachment; filename=\"CIELO_INFORME_COMPARTIBLE.json\"":"attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
- srv.on("/api/service/report",HTTP_GET,diagnosticJson);
- srv.on("/api/lab/status",HTTP_GET,[]{jsonSend(200,labJson());});
+ srv.on("/api/auth/session",HTTP_POST,authSessionOpen);
+ srv.on("/api/auth/logout",HTTP_POST,authSessionClose);
+ srv.on("/api/auth/status",HTTP_GET,[]{if(!requireHttpsRead())return;
+  jsonSend(200,String("{\"authenticated\":")+String(sessionValid()?"true":"false")+"}");});
+ srv.on("/api/status",HTTP_GET,[]{if(requireHttpsRead())statusJson();});
+ srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(!requireHttpsRead())return;if(!srv.hasArg("share")&&!requirePrivateRead())return;if(srv.hasArg("download"))srv.sendHeader("Content-Disposition",srv.hasArg("share")?"attachment; filename=\"CIELO_INFORME_COMPARTIBLE.json\"":"attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
+ srv.on("/api/service/report",HTTP_GET,[]{if(requireHttpsRead()&&(srv.hasArg("share")||requirePrivateRead()))diagnosticJson();});
+ srv.on("/api/lab/status",HTTP_GET,[]{if(requirePrivateRead())jsonSend(200,labJson());});
  srv.on("/api/lab/start",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
   if(lab.scanPending)return fail(409,"Termina primero el escaneo BLE");
@@ -1401,7 +1504,7 @@ static void configureRoutes(){
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
- srv.on("/api/cielo/v4/status",HTTP_GET,[]{jsonSend(200,cieloModeJson());});
+ srv.on("/api/cielo/v4/status",HTTP_GET,[]{if(requireHttpsRead())jsonSend(200,cieloModeJson());});
  srv.on("/api/cielo/v4/start",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA preparando o instalando");
@@ -1590,7 +1693,7 @@ static void configureRoutes(){
   record("WIFI_BUSQUEDA","Escaneo asincrono a peticion del usuario, no modifica red actual");
   ok();
  });
- srv.on("/api/wifi/networks",HTTP_GET,[]{
+ srv.on("/api/wifi/networks",HTTP_GET,[]{if(!requirePrivateRead())return;
   const int count=WiFi.scanComplete();
   String j="{\"pending\":"+String(count==-1?"true":"false")+",\"ssid\":"+jsonQuote(WiFi.SSID());
   j+=",\"ip\":"+jsonQuote(WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():"");
@@ -1606,9 +1709,9 @@ static void configureRoutes(){
  });
  srv.on("/api/wifi",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
- srv.on("/api/ota/preflight",HTTP_GET,otaPreflight);
+ srv.on("/api/ota/preflight",HTTP_GET,[]{if(requirePrivateRead())otaPreflight();});
  srv.on("/api/ota/prepare",HTTP_POST,otaPrepare);
- srv.on("/api/ota/prepare/status",HTTP_GET,otaPrepareStatus);
+ srv.on("/api/ota/prepare/status",HTTP_GET,[]{if(requirePrivateRead())otaPrepareStatus();});
  srv.on("/api/ota/prepare/cancel",HTTP_POST,otaPrepareCancel);
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
  srv.on("/api/ota/upload",HTTP_POST,[]{
@@ -2053,6 +2156,16 @@ void loop(){
    // Sin particion recuperable, no declarar nunca la actualizacion validada.
    record("OTA_ROLLBACK_IMPOSIBLE","Recuperar manualmente por USB");
    otaCandidateBoot=false;
+  }
+ }
+ // Si una transferencia cae sin evento de cierre, liberar el estado y
+ // recuperar la configuracion anterior sin confirmar un BIN incompleto.
+ if(otaBusy && millis()-otaLastChunkAt>120000UL){
+  Update.abort();otaBusy=false;otaAllowed=false;otaError=true;
+  lastOtaError="OTA detenida por falta de datos durante 120 segundos";
+  otaDigestStop();
+  if(otaTxn.phase==OtaPhase::Uploading){
+   otaTxn.phase=OtaPhase::Ready;otaAbortPreparation(lastOtaError.c_str());
   }
  }
  tracePhase(TracePhase::Http);srv.handleClient();

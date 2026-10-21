@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1B5-DIAGNOSTICO' in code
+assert '11.1.0-RC5-B1B5B3-SEGURIDAD-R2' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -155,7 +155,7 @@ assert 'id="releaseCh"' not in actual and 'id="releasePv"' not in actual
 assert 'id="curveChEvening"' not in actual
 assert 'function labGuided()' in actual and 'function previewNatural' not in actual
 assert 'function releaseLight' in actual
-assert 'window.open(\'/api/diagnostico/maestro?download=1\'' in actual
+assert "fetch(full?'/api/diagnostico/maestro?download=1'" in actual and "X-Cielo-Session" in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
 import tempfile
 with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as js:
