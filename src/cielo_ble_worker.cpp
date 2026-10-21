@@ -29,7 +29,9 @@ SharedLink shared[2]{};
 uint32_t linkTouched[2]{};
 static constexpr uint32_t BLE_IDLE_RELEASE_MS=5000UL;
 void releaseTarget(uint8_t device,bool userRequested){
+ setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  Target& t=targets[device];
+ setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  if(t.client && t.client->isConnected())t.client->disconnect();
  t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
  // Mantener direccion/tipo aprendidos para evitar scan de 5s en cada orden;
@@ -47,6 +49,12 @@ void releaseIdleLinks(){
    releaseTarget(k,false);
 }
 volatile uint32_t lastHeartbeat=0;
+volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
+volatile uint8_t workerDevice=255;
+volatile uint32_t phaseEnteredAt=0;
+void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
+ workerDevice=dev;phaseEnteredAt=millis();workerPhase=static_cast<uint8_t>(p);
+}
 uint16_t chMessageId=1;
 uint8_t writesInCurrentOperation=0;
 // Exactly one FreeRTOS task owns all BLE calls. Web thread NEVER interacts with the stack.
@@ -56,6 +64,7 @@ bool locate(Target& t) {
  BLEScan* scan=BLEDevice::getScan();
  scan->setActiveScan(true);
  scan->setInterval(150);scan->setWindow(75);
+ setWorkerPhase(BleWorkerPhase::Discovery,&t==&targets[0]?0:1);
  BLEScanResults result=scan->start(5,false);
  bool found=false;
  for(int i=0;i<result.getCount();++i){
@@ -79,11 +88,14 @@ bool connect(Target& t,const char*&err){
  if(!t.client){err="BLE_CLIENT_CREATE";return false;}
  // connect(BLEAddress) on Arduino-ESP32 2.x; this may block, isolated from HTTP.
  BLEAddress address(std::string(t.address.c_str()));
+ setWorkerPhase(BleWorkerPhase::Connecting,&t==&targets[0]?0:1);
  if(!t.client->connect(address,t.addressType)){
   err="BLE_CONNECT_FAILED";t.addressKnown=false;return false;
  }
+ setWorkerPhase(BleWorkerPhase::Service,&t==&targets[0]?0:1);
  BLERemoteService* service=t.client->getService(BLEUUID(t.service));
  if(!service){err="GATT_SERVICE_MISSING";t.client->disconnect();return false;}
+ setWorkerPhase(BleWorkerPhase::Characteristic,&t==&targets[0]?0:1);
  t.writer=service->getCharacteristic(BLEUUID(t.writeUuid));
  if(!t.writer || !(t.writer->canWrite()||t.writer->canWriteNoResponse())){
   err="GATT_CHARACTERISTIC_MISSING";t.client->disconnect();t.writer=nullptr;return false;
@@ -95,6 +107,7 @@ bool connect(Target& t,const char*&err){
 bool put(Target& t,const uint8_t* data,size_t n,const char*&err){
  if(!t.client || !t.client->isConnected() || !t.writer){err="GATT_NOT_CONNECTED";return false;}
  // Arduino BLE writeValue returns void: transport accepted != optical ACK!
+ setWorkerPhase(BleWorkerPhase::Writing,&t==&targets[0]?0:1);
  t.writer->writeValue(const_cast<uint8_t*>(data),n,t.writer->canWrite());
  if(writesInCurrentOperation<255)writesInCurrentOperation++; // GATT write call, not optical acknowledgement
  if(!t.client->isConnected()){err="BLE_DISCONNECTED_DURING_WRITE";t.writer=nullptr;return false;}
@@ -141,6 +154,7 @@ void scanDiscover(){
  scan->setActiveScan(true);
  scan->setInterval(160);
  scan->setWindow(80);
+ setWorkerPhase(BleWorkerPhase::Discovery);
  BLEScanResults found=scan->start(5,false);
  r.advertised=found.getCount();
  for(int i=0;i<found.getCount();++i){
@@ -168,6 +182,7 @@ void scanDiscover(){
 void probeGATT(uint8_t device){
  BleProbeResult r{};r.device=device;const uint32_t start=millis();
  Target& t=targets[device==1?1:0];const char* reason="OK";
+ setWorkerPhase(BleWorkerPhase::Probing,device);
  // Si CIELO conserva una conexion anterior de prueba manual, soltarla antes
  // de realizar la sonda para no iniciar otra conexion encima.
  if(t.client && t.client->isConnected())t.client->disconnect();
@@ -179,13 +194,16 @@ void probeGATT(uint8_t device){
   if(!t.client){reason="BLE_CLIENT_CREATE";}
   else {
    BLEAddress address(std::string(t.address.c_str()));
+   setWorkerPhase(BleWorkerPhase::Connecting,device);
    if(!t.client->connect(address,t.addressType)){
     reason="BLE_CONNECT_FAILED";
    }else{
+    setWorkerPhase(BleWorkerPhase::Service,device);
     BLERemoteService* svc=t.client->getService(BLEUUID(t.service));
     if(!svc)reason="GATT_SERVICE_MISSING";
     else {
      r.service=true;
+     setWorkerPhase(BleWorkerPhase::Characteristic,device);
      BLERemoteCharacteristic* characteristic=svc->getCharacteristic(BLEUUID(t.writeUuid));
      if(!characteristic || !(characteristic->canWrite()||characteristic->canWriteNoResponse())){
       reason="GATT_CHARACTERISTIC_MISSING";
@@ -206,6 +224,7 @@ void probeGATT(uint8_t device){
 }
 void resumeCustomCurve(){
  BleCustomResumeResult res{};uint32_t started=millis();const char*err="OK";
+ setWorkerPhase(BleWorkerPhase::Resuming,1);
  Target& t=targets[1];uint8_t frame[32];size_t n=0;
  const bool connected=connect(t,err);
  if(connected){
@@ -223,9 +242,12 @@ void resumeCustomCurve(){
  }
 }
 void task(void*){
+ setWorkerPhase(BleWorkerPhase::Starting);
  BLEDevice::init("IWAGUMI-CIELO-96");
  lastHeartbeat=millis();
  for(;;){
+  setWorkerPhase(BleWorkerPhase::Idle);
+  lastHeartbeat=millis();
   uint8_t probeToken=0;
   uint8_t releaseToken=0;
   while(xQueueReceive(releaseRequests,&releaseToken,0)==pdTRUE){
@@ -246,6 +268,7 @@ void task(void*){
   cielo::ble::Command c{};
   // Block without consuming CPU; heartbeat updates every second when idle.
   if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){lastHeartbeat=millis();continue;}
+  setWorkerPhase(BleWorkerPhase::Sending,static_cast<uint8_t>(c.device));
   uint32_t started=millis();writesInCurrentOperation=0;const char*err="OK";
   bool success=(c.device==cielo::ble::Device::PezVerde)?sendPez(c,err):sendCh(c,err);
   BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);res.action=static_cast<uint8_t>(c.action);
@@ -298,4 +321,29 @@ bool ble_scan_result(BleScanResult& out){return scanResponses && xQueueReceive(s
 bool ble_dispatch(const cielo::ble::Command& c){return requests && xQueueSend(requests,&c,0)==pdTRUE;}
 bool ble_result(BleResult& r){return responses && xQueueReceive(responses,&r,0)==pdTRUE;}
 uint32_t ble_last_heartbeat(){return lastHeartbeat;}
+BleWorkerSnapshot ble_worker_snapshot(){
+ BleWorkerSnapshot s{};
+ const uint32_t now=millis();
+ s.phase=workerPhase;s.device=workerDevice;
+ s.phase_age_ms=now-phaseEnteredAt;
+ s.heartbeat_age_ms=now-lastHeartbeat;
+ s.in_operation=s.phase!=static_cast<uint8_t>(BleWorkerPhase::Idle);
+ return s;
+}
+const char* ble_worker_phase_name(uint8_t p){
+ switch(static_cast<BleWorkerPhase>(p)){
+  case BleWorkerPhase::Starting:return "INICIANDO";
+  case BleWorkerPhase::Idle:return "ESPERA";
+  case BleWorkerPhase::Discovery:return "DESCUBRIMIENTO";
+  case BleWorkerPhase::Connecting:return "CONEXION";
+  case BleWorkerPhase::Service:return "SERVICIO_GATT";
+  case BleWorkerPhase::Characteristic:return "CARACTERISTICA_GATT";
+  case BleWorkerPhase::Writing:return "ESCRITURA_GATT";
+  case BleWorkerPhase::Disconnecting:return "DESCONEXION";
+  case BleWorkerPhase::Resuming:return "RETORNO_MY_CHIHIROS";
+  case BleWorkerPhase::Probing:return "SONDA_GATT";
+  case BleWorkerPhase::Sending:return "ORDEN_RGB";
+  default:return "DESCONOCIDA";
+ }
+}
 }
