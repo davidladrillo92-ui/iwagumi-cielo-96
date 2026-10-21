@@ -85,6 +85,8 @@ static Preferences prefs;
 static cielo96::ProfileImage profile;
 static cielo::ble::Scheduler queue(3500,250,2000);
 static bool bleReady=false, profileRecovery=false, wifiApOn=false;
+static bool mdnsReady=false;
+static uint32_t mdnsLastAttempt=0;
 static bool phoneSyncedThisBoot=false;
 static bool wifiCoexistReady(){
  wifi_ps_type_t ps=WIFI_PS_NONE;
@@ -1519,6 +1521,12 @@ static void wifiTask(){
   record("AP_RECUPERACION",String("192.168.4.1; WPA2; disponible=")+String(wifiApOn));
  }
  if(w==WL_CONNECTED){
+  if(!mdnsReady && now-mdnsLastAttempt>30000UL){
+   mdnsLastAttempt=now;
+   mdnsReady=MDNS.begin("iwagumi-cielo96");
+   if(mdnsReady){MDNS.addService("https","tcp",443);record("MDNS_INICIADO","https://iwagumi-cielo96.local");}
+   else record("MDNS_PENDIENTE","Se reintentara cuando la red este preparada");
+  }
   if(!wifiCoexistReady() && now-lastStatusAt>15000UL){
    lastStatusAt=now;
    esp_err_t rc=esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
@@ -1785,8 +1793,6 @@ void setup(){
  Serial.printf("WIFI de rescate si fuera necesaria: CIELO96-CONFIG | clave: %s\n",apPassword.c_str());
  tracePhase(TracePhase::WebInit);
  configureRoutes();
- if(MDNS.begin("iwagumi-cielo96")){MDNS.addService("https","tcp",443);record("MDNS_INICIADO","https://iwagumi-cielo96.local");}
- else record("MDNS_NO_DISPONIBLE","Comprueba IP HTTPS y certificado");
  if(!cielo96::https_begin(prefs))record("HTTPS_NO_DISPONIBLE","Acceso de escritura bloqueado; USB para recuperacion");
  else record("HTTPS_INICIADO","Certificado unico generado, peticiones de escritura via TLS");
  record("WEB_PRIMERO","HTTP y AP de recuperación inicializados; Bluetooth en espera");
