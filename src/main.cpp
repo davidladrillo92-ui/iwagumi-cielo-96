@@ -719,6 +719,10 @@ static void diagnosticJson(){
  j+=",\"per_device\":{\"pez_verde\":{\"operations\":"+String(devices[0].completed)+",\"gatt_ok\":"+String(devices[0].gatt_ok)+",\"write_calls\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+",\"slow_calls\":"+String(devices[0].slow)+",\"last_ms\":"+String(devices[0].last_ms)+",\"max_ms\":"+String(devices[0].max_ms)+"}";
  j+=",\"chihiros\":{\"operations\":"+String(devices[1].completed)+",\"gatt_ok\":"+String(devices[1].gatt_ok)+",\"write_calls\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+",\"slow_calls\":"+String(devices[1].slow)+",\"last_ms\":"+String(devices[1].last_ms)+",\"max_ms\":"+String(devices[1].max_ms)+"}}";
  j+=",\"p95_ms\":{\"pez_verde\":"+String(latencyP95(0))+",\"chihiros\":"+String(latencyP95(1))+"}";
+ const auto workerSnap=cielo96::ble_worker_snapshot();
+ j+=",\"worker_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(workerSnap.phase));
+ j+=",\"worker_phase_age_ms\":"+String(workerSnap.phase_age_ms);
+ j+=",\"worker_device\":"+String(workerSnap.device);
  j+=",\"worker_unresponsive\":"+String(workerUnavailable?"true":"false");
  j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
@@ -834,11 +838,13 @@ static bool physicalOtaGrant(){
 }
 // OTA preflight: read-only; never manipulates the lamps.
 static bool otaBleHealthy(){
- return bleReady && !cieloWatchdogTripped &&
-        (millis()-cielo96::ble_last_heartbeat()<15000UL);
+ if(!bleReady||cieloWatchdogTripped)return false;
+ const auto snap=cielo96::ble_worker_snapshot();
+ return snap.heartbeat_age_ms<15000UL &&
+        (!snap.in_operation||snap.phase_age_ms<15000UL);
 }
 static String otaPreflightReason(){
- if(!otaBleHealthy())return "Bluetooth sin respuesta; OTA bloqueada para proteger las luces";
+ if(!otaBleHealthy())return "Bluetooth sin respuesta; revisa fase BLE del Informe Maestro";
  if(!currentBootMarkedHealthy)return "Arranque no verificado";
  if(!timeOK()||!cielo96::profileValid(profile))return "Hora o curvas no validas";
  if(labTxEnabled()||lab.scanPending||lab.probePending||queue.busy())
@@ -857,7 +863,11 @@ static void otaPreflight(){
  j+=",\"pv_active\":"+String(cieloPvRun?"true":"false");
  j+=",\"ch_active\":"+String(cieloChRun?"true":"false");
  j+=",\"return_pending\":"+String(cieloChReturnPending?"true":"false");
- j+=",\"ble_heartbeat_age_ms\":"+String(millis()-cielo96::ble_last_heartbeat())+"}";
+ const auto bleSnap=cielo96::ble_worker_snapshot();
+ j+=",\"ble_heartbeat_age_ms\":"+String(bleSnap.heartbeat_age_ms);
+ j+=",\"ble_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(bleSnap.phase));
+ j+=",\"ble_phase_age_ms\":"+String(bleSnap.phase_age_ms);
+ j+=",\"ble_device\":"+String(bleSnap.device)+"}";
  jsonSend(200,j);
 }
 static void otaPair(){
@@ -888,7 +898,8 @@ static void otaUpload(){
  HTTPUpload&upload=srv.upload();
  if(upload.status==UPLOAD_FILE_START){
   otaAllowed=tokenEqual() && physicalOtaGrant() && currentBootMarkedHealthy &&
-             !labTxEnabled() && !queue.busy() && !otaBusy &&
+             otaBleHealthy() && !labTxEnabled() && !queue.busy() && !otaBusy &&
+             !lab.scanPending && !lab.probePending && !customResumePending &&
              !cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse;
   otaSuccess=false;otaError=false;otaBytes=0;otaDigestStop();
   if(!otaAllowed){
@@ -897,7 +908,7 @@ static void otaUpload(){
    if(!tokenEqual())lastOtaError="Clave OTA incorrecta";
    else if(!physicalOtaGrant())lastOtaError="Permiso fisico OTA caducado o no autorizado";
    else if(!currentBootMarkedHealthy)lastOtaError="Arranque aun no verificado";
-   else if(cieloWatchdogTripped || (bleReady && millis()-cielo96::ble_last_heartbeat()>45000UL))
+   else if(!otaBleHealthy())
      lastOtaError="Bluetooth bloqueado: no se puede actualizar de forma segura";
    else if(cieloChReturnPending||cieloChAwaitResponse)
      lastOtaError="Retorno a My Chihiros pendiente: actualizacion detenida";
@@ -992,14 +1003,14 @@ static void configureRoutes(){
  });
  srv.on("/api/lab/scan",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
-  if(!bleReady)return fail(423,"Inicia Bluetooth con boton fisico 3-7 segundos, sin enviar ordenes");
+  if(!otaBleHealthy())return fail(423,"Bluetooth no responde: no iniciar escaneo");
   if(lab.scanPending||lab.probePending)return fail(409,"Ya hay otra prueba BLE en marcha");
   if(!cielo96::ble_scan_request()){lab.scanRejects++;return fail(503,"Cola de escaneos no disponible");}
   lab.scanRequests++;lab.scanPending=true;lab.scanStartedMs=millis();record("LAB_SCAN_START","Escaneo BLE activo 5s; sin conectar ni escribir GATT");ok();
  });
  srv.on("/api/lab/probe",HTTP_POST,[]{
   if(rescueOpen)return fail(403,"Rescate es solo lectura");
-  if(!bleReady)return fail(423,"Bluetooth todavia no inicializado");
+  if(!otaBleHealthy())return fail(423,"Bluetooth no responde: no iniciar sonda");
   if(lab.scanPending||lab.probePending||queue.busy()||labTxEnabled())
    return fail(409,"Deten los envios y espera a que terminen las otras operaciones");
   if(srv.arg("confirm")!="SOLO_CONEXION_SIN_ESCRIBIR")return fail(403,"Confirmacion necesaria");
