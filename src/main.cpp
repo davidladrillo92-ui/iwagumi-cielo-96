@@ -190,6 +190,12 @@ static uint32_t cieloPvOrders=0,cieloChOrders=0,cieloPvConfirmed=0,cieloChConfir
 static uint32_t cieloReturnOk=0,cieloReturnFailed=0,cieloFallbacks=0;
 static String cieloReturnReason="Sin solicitar";
 static void cieloRequestReturn(const char* reason);
+static const char* chSafetyName(){
+ if(cieloChReturnPending||cieloChAwaitResponse)return "CONTROL_CEDIENDOSE";
+ if(cieloChRun)return "ACTIVA";
+ if(cieloChWasDriven)return "CONTROL_CEDIDO_GATT_PENDIENTE";
+ return "CONTROL_CEDIDO";
+}
 static uint32_t pezManualUntil=0,chiManualUntil=0;
 static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaRestarts=0;
 static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
@@ -443,6 +449,7 @@ static String cieloModeJson(){
  j+=",\"pv_off_last_gatt_ms\":"+String(pvOffLastGatt)+",\"pv_off_last_attempt_ms\":"+String(pvOffLastTry);
  j+=",\"pv_optically_confirmed\":false";
  j+=",\"ch_consecutive_errors\":"+String(cieloChConsecutiveFailures);
+ j+=",\"ch_safety_state\":"+jsonQuote(chSafetyName());
  j+=",\"started_at_ms\":"+String(cieloStartedAt);
  j+=",\"pv_last_requested\":["+String(prevPv.r)+","+String(prevPv.g)+","+String(prevPv.b)+","+String(prevPv.brightness)+"]";
  j+=",\"ch_last_requested\":["+String(prevCh.r)+","+String(prevCh.g)+","+String(prevCh.b)+"]";
@@ -674,6 +681,13 @@ static void labTick(){
   record("LAB_TX_CADUCADA","Envios bloqueados; restauracion optica NO garantizada");
  }
  if(pezManual && (int32_t)(now-pezManualUntil)>=0)pezManual=false;
+ // No duplicar tareas BLE: si la MISMA tarea recupera latido, rearmar la curva.
+ if(cieloWatchdogTripped && bleReady && !queue.busy() &&
+    now-cielo96::ble_last_heartbeat()<3000UL){
+  cieloWatchdogTripped=false;pvRetryNext=now;lastPvDesired=false;
+  if(cieloAlwaysOn)pvSafety=PvSafetyState::Degraded;
+  record("BLE_WORKER_RECUPERADO","Mismo trabajador BLE activo; reintentar seguridad nocturna");
+ }
  if(chiManual && (int32_t)(now-chiManualUntil)>=0)chiManual=false;
  if(!lab.running || now-lab.lastSample<15000UL)return;
  lab.lastSample=now;lab.samples++;
@@ -1608,7 +1622,7 @@ static void lightingTask(){
     otaTxn.phase!=OtaPhase::Preparing && otaTxn.phase!=OtaPhase::Ready &&
     otaTxn.phase!=OtaPhase::Uploading && bleAlive &&
     cielo96::safety::retryDue(now,pvOffNextTry) && !queue.busy() &&
-    !customResumePending && !cieloChReturnPending && !cieloChAwaitResponse){
+    !customResumePending && !cieloChAwaitResponse){
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,0,0,0,0,now,90000UL)){
    pvOffAttempts++;pvOffLastTry=now;
