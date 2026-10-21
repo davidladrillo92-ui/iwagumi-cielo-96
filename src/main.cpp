@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
 #include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
 #include <Update.h>
@@ -1249,7 +1250,7 @@ static void configureWifi(){
 static void configureRoutes(){
  const char*keys[]={"X-Cielo-Key","X-Cielo-Sha256","X-Cielo-Signature"};srv.collectHeaders(keys,3);
  srv.on("/",HTTP_GET,[]{if(!rescueOpen && srv.client().remoteIP()!=IPAddress(127,0,0,1)){
-  srv.sendHeader("Location","https://"+WiFi.localIP().toString()+"/");
+  srv.sendHeader("Location","https://iwagumi-cielo96.local/");
   srv.send(307,"text/plain","CIELO: conecta por HTTPS. Confirma la huella de certificado por USB.");return;
  }++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
  srv.on("/api/status",HTTP_GET,statusJson);
@@ -1784,6 +1785,8 @@ void setup(){
  Serial.printf("WIFI de rescate si fuera necesaria: CIELO96-CONFIG | clave: %s\n",apPassword.c_str());
  tracePhase(TracePhase::WebInit);
  configureRoutes();
+ if(MDNS.begin("iwagumi-cielo96")){MDNS.addService("https","tcp",443);record("MDNS_INICIADO","https://iwagumi-cielo96.local");}
+ else record("MDNS_NO_DISPONIBLE","Comprueba IP HTTPS y certificado");
  if(!cielo96::https_begin(prefs))record("HTTPS_NO_DISPONIBLE","Acceso de escritura bloqueado; USB para recuperacion");
  else record("HTTPS_INICIADO","Certificado unico generado, peticiones de escritura via TLS");
  record("WEB_PRIMERO","HTTP y AP de recuperación inicializados; Bluetooth en espera");
