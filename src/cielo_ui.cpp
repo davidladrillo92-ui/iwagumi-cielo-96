@@ -182,18 +182,24 @@ function currentClock(){
  const elapsed=Math.max(0,Math.floor((Date.now()-state.updated)/1000));
  return Math.floor(((seconds+elapsed)%86400)/60);
 }
-function isLive(){return location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'||location.search.includes('live=1')}
+function isLive(){return (location.protocol==='https:'||location.protocol==='http:')&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'||location.search.includes('live=1')}
 // El token solo vive en RAM del navegador. No se guarda en localStorage.
-let cieloSessionToken='',cieloSessionOpened=0;
+let cieloSessionToken='',cieloSessionOpened=0,cieloSessionPending=null;
 async function cieloEnsureSession(force=false){
  if(cieloSessionToken&&!force)return cieloSessionToken;
- const key=$('otaSecret')?.value||'';
- if(key.length<12||key.length>96)throw Error('Introduce tu clave de CIELO en Centro > Actualizaciones');
- const res=await fetch('/api/auth/session',{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'X-Cielo-Key':key}});
- if(!res.ok)throw Error((await res.text())||'No se ha podido abrir sesion');
- const d=await res.json();
- if(!/^[0-9a-f]{64}$/.test(d.session||''))throw Error('Token de sesion incompatible');
- cieloSessionToken=d.session;cieloSessionOpened=Date.now();return cieloSessionToken;
+ // Un solo inicio de sesion por pestaña: evitar 429 cuando diagnostico y
+ // acciones del usuario piden acceso simultaneamente al ATOM.
+ if(cieloSessionPending)return cieloSessionPending;
+ cieloSessionPending=(async()=>{
+  const key=$('otaSecret')?.value||'';
+  if(key.length<12||key.length>96)throw Error('Introduce tu clave de CIELO en Centro > Actualizaciones');
+  const res=await fetch('/api/auth/session',{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'X-Cielo-Key':key}});
+  if(!res.ok)throw Error((await res.text())||'No se ha podido abrir sesion');
+  const d=await res.json();
+  if(!/^[0-9a-f]{64}$/.test(d.session||''))throw Error('Token de sesion incompatible');
+  cieloSessionToken=d.session;cieloSessionOpened=Date.now();return cieloSessionToken;
+ })();
+ try{return await cieloSessionPending}finally{cieloSessionPending=null}
 }
 async function api(path,data){
  if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');
@@ -896,7 +902,7 @@ async function serviceCopy(onlyErrors){
 
 async function otaPreflightUi(){
  try{
-  const r=await fetch('/api/ota/preflight',{cache:'no-store'});
+  const r=await fetch('/api/ota/preflight',{cache:'no-store',headers:{'X-Cielo-Session':await cieloEnsureSession()}});
   if(!r.ok)throw Error('No se pudo comprobar el estado del ATOM');
   const d=await r.json();
   if(!d.ready){toast('Actualización detenida: '+(d.reason||'revisión necesaria'));return false;}
@@ -972,7 +978,7 @@ async function otaPrepareLights(key){
  await otaPost('/api/ota/prepare',key);
  const until=Date.now()+54000;
  while(Date.now()<until){
-  const r=await fetch('/api/ota/prepare/status',{cache:'no-store'});
+  const r=await fetch('/api/ota/prepare/status',{cache:'no-store',headers:{'X-Cielo-Session':cieloSessionToken}});
   if(!r.ok)throw Error('El ATOM no responde al preparar las luces');
   const d=await r.json();
   if(d.reason)output.textContent='Preparación: '+d.reason;

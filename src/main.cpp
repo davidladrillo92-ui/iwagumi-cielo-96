@@ -43,7 +43,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-SEGURIDAD";
+static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-SEGURIDAD-R2";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -1709,9 +1709,9 @@ static void configureRoutes(){
  });
  srv.on("/api/wifi",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
  srv.on("/api/wifi/forget",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
- srv.on("/api/ota/preflight",HTTP_GET,[]{if(requireHttpsRead())otaPreflight();});
+ srv.on("/api/ota/preflight",HTTP_GET,[]{if(requirePrivateRead())otaPreflight();});
  srv.on("/api/ota/prepare",HTTP_POST,otaPrepare);
- srv.on("/api/ota/prepare/status",HTTP_GET,[]{if(requireHttpsRead())otaPrepareStatus();});
+ srv.on("/api/ota/prepare/status",HTTP_GET,[]{if(requirePrivateRead())otaPrepareStatus();});
  srv.on("/api/ota/prepare/cancel",HTTP_POST,otaPrepareCancel);
  srv.on("/api/ota/pair",HTTP_POST,[]{if(rescueOpen)return fail(403,"Rescate solo lectura");otaPair();});
  srv.on("/api/ota/upload",HTTP_POST,[]{
