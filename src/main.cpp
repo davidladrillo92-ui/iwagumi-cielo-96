@@ -1331,6 +1331,8 @@ static void configureRoutes(){
    return fail(507,"No se pudo proteger el retorno de My Chihiros en NVS");
   if(!prefs.putBool("v5_always",true))
    return fail(507,"No se pudo guardar el control continuo en NVS");
+  if(!prefs.putBool("pv_auto",true))
+   return fail(507,"No se pudo conservar la recuperacion independiente de Pez Verde");
   cieloAlwaysOn=true;cieloResumePending=false;
   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
   pvControlDesired=true;pvSafety=PvSafetyState::Active;pvRetryNext=0;pvOffNextTry=0;
@@ -1362,6 +1364,7 @@ static void configureRoutes(){
   if(srv.arg("confirm")!="PAUSAR_TODO")return fail(403,"Confirma pausa de ambas pantallas");
   cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
   pvControlDesired=false;pvOffObligation=false;pvOffInFlightSeq=0;pvSafety=PvSafetyState::Paused;
+  if(!prefs.putBool("pv_auto",false))record("PV_NVS_FALLO","Pausa PV no persistida, verificar tras reinicio");
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(bleReady)cieloRequestReturn("Pausa total: devolver Chihiros a My Chihiros");
   else {queue.cancel_pending(cielo::ble::Device::Chihiros);record("V4_SIN_BLE","No se puede restaurar Chihiros sin BLE; requiere My Chihiros");}
@@ -1837,7 +1840,7 @@ void setup(){
  tracePhase(TracePhase::Profile);
  loadProfile();
  cieloAlwaysOn=prefs.getBool("v5_always",false);
- pvControlDesired=cieloAlwaysOn;
+ pvControlDesired=prefs.getBool("pv_auto",cieloAlwaysOn);
  cieloResumePending=cieloAlwaysOn;
  if(prefs.getBool("v4_ch_takeover",false)){
   // Al reiniciar: NO reactivar el programador; solo devolver el control
