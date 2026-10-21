@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1-SEGURIDAD' in code
+assert '11.1.0-RC5-B1B5-DIAGNOSTICO' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -265,3 +265,21 @@ assert 'PV_POWER_OFF_INTENTO' in code and 'PV_POWER_OFF_REINTENTO' in code
 assert 'PV_POWER_OFF_GATT_OK' in code and 'pv_optically_confirmed' in code
 assert 'PV_RGB_OBSOLETO_BLOQUEADO' in code and 'pvOffInFlightSeq' in code
 assert 'PV_RECONECTANDO' in code and 'pvOffObligation' in code
+
+# RC5 B5: diagnóstico real, no inventar ACK ópticos o la p95 sin muestras.
+assert 'iwagumi-cielo-96-diagnostico-v3' in code
+assert 'fragmentation_pct' in code and 'heap_minimum' in code
+assert 'queue_depth' in code and 'worker_queue_depth' in code
+assert 'phase_timing_ms' in code and 'ble_transport_stats(i)' in code
+assert 'pv_off_last_gatt_ms' in code and 'professional' in code
+assert 'points_pv' in code and 'points_ch' in code
+assert 'persistent_diagnostics' in code and 'diag_journal' in code and 'boot_hist' in code
+assert 'share_safe' in code and 'srv.hasArg("share")' in code
+assert 'flushJournal();' in code and 'importantEvent(name)' in code
+assert 'canReportP95' in code and 'fragmentationPct' in code
+assert 'diagnostic_v3' not in code  # name actually uses hyphens
+assert 'id="serviceRefresh"' not in actual
+assert 'id="diagShare"' in actual and '?share=1&download=1' in actual
+assert 'diagReportFetchedAt' in actual and 'if(state.view===\'lab\'||$(\'diagReportText\'))' in actual
+assert 'ble_request_queue_depth()' in (r/'src/cielo_ble_worker.cpp').read_text()
+assert 'metricTime(metrics.write_last' in (r/'src/cielo_ble_worker.cpp').read_text()

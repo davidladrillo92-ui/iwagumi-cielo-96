@@ -1,7 +1,7 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021]
   workflow_dispatch:
 jobs:
   firmware:
@@ -21,6 +21,11 @@ jobs:
           /tmp/test_night_safety
           g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_b1_scenarios.cpp -o /tmp/test_b1_scenarios
           /tmp/test_b1_scenarios
+          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_b5_diagnostics.cpp -o /tmp/test_b5_diagnostics
+          /tmp/test_b5_diagnostics
+          python tests/test_b5_source_contract.py
+          python -c "from pathlib import Path; h=Path('web/interfaz_r4.html').read_text(); Path('/tmp/cielo_ui_test.js').write_text(h.split('<script>',1)[1].split('</script>',1)[0])"
+          node --check /tmp/cielo_ui_test.js
       - name: Instalar PlatformIO
         run: pip install platformio==6.1.18
       - name: Compilar ATOMS3 Lite

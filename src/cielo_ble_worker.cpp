@@ -26,6 +26,17 @@ Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
 QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr,releaseRequests=nullptr,customRequests=nullptr,customResults=nullptr;
 struct SharedLink { volatile bool connected=false;volatile bool released=false;volatile uint32_t releases=0;volatile uint32_t lastDisconnect=0;};
 SharedLink shared[2]{};
+// Escritos solo desde la tarea BLE; enteros de 32 bits leídos pasivamente desde HTTP.
+struct PhaseCounters {
+ volatile uint32_t connect_count=0,connect_failed=0,connect_last=0,connect_max=0;
+ volatile uint32_t write_count=0,write_failed=0,write_last=0,write_max=0;
+ volatile uint32_t disconnect_count=0,disconnect_last=0,disconnect_max=0;
+};
+PhaseCounters phaseCounters[2]{};
+inline void metricTime(volatile uint32_t&last,volatile uint32_t&maxVal,uint32_t duration){
+ last=duration;if(duration>maxVal)maxVal=duration;
+}
+
 uint32_t linkTouched[2]{};
 static constexpr uint32_t BLE_IDLE_RELEASE_MS=5000UL;
 volatile uint32_t lastHeartbeat=0;
@@ -39,7 +50,12 @@ void releaseTarget(uint8_t device,bool userRequested){
  setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  Target& t=targets[device];
  setWorkerPhase(BleWorkerPhase::Disconnecting,device);
- if(t.client && t.client->isConnected())t.client->disconnect();
+ if(t.client && t.client->isConnected()){
+  const uint32_t started=millis();
+  t.client->disconnect();
+  PhaseCounters& metrics=phaseCounters[device];metrics.disconnect_count++;
+  metricTime(metrics.disconnect_last,metrics.disconnect_max,millis()-started);
+ }
  t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
  // Mantener direccion/tipo aprendidos para evitar scan de 5s en cada orden;
  // ante un fallo real de conexion se invalida en connect().
@@ -89,7 +105,12 @@ bool connect(Target& t,const char*&err){
  // connect(BLEAddress) on Arduino-ESP32 2.x; this may block, isolated from HTTP.
  BLEAddress address(std::string(t.address.c_str()));
  setWorkerPhase(BleWorkerPhase::Connecting,&t==&targets[0]?0:1);
- if(!t.client->connect(address,t.addressType)){
+ const uint32_t started=millis();
+ bool connected=t.client->connect(address,t.addressType);
+ PhaseCounters& metrics=phaseCounters[&t==&targets[0]?0:1];
+ metrics.connect_count++;if(!connected)metrics.connect_failed++;
+ metricTime(metrics.connect_last,metrics.connect_max,millis()-started);
+ if(!connected){
   err="BLE_CONNECT_FAILED";t.addressKnown=false;return false;
  }
  setWorkerPhase(BleWorkerPhase::Service,&t==&targets[0]?0:1);
@@ -108,9 +129,12 @@ bool put(Target& t,const uint8_t* data,size_t n,const char*&err){
  if(!t.client || !t.client->isConnected() || !t.writer){err="GATT_NOT_CONNECTED";return false;}
  // Arduino BLE writeValue returns void: transport accepted != optical ACK!
  setWorkerPhase(BleWorkerPhase::Writing,&t==&targets[0]?0:1);
+ const uint32_t writeStarted=millis();
  t.writer->writeValue(const_cast<uint8_t*>(data),n,t.writer->canWrite());
+ PhaseCounters& metrics=phaseCounters[&t==&targets[0]?0:1];metrics.write_count++;
+ metricTime(metrics.write_last,metrics.write_max,millis()-writeStarted);
  if(writesInCurrentOperation<255)writesInCurrentOperation++; // GATT write call, not optical acknowledgement
- if(!t.client->isConnected()){err="BLE_DISCONNECTED_DURING_WRITE";t.writer=nullptr;return false;}
+ if(!t.client->isConnected()){metrics.write_failed++;err="BLE_DISCONNECTED_DURING_WRITE";t.writer=nullptr;return false;}
  vTaskDelay(pdMS_TO_TICKS(30));
  return true;
 }
@@ -321,6 +345,18 @@ bool ble_scan_result(BleScanResult& out){return scanResponses && xQueueReceive(s
 bool ble_dispatch(const cielo::ble::Command& c){return requests && xQueueSend(requests,&c,0)==pdTRUE;}
 bool ble_result(BleResult& r){return responses && xQueueReceive(responses,&r,0)==pdTRUE;}
 uint32_t ble_last_heartbeat(){return lastHeartbeat;}
+BleTransportStats ble_transport_stats(uint8_t device){
+ BleTransportStats r{};if(device>1)return r;
+ const PhaseCounters& m=phaseCounters[device];
+ r.connect_count=m.connect_count;r.connect_failed=m.connect_failed;
+ r.connect_last_ms=m.connect_last;r.connect_max_ms=m.connect_max;
+ r.write_count=m.write_count;r.write_failed=m.write_failed;
+ r.write_last_ms=m.write_last;r.write_max_ms=m.write_max;
+ r.disconnect_count=m.disconnect_count;r.disconnect_last_ms=m.disconnect_last;
+ r.disconnect_max_ms=m.disconnect_max;
+ return r;
+}
+uint32_t ble_request_queue_depth(){return requests?uxQueueMessagesWaiting(requests):0;}
 BleWorkerSnapshot ble_worker_snapshot(){
  BleWorkerSnapshot s{};
  const uint32_t now=millis();

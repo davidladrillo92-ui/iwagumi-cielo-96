@@ -50,6 +50,14 @@ enum class BleWorkerPhase : uint8_t {
  Characteristic=6, Writing=7, Disconnecting=8, Resuming=9,
  Probing=10, Sending=11
 };
+// Contadores de transporte de la tarea BLE; duración de cada fase, no ACK óptico.
+struct BleTransportStats {
+ uint32_t connect_count=0,connect_failed=0,connect_last_ms=0,connect_max_ms=0;
+ uint32_t write_count=0,write_failed=0,write_last_ms=0,write_max_ms=0;
+ uint32_t disconnect_count=0,disconnect_last_ms=0,disconnect_max_ms=0;
+};
+BleTransportStats ble_transport_stats(uint8_t device);
+uint32_t ble_request_queue_depth();
 struct BleWorkerSnapshot {
  uint8_t phase=0,device=255;
  uint32_t phase_age_ms=0,heartbeat_age_ms=0;

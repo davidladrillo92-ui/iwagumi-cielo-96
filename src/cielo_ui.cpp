@@ -130,7 +130,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
   <p id="diagDetails" style="font-size:12px;opacity:.85;white-space:pre-wrap"></p>
   <p class="note">GATT confirma una operación Bluetooth, no mide físicamente la intensidad ni el color de la lámpara.</p>
  </details>
- <div class="liveButtons health-buttons"><button id="serviceRefresh">Actualizar diagnóstico</button><button id="diagCopy">Copiar resumen</button></div>
+ <div class="liveButtons health-buttons"><button id="diagCopy">Copiar resumen</button><button id="diagShare">Descargar informe para compartir</button></div>
  <div class="liveButtons health-secondary"><button id="diagView">Ver Informe Maestro</button><button id="diagDownload">Descargar JSON</button></div>
 </section>
 <details class="livePanel"><summary><strong>Comprobación del sistema</strong></summary>
@@ -651,11 +651,12 @@ function diagFacts(d){
  const badWiFi=n.home_wifi_connected===false,badWorker=d.bluetooth?.worker_unresponsive===true;
  const badClock=d.clock_diagnostics?.valid===false;
  const critical=al.current_critical===true||d.status==='incidencia_actual';
- let level='good',heading='CIELO funciona correctamente',why='Las luces están comunicando con el ATOM.';
+ const professional=d.professional||{};
+ let level='good',heading='CIELO sin incidencias actuales',why='El diagnóstico se ha recibido del ATOM. Las confirmaciones GATT no miden la luz.';
  let advice='No necesitas intervenir. Los avisos anteriores quedan conservados en el historial.';
  if(p+c===0&&up<180){
   level='wait';heading='El sistema está arrancando';why='Esperando las primeras transmisiones.';
-  advice='Espera unos tres minutos y actualiza el diagnóstico.';
+  advice='Espera unos tres minutos; los datos se consultan automáticamente.';
  }else if(badWiFi||badWorker||badClock||critical){
   level='error';heading='CIELO requiere atención';
   if(badWiFi){why='La red Wi-Fi doméstica está desconectada.';advice='Comprueba la Wi-Fi desde Ajustes; si cambiaste de router utiliza el acceso de recuperación.';}
@@ -665,7 +666,14 @@ function diagFacts(d){
  }else if(p===0||c===0){
   level='wait';heading='Esperando una pantalla';
   why='Falta todavía una comunicación Bluetooth confirmada en este arranque.';
-  advice='Espera al siguiente envío y vuelve a actualizar.';
+  advice='Espera al siguiente envío; el informe se actualizará solo.';
+ }
+ if(professional.pez_verde==='FALLO'||professional.chihiros==='FALLO'){
+  level='error';heading='Alerta de conexión con una pantalla';
+  why='El Informe Maestro detecta un fallo actual. Comprueba visualmente ambas luces.';
+ }else if(level==='good' && (professional.pez_verde==='ADVERTENCIA'||professional.chihiros==='ADVERTENCIA')){
+  level='wait';heading='Bluetooth recuperándose o pendiente';
+  why='Hay una operación pendiente o una conexión que todavía debe verificarse.';
  }
  return {level,heading,why,advice,pv,ch,v,n,sy,al,up,p,c,num};
 }
@@ -725,8 +733,8 @@ function diagEventLabel(s){
 function diagRender(d){
  const a=diagFacts(d),n=a.num,v=a.v,day=d.daily_monitoring||{};
  const light=(name,item,active,recent,external)=>{
-  $('diag'+name+'Status').textContent=!active?external:
-    recent?'CIELO · respuesta reciente':'CIELO · esperando respuesta';
+  $('diag'+name+'Status').textContent=d.professional?.[name==='Pv'?'pez_verde':'chihiros'] || (!active?external:
+    recent?'CIELO · respuesta reciente':'CIELO · esperando respuesta');
   $('diag'+name+'Ops').textContent=n(item.gatt_ok)+' operaciones correctas · '+n(item.errors)+' errores';
  };
  light('Pv',a.pv,v.pez_verde_active===true,v.pv_online_recent===true,'En espera');
@@ -735,7 +743,7 @@ function diagRender(d){
  $('diagState').textContent=a.heading;
  $('diagExplain').textContent=a.why;
  $('diagAdvice').textContent=a.advice;
- $('diagUpdated').textContent='Actualizado · '+(d.generated_at||'hora no disponible');
+ $('diagUpdated').textContent='Consultado · '+new Date().toLocaleTimeString('es-ES')+' · ATOM: '+(d.generated_at||'reloj pendiente');
  $('diagWifi').textContent=a.n.home_wifi_connected===true?'Conectada':
   a.n.home_wifi_connected===false?'Sin conexión':'Sin datos';
  $('diagHeap').textContent=Number.isFinite(+a.sy.heap_free)?(+a.sy.heap_free/1024).toFixed(1)+' KB':'—';
@@ -760,7 +768,8 @@ function diagRender(d){
   '\nPez Verde: '+a.p+' GATT OK, '+n(a.pv.errors)+' fallos, última operación '+n(a.pv.last_ms)+' ms'+
   '\nChihiros: '+a.c+' GATT OK, '+n(a.ch.errors)+' fallos, última operación '+n(a.ch.last_ms)+' ms'+
   '\nWi-Fi: '+n(a.n.wifi_disconnects)+' desconexiones, señal '+n(a.n.wifi_rssi_dbm)+' dBm'+
-  '\nRAM '+(n(a.sy.heap_free)/1024).toFixed(1)+' KB · mínimo '+(n(a.sy.heap_minimum)/1024).toFixed(1)+' KB'+
+  '\nRAM '+(n(a.sy.heap_free)/1024).toFixed(1)+' KB · mínimo '+(n(a.sy.heap_minimum)/1024).toFixed(1)+' KB · fragmentación estimada '+(a.sy.fragmentation_pct ?? 'sin datos')+' %'+
+  '\nPOWER OFF PV: '+(d.professional?.power_off?.gatt_status||'NO_PROBADO')+' · intentos '+(d.professional?.power_off?.ble_attempts??0)+' · fallos '+(d.professional?.power_off?.failed_attempts??0)+
   '\nArranques acumulados: '+n(a.sy.boot_count)+' · '+(a.sy.reset_reason_name||'motivo desconocido')+
   '\nCurvas: '+n(d.curves?.points_pv)+' puntos PV y '+n(d.curves?.points_ch)+' CH'+
   '\nHistórico RAM: '+n(day.samples)+' muestras de '+n(day.capacity||96)+
@@ -772,7 +781,10 @@ async function diagLoad(){
   const r=await fetch('/api/diagnostico/maestro',{cache:'no-store'});
   if(!r.ok)throw Error('HTTP '+r.status);
   const d=await r.json();window.cieloMasterSnapshot=d;
-  diagRender(d);return d;
+  diagRender(d);
+  if($('diagReportText'))$('diagReportText').textContent=JSON.stringify(d,null,2);
+  if($('diagReportFetchedAt'))$('diagReportFetchedAt').textContent='Consultado: '+new Date().toLocaleTimeString('es-ES')+' · datos generados por el ATOM al consultar';
+  return d;
  }catch(e){
   $('diagIndicator').className='health-indicator warning';
   $('diagState').textContent='No se puede consultar CIELO';
@@ -812,8 +824,9 @@ async function diagCopyUi(){
 async function diagViewUi(){
  try{
   const d=await diagLoad();
-  sheet('<div style="max-height:70vh;overflow:auto"><h2>Informe maestro CIELO</h2><pre id="diagReportText" style="font-size:11px;white-space:pre-wrap;word-break:break-word"></pre></div>');
+  sheet('<div style="max-height:70vh;overflow:auto"><h2>Informe maestro CIELO</h2><p id="diagReportFetchedAt" class="note">Consultando al ATOM...</p><pre id="diagReportText" style="font-size:11px;white-space:pre-wrap;word-break:break-word"></pre></div>');
   $('diagReportText').textContent=JSON.stringify(d,null,2);
+  $('diagReportFetchedAt').textContent='Consultado: '+new Date().toLocaleTimeString('es-ES');
  }catch(e){toast(e.message);}
 }
 async function serviceRefresh(){
@@ -1135,7 +1148,8 @@ function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()
 document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;$('cieloPauseAll').onclick=cieloPauseAllUi;
 $('diagView').onclick=diagViewUi;
 $('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1','_blank');
-$('serviceRefresh').onclick=serviceRefresh;$('diagCopy').onclick=diagCopyUi;
+$('diagCopy').onclick=diagCopyUi;
+$('diagShare').onclick=()=>window.open('/api/diagnostico/maestro?share=1&download=1','_blank');
 $('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;
 try{const key=localStorage.getItem('cieloOtaKey');if(key){$('otaSecret').value=key;$('otaRemember').checked=true}}catch(_){};
 $('labGuided').onclick=labGuided;
@@ -1145,6 +1159,6 @@ $('chart').onclick=e=>{
  state.scrub=Math.max(0,Math.min(1440,Math.round(x*1440)));
  state.preview=state.scrub;$('scrub').value=state.scrub;render();
 };
-$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(state.preview===null){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000);setInterval(()=>{if(state.view==='lab')labRefresh()},10000)}
+$('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(state.preview===null){state.scrub=currentClock();$('scrub').value=state.scrub}sync()},6000);setInterval(()=>{if(state.view==='lab'||$('diagReportText'))diagLoad().catch(()=>{});},15000);setInterval(()=>{if(state.view==='lab')labRefresh()},10000)}
 window.addEventListener('DOMContentLoaded',init);
 </script></body></html>)CIELOUI_96";
