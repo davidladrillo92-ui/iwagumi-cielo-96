@@ -148,6 +148,8 @@ bool https_begin(Preferences&prefs){
  httpd_ssl_config_t cfg=HTTPD_SSL_CONFIG_DEFAULT();
  cfg.httpd.stack_size=12288;
  cfg.httpd.max_uri_handlers=2;
+ cfg.httpd.max_open_sockets=2;
+ cfg.httpd.lru_purge_enable=true;
  cfg.httpd.uri_match_fn=httpd_uri_match_wildcard;
  cfg.httpd.recv_wait_timeout=120;
  cfg.httpd.send_wait_timeout=120;
