@@ -693,10 +693,16 @@ function diagMemoryTrend(d){
   fill:'none',stroke:'#a2d6b6','stroke-width':2.2,'stroke-linejoin':'round'});
  add('circle',{cx:x(values.length-1),cy:y(values[values.length-1]),r:3,fill:'#d6f6dc'});
  $('diagTrendNote').textContent=values.length+' muestras de memoria interna · últimos '+Math.round((rows.length-1)*(o.interval_min||15)/60*10)/10+' h disponibles.';
- const delta=values[values.length-1]-values[0];
- $('diagTrendStats').textContent='Inicial '+values[0].toFixed(1)+' KB · actual '+
-  values[values.length-1].toFixed(1)+' KB · cambio '+(delta>=0?'+':'')+delta.toFixed(1)+
-  ' KB. Esta variación por sí sola no demuestra una fuga de memoria.';
+ const delta=values[values.length-1]-values[0],first=rows[0],last=rows[rows.length-1];
+ const pv=Math.max(0,(+last[1]||0)-(+first[1]||0));
+ const ch=Math.max(0,(+last[2]||0)-(+first[2]||0));
+ const pvErr=Math.max(0,(+last[3]||0)-(+first[3]||0));
+ const chErr=Math.max(0,(+last[4]||0)-(+first[4]||0));
+ $('diagTrendStats').textContent='Actividad muestreada: PV '+pv+' / CH '+ch+
+  ' operaciones, fallos '+pvErr+' / '+chErr+
+  ' · RAM inicial '+values[0].toFixed(1)+' KB y final '+values[values.length-1].toFixed(1)+
+  ' KB (cambio '+(delta>=0?'+':'')+delta.toFixed(1)+' KB). '+
+  'Los cambios de RAM por sí solos no demuestran una fuga.';
 }
 function diagEventLabel(s){
  const names={
