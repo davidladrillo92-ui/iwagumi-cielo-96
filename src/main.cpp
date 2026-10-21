@@ -1687,7 +1687,9 @@ static void bleTick(){
    if(res.device==0 && (cieloPvRun||pvOffObligation)){
     const bool wasOffCommand=cielo96::safety::isOffAck(pvOffObligation,pvOffInFlightSeq,res.sequence);
     if(wasOffCommand)pvOffInFlightSeq=0;
-    if(res.success){
+    if(pvOffObligation && !wasOffCommand){
+     record("PV_RESULTADO_ANTERIOR","Un resultado GATT previo no confirma apagado nocturno");
+    }else if(res.success){
      cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;
      if(wasOffCommand){
       pvOffLastGatt=now;pvOffFailures=0;pvSafety=PvSafetyState::OffGattOk;
@@ -1761,6 +1763,7 @@ static void bleTick(){
   }
   if(schedulerPV && cielo96::safety::forbidStaleRgb(pvOffObligation,cmd.brightness)){
    queue.complete(cmd.sequence,false,now);
+   queue.cancel_pending(cielo::ble::Device::PezVerde);
    record("PV_RGB_OBSOLETO_BLOQUEADO","No enviar RGB viejo durante obligacion de apagado");
    return;
   }
