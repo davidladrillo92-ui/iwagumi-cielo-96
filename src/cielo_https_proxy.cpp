@@ -1,4 +1,5 @@
 #include "cielo_https_proxy.h"
+#include "cielo_security_policy.h"
 #include <esp_https_server.h>
 #include <esp_system.h>
 #include <mbedtls/pk.h>
@@ -80,6 +81,17 @@ static esp_err_t gateway(httpd_req_t*req){
  // Limitar las llamadas a su puerto 80 desde otros hosts: el servidor web
  // comprueba que la IP origen sea localhost antes de aceptar mutaciones.
  if(req->content_len>0x340000){httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Carga demasiado grande");return ESP_FAIL;}
+ // La sesión de administración requiere misma procedencia. Rechazar forms
+ // enviados desde otras webs incluso cuando el navegador permita el POST.
+ if(req->method==HTTP_POST){
+  const String host=headerValue(req,"Host");
+  const String origin=headerValue(req,"Origin");
+  const String site=headerValue(req,"Sec-Fetch-Site");
+  if(!cielo96::security::sameOrigin(origin.c_str(),host.c_str())||
+     !cielo96::security::safeFetchSite(site.c_str())){
+   httpd_resp_send_err(req,HTTPD_403_FORBIDDEN,"Origen externo rechazado");return ESP_FAIL;
+  }
+ }
  const int sock=socket(AF_INET,SOCK_STREAM,IPPROTO_IP);
  if(sock<0){httpd_resp_send_500(req);return ESP_FAIL;}
  struct timeval tv={125,0};setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
@@ -89,7 +101,7 @@ static esp_err_t gateway(httpd_req_t*req){
  String url=String(req->uri);
  if(url.length()>180||url.indexOf('\r')>=0||url.indexOf('\n')>=0){close(sock);httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"URI invalida");return ESP_FAIL;}
  String head=String(method)+" "+url+" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n";
- const char*forward[]={"Content-Type","X-Cielo-Key","X-Cielo-Sha256","X-Cielo-Signature"};
+ const char*forward[]={"Content-Type","X-Cielo-Key","X-Cielo-Session","X-Cielo-Sha256","X-Cielo-Signature"};
  for(const char*name:forward){String v=headerValue(req,name);if(v.length() && v.indexOf('\r')<0&&v.indexOf('\n')<0)head+=String(name)+": "+v+"\r\n";}
  head+="Content-Length: "+String((unsigned)req->content_len)+"\r\n\r\n";
  if(!sendAll(sock,head)){close(sock);httpd_resp_send_500(req);return ESP_FAIL;}
@@ -120,6 +132,9 @@ static esp_err_t gateway(httpd_req_t*req){
  String disposition=backendHeader("Content-Disposition");
  if(disposition.length())httpd_resp_set_hdr(req,"Content-Disposition",disposition.c_str());
  httpd_resp_set_hdr(req,"Cache-Control","no-store");
+ httpd_resp_set_hdr(req,"X-Content-Type-Options","nosniff");
+ httpd_resp_set_hdr(req,"Referrer-Policy","no-referrer");
+ httpd_resp_set_hdr(req,"X-Frame-Options","DENY");
  bool success=true;
  // HTTP del servidor Arduino con longitud conocida: transmitir fragmentos TLS.
  // La respuesta del proxy usa Transfer-Encoding: chunked emitido por IDF.

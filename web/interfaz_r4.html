@@ -142,9 +142,9 @@
 
 <label style="display:block;margin:8px 0 4px" for="otaSecret">Clave privada de actualización</label>
 <input id="otaSecret" type="password" autocomplete="off" placeholder="Clave de actualización local" style="width:100%;padding:12px;border-radius:11px;background:#171a1e;color:white;border:1px solid #505256">
-<p class="note">La misma clave protege las luces, las curvas, la Wi-Fi y las actualizaciones. Escríbela una vez por sesión; no se guarda salvo que elijas recordarla.</p>
+<p class="note">La clave abre una sesión HTTPS temporal. Después CIELO utiliza un token que caduca automáticamente; nunca se guarda ese token en el iPhone. No guardes la clave salvo en un equipo privado.</p>
 <label class="note" style="display:block;margin:10px 0"><input id="otaRemember" type="checkbox"/> Recordar esta clave en este iPhone (no recomendado si es compartido)</label>
-<div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave una vez</button></div>
+<div class="liveButtons" style="margin-top:10px"><button id="otaPair" disabled>Configurar clave una vez</button><button id="otaLogout" type="button">Cerrar sesión segura</button></div>
 <label style="display:block;margin:14px 0 4px" for="otaFile">Archivo (.bin)</label>
 <input id="otaFile" type="file" accept=".bin,application/octet-stream" style="width:100%;color:#e7ded4">
 <label style="display:block;margin:12px 0 4px" for="otaSignatureFile">Firma digital del firmware (.sig)</label>
@@ -181,7 +181,38 @@ function currentClock(){
  return Math.floor(((seconds+elapsed)%86400)/60);
 }
 function isLive(){return location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'||location.search.includes('live=1')}
-async function api(path,data){if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');const opt={cache:'no-store',credentials:'same-origin'};if(data){opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};const key=$('otaSecret')?.value||'';if(key)opt.headers['X-Cielo-Key']=key;opt.body=new URLSearchParams(data)}const r=await fetch(path,opt);const body=await r.text();if(!r.ok)throw Error(body||('Error '+r.status));try{return JSON.parse(body)}catch{return body}}
+// El token solo vive en RAM del navegador. No se guarda en localStorage.
+let cieloSessionToken='',cieloSessionOpened=0;
+async function cieloEnsureSession(force=false){
+ if(cieloSessionToken&&!force)return cieloSessionToken;
+ const key=$('otaSecret')?.value||'';
+ if(key.length<12||key.length>96)throw Error('Introduce tu clave de CIELO en Centro > Actualizaciones');
+ const res=await fetch('/api/auth/session',{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'X-Cielo-Key':key}});
+ if(!res.ok)throw Error((await res.text())||'No se ha podido abrir sesion');
+ const d=await res.json();
+ if(!/^[0-9a-f]{64}$/.test(d.session||''))throw Error('Token de sesion incompatible');
+ cieloSessionToken=d.session;cieloSessionOpened=Date.now();return cieloSessionToken;
+}
+async function api(path,data){
+ if(!isLive())throw Error('Vista previa, abre Cielo desde el ATOM');
+ const write=!!data,pair=path==='/api/ota/pair';
+ const opt={cache:'no-store',credentials:'same-origin'};
+ if(write){
+  opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};
+  if(pair)opt.headers['X-Cielo-Key']=$('otaSecret')?.value||'';
+  else opt.headers['X-Cielo-Session']=await cieloEnsureSession();
+  opt.body=new URLSearchParams(data);
+ }
+ let r=await fetch(path,opt);
+ // Una sesion caducada no obliga a recargar la pagina del iPhone.
+ if(write&&!pair&&r.status===401){
+  cieloSessionToken='';opt.headers['X-Cielo-Session']=await cieloEnsureSession(true);
+  r=await fetch(path,opt);
+ }
+ const body=await r.text();
+ if(!r.ok)throw Error(body||('Error '+r.status));
+ try{return JSON.parse(body)}catch{return body}
+}
 async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}render()}catch(e){state.connected=false;render()}}
 function hourLabel(t){return fmt(clamp(t,0,1439))}
 function render(){
@@ -865,12 +896,22 @@ async function otaPreflightUi(){
   return true;
  }catch(e){toast('No se puede verificar si es seguro actualizar: '+e.message);return false;}
 }
+async function cieloLogoutUi(){
+ try{
+  if(cieloSessionToken)await fetch('/api/auth/logout',{method:'POST',cache:'no-store',headers:{'X-Cielo-Session':cieloSessionToken}});
+ }catch(_){}finally{
+  cieloSessionToken='';cieloSessionOpened=0;
+  try{localStorage.removeItem('cieloOtaKey')}catch(_){}
+  $('otaSecret').value='';$('otaRemember').checked=false;
+  toast('Sesión terminada. Clave recordada eliminada del iPhone.');
+ }
+}
 async function otaPairUi(){
  const key=$('otaSecret').value;
  if(key.length<12||key.length>64)return toast('Clave: de 12 a 64 caracteres');
  if(!confirm('Configurar la clave de actualización local. Conserva tu respaldo USB. ¿Continuar?'))return;
  try{
-  await api('/api/ota/pair',{key});
+  await api('/api/ota/pair',{key});cieloSessionToken='';
   if($('otaRemember')?.checked)try{localStorage.setItem('cieloOtaKey',key)}catch(_){}
   toast('Clave OTA guardada');await serviceRefresh()
  }catch(e){toast(e.message)}
@@ -912,7 +953,8 @@ async function sha256Firmware(file){
  return sha256Local(new Uint8Array(a)); // Safari por HTTP: sin WebCrypto en origen no seguro
 }
 async function otaPost(path,key){
- const response=await fetch(path,{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'X-Cielo-Key':key}});
+ const session=await cieloEnsureSession();
+ const response=await fetch(path,{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'X-Cielo-Session':session}});
  const body=await response.text();
  if(!response.ok)throw Error(body||'HTTP '+response.status);
  try{return JSON.parse(body)}catch{return body}
@@ -939,6 +981,7 @@ async function otaInstallUi(){
  if(!sigFile||!sigFile.name.toLowerCase().endsWith('.sig'))return toast('Selecciona su firma digital .sig');
  if(file.size<500000||file.size>0x330000)return toast('El tamaño del BIN no es compatible');
  if(key.length<12)return toast('Indica tu clave privada OTA');
+ try{await cieloEnsureSession()}catch(e){return toast('Sesión de seguridad: '+e.message)}
  if(!await otaPreflightUi())return;
  if(!confirm('CIELO detendrá temporalmente las dos curvas, devolverá Chihiros a su programación guardada y liberará Pez Verde antes de instalar. La autorización física del ATOM seguirá siendo necesaria. ¿Continuar?'))return;
  $('otaInstall').disabled=true;
@@ -960,7 +1003,7 @@ async function otaInstallUi(){
   await new Promise((resolve,reject)=>{
    const x=new XMLHttpRequest();
    x.open('POST','/api/ota/upload',true);
-   x.setRequestHeader('X-Cielo-Key',key);
+   x.setRequestHeader('X-Cielo-Session',cieloSessionToken);
    x.setRequestHeader('X-Cielo-Sha256',sha);
    x.setRequestHeader('X-Cielo-Signature',signature);
    x.upload.onprogress=ev=>{
@@ -1148,7 +1191,7 @@ $('diagView').onclick=diagViewUi;
 $('diagDownload').onclick=()=>window.open('/api/diagnostico/maestro?download=1','_blank');
 $('diagCopy').onclick=diagCopyUi;
 $('diagShare').onclick=()=>window.open('/api/diagnostico/maestro?share=1&download=1','_blank');
-$('otaPair').onclick=otaPairUi;$('otaInstall').onclick=otaInstallUi;
+$('otaPair').onclick=otaPairUi;$('otaLogout').onclick=cieloLogoutUi;$('otaInstall').onclick=otaInstallUi;
 try{const key=localStorage.getItem('cieloOtaKey');if(key){$('otaSecret').value=key;$('otaRemember').checked=true}}catch(_){};
 $('labGuided').onclick=labGuided;
 $('chart').onclick=e=>{
