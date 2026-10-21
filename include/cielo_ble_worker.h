@@ -44,4 +44,17 @@ bool ble_begin();
 bool ble_dispatch(const cielo::ble::Command& c);
 bool ble_result(BleResult& out);
 uint32_t ble_last_heartbeat();
+// Telemetria de fases: lectura pasiva; nunca toca Bluetooth fuera de su tarea.
+enum class BleWorkerPhase : uint8_t {
+ Starting=1, Idle=2, Discovery=3, Connecting=4, Service=5,
+ Characteristic=6, Writing=7, Disconnecting=8, Resuming=9,
+ Probing=10, Sending=11
+};
+struct BleWorkerSnapshot {
+ uint8_t phase=0,device=255;
+ uint32_t phase_age_ms=0,heartbeat_age_ms=0;
+ bool in_operation=false;
+};
+BleWorkerSnapshot ble_worker_snapshot();
+const char* ble_worker_phase_name(uint8_t phase);
 }
