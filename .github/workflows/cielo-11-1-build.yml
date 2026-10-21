@@ -17,6 +17,8 @@ jobs:
           python tools/validar_fuentes.py
           pip install cryptography==46.0.4
           python tools/test_security_crypto.py
+          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_night_safety.cpp -o /tmp/test_night_safety
+          /tmp/test_night_safety
       - name: Instalar PlatformIO
         run: pip install platformio==6.1.18
       - name: Compilar ATOMS3 Lite
