@@ -79,7 +79,7 @@ static esp_err_t gateway(httpd_req_t*req){
  // Solicitudes reenviadas UNICAMENTE al HTTP interno 127.0.0.1.
  // Limitar las llamadas a su puerto 80 desde otros hosts: el servidor web
  // comprueba que la IP origen sea localhost antes de aceptar mutaciones.
- if(req->content_len>0x340000){httpd_resp_send_err(req,HTTPD_413_CONTENT_TOO_LARGE,"Carga demasiado grande");return ESP_FAIL;}
+ if(req->content_len>0x340000){httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Carga demasiado grande");return ESP_FAIL;}
  const int sock=socket(AF_INET,SOCK_STREAM,IPPROTO_IP);
  if(sock<0){httpd_resp_send_500(req);return ESP_FAIL;}
  struct timeval tv={125,0};setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
@@ -151,7 +151,7 @@ bool https_begin(Preferences&prefs){
  cfg.httpd.uri_match_fn=httpd_uri_match_wildcard;
  cfg.httpd.recv_wait_timeout=120;
  cfg.httpd.send_wait_timeout=120;
- cfg.servercert=(const uint8_t*)tlsCertificate.c_str();cfg.servercert_len=tlsCertificate.length()+1;
+ cfg.cacert_pem=(const uint8_t*)tlsCertificate.c_str();cfg.cacert_len=tlsCertificate.length()+1;
  cfg.prvtkey_pem=(const uint8_t*)tlsPrivateKey.c_str();cfg.prvtkey_len=tlsPrivateKey.length()+1;
  if(httpd_ssl_start(&tlsServer,&cfg)!=ESP_OK){tlsServer=nullptr;return false;}
  httpd_uri_t get{};get.uri="/*";get.method=HTTP_GET;get.handler=gateway;
