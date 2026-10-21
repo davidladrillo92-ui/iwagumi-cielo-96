@@ -92,7 +92,7 @@
 <p id="chNightMetrics" class="note">Control RGB en vivo, también durante la noche.</p>
 <details class="curveHelper"><summary>Emergencia y más información</summary>
 <p>CIELO mantiene el control día y noche. Si falla la conexión, registra el problema e intenta devolver Chihiros a My Chihiros. Sin alimentación no puede enviar órdenes.</p>
-<div class="liveButtons"><button id="chNightOff">Volver a My Chihiros</button><button id="cieloPauseAll">Pausar ambas</button></div></details>
+<details class="emergencyControls"><summary>Emergencia · controles excepcionales</summary><p class="note">Solo si las luces no responden. No es necesario pausar para actualizar.</p><div class="liveButtons"><button id="chNightOff">Devolver control a My Chihiros</button><button id="cieloPauseAll">Detener control de ambas</button></div></details></details>
 </section>
 <p class="note" id="pez95DefaultNote">Pez Verde usa por defecto el cielo intenso: amanecer magenta, anochecer dorado/cobre y luna azul. Puedes editar la curva cuando queramos afinarla; no hay que aplicar un perfil aparte.</p>
 <input type="file" accept=".json,application/json" id="importFile" hidden>
@@ -836,6 +836,15 @@ async function serviceCopy(onlyErrors){
  }catch(e){toast(e.message+' · prueba Descargar historial')}
 }
 
+async function otaPreflightUi(){
+ try{
+  const r=await fetch('/api/ota/preflight',{cache:'no-store'});
+  if(!r.ok)throw Error('No se pudo comprobar el estado del ATOM');
+  const d=await r.json();
+  if(!d.ready){toast('Actualización detenida: '+(d.reason||'revisión necesaria'));return false;}
+  return true;
+ }catch(e){toast('No se puede verificar si es seguro actualizar: '+e.message);return false;}
+}
 async function otaPairUi(){
  const key=$('otaSecret').value;
  if(key.length<12||key.length>64)return toast('Clave: de 12 a 64 caracteres');
