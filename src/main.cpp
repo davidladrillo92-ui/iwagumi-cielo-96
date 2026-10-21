@@ -26,6 +26,7 @@
 #include "cielo_ble_queue.h"
 #include "cielo_ble_worker.h"
 #include "cielo_night_safety.h"
+#include "cielo_diagnostic_policy.h"
 #include "cielo_ui.h"
 
 #if __has_include("local_config.h")
@@ -41,7 +42,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1-SEGURIDAD";
+static constexpr const char* VERSION="11.1.0-RC5-B1B5-DIAGNOSTICO";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -255,7 +256,24 @@ static bool abnormalReset(esp_reset_reason_t r){
 }
 
 static uint32_t savedFailures=0;
-static uint32_t lastPersistentFaultAt=0;
+struct BootRecord {uint32_t id;uint8_t cause;uint8_t previous_clean;uint16_t reserved;};
+static BootRecord bootHistory[8]{};
+static uint8_t bootHistoryCount=0,bootHistoryHead=0;
+struct JournalEntry {uint32_t boot_id;uint32_t utc_epoch;char code[28];uint16_t repeats;uint16_t reserved;};
+struct JournalStore {uint32_t magic;uint8_t count;uint8_t head;uint16_t reserved;JournalEntry entries[8];};
+static constexpr uint32_t JOURNAL_MAGIC=0xC1E10505UL;
+static JournalStore journal{JOURNAL_MAGIC,0,0,0,{}};
+static bool journalDirty=false,journalHasFlushed=false;
+static uint32_t journalLastFlush=0;
+static void flushJournal(){
+ if(!journalDirty || !cielo96::diag::shouldFlush(millis(),journalLastFlush,journalHasFlushed))return;
+ journalHasFlushed=true;journalLastFlush=millis(); // Respetar límite incluso si NVS falla.
+ if(prefs.putBytes("diag_journal",&journal,sizeof(journal))==sizeof(journal)){
+  prefs.putUInt("fault_count",savedFailures);
+  journalDirty=false;
+ }
+}
+
 static uint32_t latencyHistory[2][32]{},latencyCount[2]{};
 static uint32_t latencyP95(uint8_t device){
  const uint32_t n=latencyCount[device]<32?latencyCount[device]:32;
@@ -279,12 +297,22 @@ struct Event{uint32_t elapsed;char label[22];char detail[82];};
 static Event events[EVENT_MAX];static int eventCount=0,eventHead=0;
 
 static void persistCritical(const char* name,const String& detail){
- // Persist only faults, never minute samples. Throttle NVS wear to one write per 60 s.
- if(millis()-lastPersistentFaultAt<60000UL)return;
- lastPersistentFaultAt=millis();
- prefs.putString("fault_type",name);
- prefs.putString("fault_text",detail.substring(0,70));
- prefs.putUInt("fault_count",prefs.getUInt("fault_count",0)+1);
+ (void)detail; // Importante: NUNCA persistir SSID, claves, IP ni detalles arbitrarios.
+ if(!cielo96::diag::importantEvent(name))return;
+ savedFailures++;
+ JournalEntry& latest=journal.entries[(journal.head+7)%8];
+ if(journal.count && latest.boot_id==previousBootCount+1 &&
+    strncmp(latest.code,name,sizeof(latest.code))==0){
+  if(latest.repeats<65535)latest.repeats++;
+ }else{
+  JournalEntry& e=journal.entries[journal.head];e=JournalEntry{};
+  e.boot_id=previousBootCount+1;
+  time_t t=time(nullptr);e.utc_epoch=t>1700000000L?(uint32_t)t:0;
+  snprintf(e.code,sizeof(e.code),"%s",name);e.repeats=1;
+  journal.head=(journal.head+1)%8;
+  if(journal.count<8)journal.count++;
+ }
+ journalDirty=true;flushJournal();
 }
 static void record(const char*name,const String& detail){
  Event&e=events[eventHead];e.elapsed=millis()-bootMs;
@@ -292,9 +320,7 @@ static void record(const char*name,const String& detail){
  snprintf(e.detail,sizeof(e.detail),"%s",detail.c_str());
  eventHead=(eventHead+1)%EVENT_MAX;if(eventCount<EVENT_MAX)eventCount++;lastEventId++;
  Serial.printf("CIELO EVENT %s %s\n",name,detail.c_str());
- if(strncmp(name,"BLE_ERROR",9)==0 || strncmp(name,"CURVA_ERROR",11)==0 ||
-    strncmp(name,"BLE_SOFT_TIMEOUT",16)==0 || strncmp(name,"OTA_ERROR",9)==0)
-   persistCritical(name,detail);
+ if(cielo96::diag::importantEvent(name))persistCritical(name,detail);
 }
 static String jsonQuote(const String& s){
  String r="\"";for(size_t i=0;i<s.length();i++){
@@ -718,11 +744,15 @@ static void diagnosticJson(){
  uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (millis()-cielo96::ble_last_heartbeat()>45000UL);
- bool critical=badReset||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
-  workerUnavailable||bleResultErrors||profileRecovery||otaError||!timeOK();
- bool historical=m.soft_timeouts||bleSlowCount||savedFailures;
+ bool critical=(badReset&&!currentBootMarkedHealthy)||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
+  workerUnavailable||profileRecovery||otaError||!timeOK()||
+  (pvOffObligation&&pvOffFailures>=3); // Los errores BLE ya recuperados son historicos.
+ bool historical=badReset||m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
  String j;j.reserve(22000);
- j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v2\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
+ j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
+ j+=",\"boot_id\":"+String(previousBootCount+1);
+ j+=",\"generated_epoch\":"+(timeOK()?String((uint32_t)time(nullptr)):String("null"));
+ j+=",\"share_safe\":"+String(srv.hasArg("share")?"true":"false");
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+
   jsonQuote(critical?"incidencia_actual":historical?"avisos_historicos":"sin_avisos_actuales");
  j+=",\"alerts\":{\"current_critical\":"+String(critical?"true":"false");
@@ -733,13 +763,16 @@ static void diagnosticJson(){
  j+=",\"pilot\":{\"ble_start_requires_button\":false,\"ble_start_attempted\":"+String(blePilotAttempted?"true":"false")+",\"rescue_read_only\":"+String(rescueOpen?"true":"false")+",\"rescue_seconds\":"+String(rescueOpen?(rescueUntil-millis())/1000UL:0)+",\"private_ap_active\":"+String(apProtected?"true":"false")+"}";
  j+=",\"system\":{\"reset_reason\":"+String((unsigned)esp_reset_reason())+",\"reset_reason_name\":"+jsonQuote(resetReasonName(esp_reset_reason()))+",\"abnormal_reset\":"+String(badReset?"true":"false")+",\"boot_marked_healthy\":"+String(currentBootMarkedHealthy?"true":"false")+",\"watchdog_active\":null";
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
- j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"filesystem_ok\":null,\"filesystem_errors\":null";
+ j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"fragmentation_pct\":"+(freeMem?String(cielo96::diag::fragmentationPct(freeMem,largest)):String("null"));
+ j+=",\"fragmentation_definition\":\"100 x (1 - largest_free_block / free_heap), solo estimacion\"";
+ j+=",\"filesystem_ok\":null,\"filesystem_errors\":null";
  j+=",\"boot_count\":"+String(previousBootCount+1)+",\"previous_boot_marked_clean\":"+String(priorBootClean?"true":"false");
  j+=",\"last_phase\":"+jsonQuote(tracePhaseName(rtcTrace.phase));
  j+=",\"previous_reset_phase_valid\":"+String(lastResetTraceValid?"true":"false");
  j+=",\"previous_reset_phase\":"+jsonQuote(lastResetTraceValid?tracePhaseName(lastResetTracePhase):"NO_DISPONIBLE");
  j+=",\"previous_reset_phase_is_hint_only\":true";
- j+=",\"persistent_fault_count\":"+String(savedFailures)+",\"prior_fault_type\":"+jsonQuote(priorEvent)+",\"prior_fault_detail\":"+jsonQuote(priorEventDetail)+"}";
+ j+=",\"persistent_fault_count\":"+String(savedFailures)+",\"prior_fault_type\":"+jsonQuote(priorEvent);
+ j+=",\"prior_fault_detail\":"+(srv.hasArg("share")?String("null"):jsonQuote(priorEventDetail))+"}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
  j+=",\"wifi_disconnects\":"+String(wifiDisconnects)+",\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0);
  j+=",\"wifi_modem_sleep\":"+jsonQuote(wifiSleepName())+",\"wifi_ble_coex_ready\":"+String(wifiCoexistReady()?"true":"false")+"}";
@@ -756,18 +789,52 @@ static void diagnosticJson(){
   j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
   j+=",\"release_count\":"+String(link.release_count)+"}";
  }
- j+=",\"queued\":"+String(m.submitted)+",\"superseded\":"+String(m.superseded)+",\"failed\":"+String(m.failed);
+ j+=",\"queued\":"+String(m.submitted)+",\"queued_total_is_submitted\":true";
+ j+=",\"queue_depth\":"+String((queue.pending(cielo::ble::Device::PezVerde)?1:0)+(queue.pending(cielo::ble::Device::Chihiros)?1:0));
+ j+=",\"worker_queue_depth\":"+String(cielo96::ble_request_queue_depth());
+ j+=",\"in_flight\":"+String(queue.busy()?"true":"false");
+ j+=",\"superseded\":"+String(m.superseded)+",\"failed\":"+String(m.failed);
  j+=",\"timeouts\":"+String(m.soft_timeouts)+",\"retries\":"+String(m.retries)+",\"max_call_ms\":"+String(bleDurationMax);
  j+=",\"slow_calls\":"+String(bleSlowCount);
  j+=",\"per_device\":{\"pez_verde\":{\"operations\":"+String(devices[0].completed)+",\"gatt_ok\":"+String(devices[0].gatt_ok)+",\"write_calls\":"+String(devices[0].write_calls)+",\"errors\":"+String(devices[0].errors)+",\"slow_calls\":"+String(devices[0].slow)+",\"last_ms\":"+String(devices[0].last_ms)+",\"max_ms\":"+String(devices[0].max_ms)+"}";
  j+=",\"chihiros\":{\"operations\":"+String(devices[1].completed)+",\"gatt_ok\":"+String(devices[1].gatt_ok)+",\"write_calls\":"+String(devices[1].write_calls)+",\"errors\":"+String(devices[1].errors)+",\"slow_calls\":"+String(devices[1].slow)+",\"last_ms\":"+String(devices[1].last_ms)+",\"max_ms\":"+String(devices[1].max_ms)+"}}";
- j+=",\"p95_ms\":{\"pez_verde\":"+String(latencyP95(0))+",\"chihiros\":"+String(latencyP95(1))+"}";
+ j+=",\"p95_ms\":{\"pez_verde\":"+(cielo96::diag::canReportP95(latencyCount[0])?String(latencyP95(0)):String("null"));
+ j+=",\"chihiros\":"+(cielo96::diag::canReportP95(latencyCount[1])?String(latencyP95(1)):String("null"))+"}";
+ j+=",\"p95_min_samples\":10,\"latency_samples\":{\"pez_verde\":"+String(latencyCount[0])+",\"chihiros\":"+String(latencyCount[1])+"}";
+ j+=",\"phase_timing_ms\":{";
+ for(uint8_t i=0;i<2;i++){
+  const auto x=cielo96::ble_transport_stats(i);if(i)j+=",";
+  j+=jsonQuote(i?"chihiros":"pez_verde")+":{\"connect\":{\"count\":"+String(x.connect_count)+",\"failed\":"+String(x.connect_failed)+",\"last_ms\":"+String(x.connect_last_ms)+",\"max_ms\":"+String(x.connect_max_ms)+"}";
+  j+=",\"write\":{\"count\":"+String(x.write_count)+",\"failed\":"+String(x.write_failed)+",\"last_ms\":"+String(x.write_last_ms)+",\"max_ms\":"+String(x.write_max_ms)+"}";
+  j+=",\"disconnect\":{\"count\":"+String(x.disconnect_count)+",\"last_ms\":"+String(x.disconnect_last_ms)+",\"max_ms\":"+String(x.disconnect_max_ms)+"}}";
+ }j+="}";
  const auto workerSnap=cielo96::ble_worker_snapshot();
  j+=",\"worker_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(workerSnap.phase));
  j+=",\"worker_phase_age_ms\":"+String(workerSnap.phase_age_ms);
  j+=",\"worker_device\":"+String(workerSnap.device);
  j+=",\"worker_unresponsive\":"+String(workerUnavailable?"true":"false");
  j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
+ const bool bleAlive=bleReady&&!workerUnavailable;
+ auto pvLevel=cielo96::diag::link(bleReady,bleAlive,devices[0].completed>0,
+   cieloLastSuccessfulPvAt && millis()-cieloLastSuccessfulPvAt<650000UL,pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk);
+ auto chLevel=cielo96::diag::link(bleReady,bleAlive,devices[1].completed>0,
+   cieloLastSuccessfulChAt && millis()-cieloLastSuccessfulChAt<650000UL,cieloChReturnPending||cieloChAwaitResponse);
+ if(pvOffObligation&&pvOffFailures>=3)pvLevel=cielo96::diag::Level::Error;
+ if(!pvControlDesired&&!cieloPvRun&&!pvOffObligation)pvLevel=cielo96::diag::Level::NotTested;
+ if(!cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse)chLevel=cielo96::diag::Level::NotTested;
+ j+=",\"professional\":{\"levels\":{\"correct\":\"CORRECTO\",\"failed\":\"FALLO\",\"warning\":\"ADVERTENCIA\",\"not_tested\":\"NO_PROBADO\",\"no_data\":\"SIN_DATOS\"}";
+ j+=",\"wifi\":"+jsonQuote(wifi?"CORRECTO":"FALLO");
+ j+=",\"clock\":"+jsonQuote(timeOK()?"CORRECTO":"SIN_DATOS");
+ j+=",\"pez_verde\":"+jsonQuote(cielo96::diag::name(pvLevel));
+ j+=",\"chihiros\":"+jsonQuote(cielo96::diag::name(chLevel));
+ j+=",\"optical_feedback\":\"NO_PROBADO\"";
+ j+=",\"power_off\":{\"required\":"+String(pvOffObligation?"true":"false");
+ j+=",\"scheduled\":"+String(pvOffScheduled)+",\"ble_attempts\":"+String(pvOffAttempts);
+ j+=",\"failed_attempts\":"+String(pvOffFailures);
+ j+=",\"last_attempt_uptime_ms\":"+(pvOffLastTry?String(pvOffLastTry):String("null"));
+ j+=",\"last_gatt_ok_uptime_ms\":"+(pvOffLastGatt?String(pvOffLastGatt):String("null"));
+ j+=",\"gatt_status\":"+jsonQuote(pvOffLastGatt?"GATT_ACEPTADO":"NO_PROBADO");
+ j+=",\"optically_off\":null,\"reason\":\"Una escritura GATT no mide la luz real\"}}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
  j+=",\"security\":{\"https_ready\":"+String(cielo96::https_ready()?"true":"false")+",\"authentication\":\"PBKDF2-SHA256\",\"ota_signature\":\"ECDSA-P256\"}";
@@ -795,12 +862,32 @@ static void diagnosticJson(){
  j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
  j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
  j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false")+"}";
- j+=",\"lab\":"+labJson();
- j+=",\"event_retention\":\"36_RAM_y_ultimo_error_persistente_NVS\",\"events\":[";
+ j+=",\"lab\":"+(srv.hasArg("share")?String("null"):labJson());
+ j+=",\"persistent_diagnostics\":{\"boot_history\":[";
+ for(uint8_t i=0;i<bootHistoryCount;i++){
+  uint8_t idx=(bootHistoryHead+8-bootHistoryCount+i)%8;
+  if(i)j+=",";
+  const auto &b=bootHistory[idx];
+  j+="{\"boot_id\":"+String(b.id)+",\"reset_code\":"+String(b.cause);
+  j+=",\"reset_name\":"+jsonQuote(resetReasonName((esp_reset_reason_t)b.cause));
+  j+=",\"previous_clean\":"+String(b.previous_clean?"true":"false")+"}";
+ }
+ j+="],\"important_events\":[";
+ for(uint8_t i=0;i<journal.count;i++){
+  uint8_t idx=(journal.head+8-journal.count+i)%8;
+  if(i)j+=",";
+  const auto &e=journal.entries[idx];
+  j+="{\"boot_id\":"+String(e.boot_id)+",\"utc_epoch\":"+(e.utc_epoch?String(e.utc_epoch):String("null"));
+  j+=",\"event\":"+jsonQuote(e.code)+",\"repetitions\":"+String(e.repeats)+"}";
+ }
+ j+="],\"pending_nvs_write\":"+String(journalDirty?"true":"false");
+ j+=",\"flash_policy\":\"Solo al arrancar y al registrar incidencias; maximo un lote cada 5 minutos\"}";
+ j+=",\"event_retention\":\"36_RAM_8_incidencias_NVS_sin_detalles\",\"events\":[";
  for(int i=0;i<eventCount;i++){
   int idx=(eventHead-eventCount+i+EVENT_MAX)%EVENT_MAX;
   if(i)j+=',';
-  j+="{\"t_ms\":"+String(events[idx].elapsed)+",\"event\":"+jsonQuote(events[idx].label)+",\"detail\":"+jsonQuote(events[idx].detail)+"}";
+  j+="{\"t_ms\":"+String(events[idx].elapsed)+",\"boot_id\":"+String(previousBootCount+1);
+  j+=",\"event\":"+jsonQuote(events[idx].label)+",\"detail\":"+(srv.hasArg("share")?String("null"):jsonQuote(events[idx].detail))+"}";
  }
  j+="]}";
  jsonSend(200,j);
@@ -1278,7 +1365,7 @@ static void configureRoutes(){
   srv.send(307,"text/plain","CIELO: conecta por HTTPS. Confirma la huella de certificado por USB.");return;
  }++httpCount;srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"text/html; charset=utf-8",CIELO_UI);});
  srv.on("/api/status",HTTP_GET,statusJson);
- srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition","attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
+ srv.on("/api/diagnostico/maestro",HTTP_GET,[]{if(srv.hasArg("download"))srv.sendHeader("Content-Disposition",srv.hasArg("share")?"attachment; filename=\"CIELO_INFORME_COMPARTIBLE.json\"":"attachment; filename=\"CIELO_INFORME_MAESTRO.json\"");diagnosticJson();});
  srv.on("/api/service/report",HTTP_GET,diagnosticJson);
  srv.on("/api/lab/status",HTTP_GET,[]{jsonSend(200,labJson());});
  srv.on("/api/lab/start",HTTP_POST,[]{if(!requireAdminWrite())return;
@@ -1340,7 +1427,7 @@ static void configureRoutes(){
   cieloStartedAt=millis();lastPvDesired=false;lastChDesired=false;
   lastScheduleAt=millis()-30000UL;
   pezManual=false;chiManual=false;
-  record("V5_24H_ACTIVADA","Curvas activas 24h: PV 27, CH 21, RGB cero nocturno, heartbeat 5min");
+  record("V5_24H_ACTIVADA",String("Curvas activas 24h PV=")+String(profile.pvCount)+" CH="+String(profile.chCount)+"; apagado fisico via POWER OFF");
   ok();
  });
  srv.on("/api/cielo/v4/return",HTTP_POST,[]{if(!requireAdminWrite())return;
@@ -1812,6 +1899,23 @@ void setup(){
  priorEventDetail=prefs.getString("fault_text","ninguno");
  savedFailures=prefs.getUInt("fault_count",0);
  priorBootClean=prefs.getBool("clean",false);
+ if(prefs.getBytesLength("boot_hist")==sizeof(bootHistory)){
+  prefs.getBytes("boot_hist",bootHistory,sizeof(bootHistory));
+  for(const auto &e:bootHistory)if(e.id)bootHistoryCount++;
+  if(bootHistoryCount>8)bootHistoryCount=8;
+  // Valid chronological ring; newest id determines next slot.
+  uint32_t newest=0;uint8_t newestIndex=7;
+  for(uint8_t i=0;i<8;i++)if(bootHistory[i].id>=newest){newest=bootHistory[i].id;newestIndex=i;}
+  bootHistoryHead=(newestIndex+1)%8;
+ }
+ bootHistory[bootHistoryHead]={previousBootCount+1,(uint8_t)esp_reset_reason(),(uint8_t)priorBootClean,0};
+ bootHistoryHead=(bootHistoryHead+1)%8;if(bootHistoryCount<8)bootHistoryCount++;
+ prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
+ if(prefs.getBytesLength("diag_journal")==sizeof(journal)){
+  prefs.getBytes("diag_journal",&journal,sizeof(journal));
+  if(journal.magic!=JOURNAL_MAGIC||journal.count>8||journal.head>=8)journal=JournalStore{JOURNAL_MAGIC,0,0,0,{}};
+ }
+
  // One small write per boot; never on minute timer.
  prefs.putUInt("boots",previousBootCount+1);
  prefs.putBool("clean",false);
@@ -1996,6 +2100,7 @@ void loop(){
  cieloTrendTick();
  labTick();
  otaPreparationTick();
+ flushJournal(); // nunca escribir en flash por polling de diagnóstico
  tracePhase(TracePhase::Led);statusLedTick();
  tracePhase(TracePhase::Idle);delay(3);
 }
