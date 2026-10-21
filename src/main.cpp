@@ -43,7 +43,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-SEGURIDAD-R2";
+static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-B2B4-PERFILES";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 // Ultima etapa conservada en RTC (indicio, no backtrace); no utiliza NVS/flash.
 enum class TracePhase : uint32_t {
@@ -200,6 +200,8 @@ static const char* chSafetyName(){
 }
 static uint32_t pezManualUntil=0,chiManualUntil=0;
 static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaRestarts=0,otaLastChunkAt=0;
+static uint8_t cieloCurveIntervalSec=30; // Solo prueba voluntaria de 15s, por defecto 30s
+static uint32_t curveTrialErrorBase=0,curveTrialTimeoutBase=0,curveTrialFallbacks=0;
 static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
 static uint32_t httpCount=0,bleResultCount=0,bleResultErrors=0,bleSoftTimeouts=0;
 static uint32_t bleSlowCount=0,bleDurationMax=0,wifiFailures=0;
@@ -349,6 +351,7 @@ static void cieloTrendTick(){
  if(minutes<870 || minutes>=1380)cieloNightSamples++;else cieloDaySamples++;
 }
 static int minuteOfDay(){time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);return x.tm_hour*60+x.tm_min;}
+static uint32_t secondOfDay(){time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);return uint32_t(x.tm_hour*3600+x.tm_min*60+x.tm_sec);}
 static String dateTime(){
  if(!timeOK())return "Hora pendiente NTP";
  time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);
@@ -365,8 +368,12 @@ static String pointsCh(){String s;s.reserve(profile.chCount*20);
  s+=String(p.minute)+','+String(p.r)+','+String(p.g)+','+String(p.b);
  }return s;
 }
-static cielo::PvValue desiredPv(){return timeOK()?cielo::at(profile.pv,profile.pvCount,minuteOfDay()):cielo::PvValue{0,0,0,0};}
-static cielo::ChiValue desiredCh(){return timeOK()?cielo::at(profile.ch,profile.chCount,minuteOfDay()):cielo::ChiValue{0,0,0};}
+static cielo::PvValue desiredPv(){if(!timeOK())return {0,0,0,0};
+ return cieloCurveIntervalSec==15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):
+   cielo::at(profile.pv,profile.pvCount,minuteOfDay());}
+static cielo::ChiValue desiredCh(){if(!timeOK())return {0,0,0};
+ return cieloCurveIntervalSec==15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):
+   cielo::at(profile.ch,profile.chCount,minuteOfDay());}
 
 static void loadProfile(){
  profile=cielo96::ProfileImage{};
@@ -413,16 +420,18 @@ static bool positiveInt(const String&s,unsigned& n){
 // Los valores de latencia HTTP no son minutos: permitir hasta 60 segundos sin
 // reinterpretar mediciones reales como fallos de ruta/entrada de usuario.
 static bool parseBoundedUInt(const String&s,unsigned&n,unsigned maxValue){
- if(s.isEmpty()||s.length()>8)return false;
+ if(s.isEmpty()||s.length()>10)return false;
  uint32_t x=0;
  for(size_t i=0;i<s.length();i++){
   char ch=s[i];if(ch<'0'||ch>'9')return false;
-  x=x*10+(ch-'0');if(x>maxValue)return false;
+  const unsigned digit=unsigned(ch-'0');
+  if(digit>maxValue || x>(maxValue-digit)/10U)return false;
+  x=x*10+digit;
  }
  n=x;return true;
 }
 static bool parsePoints(const String&serialized,bool isPv,cielo96::ProfileImage&out){
- if(serialized.isEmpty() || serialized.length()>1700)return false;
+ if(serialized.isEmpty() || serialized.length()>2048)return false;
  unsigned cols=isPv?5:4,count=0;
  size_t start=0;
  while(start<serialized.length()){
@@ -449,15 +458,43 @@ static bool parsePoints(const String&serialized,bool isPv,cielo96::ProfileImage&
  return cielo::valid(out.ch,count) && out.ch[count-1].minute==1440
         && out.ch[count-1].r==0 && out.ch[count-1].g==0 && out.ch[count-1].b==0;
 }
-static void updateCurve(bool pv,bool reset){
+// CRC32 sobre la representacion canonica de ambas curvas (ASCII y salto LF).
+static uint32_t curveCrc32(const String&src){
+ uint32_t crc=0xffffffffUL;
+ for(size_t i=0;i<src.length();i++){
+  crc^=static_cast<uint8_t>(src[i]);
+  for(int k=0;k<8;k++)crc=(crc>>1)^((crc&1)?0xedb88320UL:0);
+ }
+ return crc^0xffffffffUL;
+}
+// Los dos canales se escriben como una unica imagen versionada con CRC FNV
+// en slot NVS inactivo; la imagen valida anterior se preserva en caso de fallo.
+static void saveBothCurves(){
+ if(rescueOpen)return fail(403,"Rescate solo lectura");
+ if(otaBusy || otaTxn.phase!=OtaPhase::Idle)return fail(423,"OTA en curso");
+ unsigned generation=0;
+ if(!parseBoundedUInt(srv.arg("generation"),generation,0xffffffffUL))
+   return fail(400,"Generacion del perfil incorrecta");
+ if(generation!=profile.generation)
+   return fail(409,"Perfil modificado en otro dispositivo: actualiza antes de guardar");
+ const String pv=srv.arg("pez"),ch=srv.arg("chi");
  cielo96::ProfileImage candidate=profile;
- if(reset){
-  if(pv){candidate.pvCount=cielo::pezverde_count;memcpy(candidate.pv,cielo::pezverde,sizeof(cielo::pezverde));}
-  else{candidate.chCount=cielo::chihiros_count;memcpy(candidate.ch,cielo::chihiros,sizeof(cielo::chihiros));}
- }else if(!parsePoints(srv.arg("points"),pv,candidate))return fail(400,"Puntos invalidos; no se ha modificado ninguna curva");
- candidate.generation=profile.generation+1;cielo96::profileSeal(candidate);
- if(!saveProfile(candidate))return fail(507,"La curva anterior sigue disponible; error de grabacion");
- lastPvDesired=false;lastChDesired=false;ok();
+ if(!parsePoints(pv,true,candidate) || !parsePoints(ch,false,candidate))
+   return fail(400,"Las dos curvas son obligatorias y deben ser validas");
+ const String expected=srv.arg("crc32");
+ if(expected.length()!=8)return fail(400,"CRC32 obligatorio, ocho digitos hexadecimales");
+ const String data=pv+"\n"+ch;
+ char digest[9];snprintf(digest,sizeof(digest),"%08lx",(unsigned long)curveCrc32(data));
+ if(!expected.equalsIgnoreCase(String(digest)))
+   return fail(422,"CRC32 incorrecto: guardado cancelado");
+ candidate.generation=profile.generation+1;
+ cielo96::profileSeal(candidate);
+ if(!saveProfile(candidate))
+   return fail(507,"Fallo de lectura/escritura; ultimo perfil valido conservado");
+ lastPvDesired=false;lastChDesired=false;
+ String reply="{\"ok\":true,\"generation\":"+String(profile.generation);
+ reply+=",\"pv_count\":"+String(profile.pvCount)+",\"ch_count\":"+String(profile.chCount)+"}";
+ jsonSend(200,reply);
 }
 static String cieloModeJson(){
  String j="{\"pez_verde_active\":"+String(cieloPvRun?"true":"false");
@@ -517,6 +554,9 @@ static void statusJson(){
  j+=",\"manual\":"+String(pezManual?"true":"false")+",\"power\":"+String(p.brightness>0?"true":"false");
  j+=",\"rgb\":["+String(p.r)+","+String(p.g)+","+String(p.b)+"],\"brightness\":"+String(p.brightness);
  j+=",\"points\":"+jsonQuote(pointsPv())+",\"chiPoints\":"+jsonQuote(pointsCh());
+ j+=",\"profileGeneration\":"+String(profile.generation)+",\"profileFormat\":"+String(profile.format);
+ j+=",\"curveIntervalSec\":"+String(cieloCurveIntervalSec)+",\"curveMaxPoints\":64";
+ j+=",\"curveTrialFallbacks\":"+String(curveTrialFallbacks);
  j+=",\"cieloV4\":"+cieloModeJson();
  j+=",\"chActive\":"+String(cieloChRun?"true":"false")+",\"chEvening\":"+String(cieloChRun?"true":"false")+",\"chContinuous\":"+String(cieloChRun?"true":"false");
  j+=",\"chStatus\":"+jsonQuote(cieloChRun?"Natural V4: control por CIELO":cieloChReturnPending||cieloChAwaitResponse?"Restaurando curva de My Chihiros":"My Chihiros: curva personalizada");
@@ -837,6 +877,7 @@ static void diagnosticJson(){
  j+=",\"gatt_status\":"+jsonQuote(pvOffLastGatt?"GATT_ACEPTADO":"NO_PROBADO");
  j+=",\"optically_off\":null,\"reason\":\"Una escritura GATT no mide la luz real\"}}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
+ j+=",\"interval_sec\":"+String(cieloCurveIntervalSec)+",\"trial_fallbacks\":"+String(curveTrialFallbacks);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
  j+=",\"security\":{\"https_ready\":"+String(cielo96::https_ready()?"true":"false")+",\"authentication\":\"PBKDF2-SHA256\",\"ota_signature\":\"ECDSA-P256\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
@@ -1671,10 +1712,24 @@ static void configureRoutes(){
    unsigned long long val=strtoull(s.c_str(),nullptr,10);if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
    struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
   }return fail(400,"Epoch demasiado corto");});
- srv.on("/api/save",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,false);});
- srv.on("/api/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(true,true);});
- srv.on("/api/chihiros/curve",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,false);});
- srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");updateCurve(false,true);});
+ srv.on("/api/profile/transaction",HTTP_POST,[]{if(!requireAdminWrite())return;saveBothCurves();});
+ srv.on("/api/cielo/interval",HTTP_POST,[]{if(!requireAdminWrite())return;
+  if(rescueOpen||otaBusy||otaTxn.phase!=OtaPhase::Idle)return fail(423,"OTA/rescate activo");
+  const String v=srv.arg("seconds");
+  if(v!="15"&&v!="30")return fail(400,"Intervalo permitido: 15 o 30 segundos");
+  const uint8_t value=static_cast<uint8_t>(v.toInt());
+  if(value!=cieloCurveIntervalSec){
+   cieloCurveIntervalSec=value;lastScheduleAt=millis()-uint32_t(value)*1000UL;
+   curveTrialErrorBase=bleResultErrors;curveTrialTimeoutBase=queue.metrics().soft_timeouts;
+   lastPvDesired=false;lastChDesired=false;
+   record("CURVA_INTERVALO",String(value)+" segundos: comparar GATT, cola y RAM");
+  }
+  ok();
+ });
+ srv.on("/api/save",HTTP_POST,[]{if(!requireAdminWrite())return;fail(410,"Usa guardado conjunto /api/profile/transaction");});
+ srv.on("/api/reset",HTTP_POST,[]{if(!requireAdminWrite())return;fail(410,"Usa guardado conjunto /api/profile/transaction");});
+ srv.on("/api/chihiros/curve",HTTP_POST,[]{if(!requireAdminWrite())return;fail(410,"Usa guardado conjunto /api/profile/transaction");});
+ srv.on("/api/chihiros/curve/reset",HTTP_POST,[]{if(!requireAdminWrite())return;fail(410,"Usa guardado conjunto /api/profile/transaction");});
  srv.on("/api/manual",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");manualPv();});
  srv.on("/api/chihiros/manual",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");manualCh();});
  srv.on("/api/chihiros/stop",HTTP_POST,[]{if(!requireAdminWrite())return;
@@ -1768,6 +1823,14 @@ static void cieloRequestReturn(const char* reason){
 }
 static void lightingTask(){
  const uint32_t now=millis();
+ // Modo 15 s es experimental: no persistirlo ni sostenerlo con BLE degradado.
+ if(cieloCurveIntervalSec==15 &&
+    (cieloWatchdogTripped || uint32_t(bleResultErrors-curveTrialErrorBase)>=2UL ||
+     uint32_t(queue.metrics().soft_timeouts-curveTrialTimeoutBase)>=2UL)){
+  cieloCurveIntervalSec=30;curveTrialFallbacks++;
+  lastScheduleAt=now-30000UL;lastPvDesired=false;lastChDesired=false;
+  record("CURVA_15S_AUTO_30S","Errores/timeout BLE: regreso automatico a 30s; curva V5 intacta");
+ }
  // No duplicar tareas BLE: si la MISMA tarea recupera latido, rearmar la curva.
  if(cieloWatchdogTripped && bleReady && !queue.busy() &&
     now-cielo96::ble_last_heartbeat()<3000UL){
@@ -1803,8 +1866,9 @@ static void lightingTask(){
    record("PV_DIA_REANUDADO","Curva actual recuperada; ningun RGB obsoleto");
   }
  }
- if(now-lastScheduleAt<30000UL && !pvOffObligation)return;
- if(now-lastScheduleAt>=30000UL)lastScheduleAt=now;
+ const uint32_t curveTickMs=uint32_t(cieloCurveIntervalSec)*1000UL;
+ if(now-lastScheduleAt<curveTickMs && !pvOffObligation)return;
+ if(now-lastScheduleAt>=curveTickMs)lastScheduleAt=now;
  if(!timeOK() || !cielo96::profileValid(profile)){
   if(cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
    cieloChRun=false;cieloPvRun=false;cieloFallbacks++;
@@ -1832,11 +1896,10 @@ static void lightingTask(){
   cieloPvRun=true;pvSafety=PvSafetyState::Degraded;lastPvDesired=false;
   record("PV_RECONECTANDO","RGB actual; no reproducir consignas obsoletas");
  }
- const int minute=minuteOfDay();
  const bool chWindow=true; // CIELO controla 24h, incluido RGB 0/0/0
- // 27 puntos PV, 21 CH. Interpolacion lineal ya probada en cielo_engine.h.
- // Refresco a lo sumo 1 vez cada 30s; con curva estable heartbeat cada 5min.
- if(cieloPvRun && !pvOffObligation && !pezManual && !lab.txArmed && !queue.pending(cielo::ble::Device::PezVerde)){
+ // Se usan los puntos reales almacenados; intervalo 15s solo con opt-in.
+ // Coalescencia: la cola sustituye colores pendientes obsoletos, sin solapar BLE; heartbeat cada 5 min.
+ if(cieloPvRun && !pvOffObligation && !pezManual && !lab.txArmed){
   const auto v=desiredPv();
   const bool changed=!lastPvDesired||memcmp(&v,&prevPv,sizeof(v))!=0;
   const bool heartbeat=now-lastPvDesiredAt>300000UL; // cada 5min incluso con brillo cero
@@ -1848,8 +1911,7 @@ static void lightingTask(){
   }
  }
  if(cieloChRun && chWindow && !chiManual && !lab.txArmed &&
-    !cieloChReturnPending && !cieloChAwaitResponse && !customResumePending &&
-    !queue.pending(cielo::ble::Device::Chihiros)){
+    !cieloChReturnPending && !cieloChAwaitResponse && !customResumePending){
   const auto v=desiredCh();
   const bool changed=!lastChDesired||memcmp(&v,&prevCh,sizeof(v))!=0;
   const bool heartbeat=now-lastChDesiredAt>300000UL;
@@ -1997,6 +2059,7 @@ void setup(){
  Serial.printf("IWAGUMI CIELO %s | ATOMS3-Lite | build experimental\n",VERSION);
  tracePhase(TracePhase::Nvs);
  prefs.begin("cielo96",false);
+ cieloCurveIntervalSec=30; // 15s es un ensayo TEMPORAL, tras reinicio vuelve a 30s
  previousBootCount=prefs.getUInt("boots",0);
  priorEvent=prefs.getString("fault_type","ninguno");
  priorEventDetail=prefs.getString("fault_text","ninguno");

@@ -78,11 +78,13 @@
 </section></main>
 <main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curvas de iluminación: horas y porcentajes" role="img" tabindex="0"></svg><div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div><div id="chartInspector" class="chart-inspector" aria-live="polite">Selecciona una hora para consultar las dos luces.</div><div class="plot-foot"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p>
 <div class="editorActions" role="group" aria-label="Editar y guardar curvas">
-<button id="editCurve">Editar puntos</button><button id="saveCurve">Guardar</button><button id="loadProfile">Cargar</button><button id="exportProfile">Exportar</button>
+<button id="editCurve">Editar puntos</button><button id="saveCurve">Guardar las dos</button><button id="loadProfile">Cargar</button><button id="exportProfile">Exportar</button>
 </div>
 <details class="curveHelper" id="curvesAdvanced">
 <summary style="cursor:pointer">Opciones avanzadas de curvas</summary>
-<div class="editorActions minorActions"><button id="resetCurve">Restaurar originales</button></div>
+<div class="editorActions minorActions"><button id="curveUndo">Deshacer</button><button id="curveRedo">Rehacer</button><button id="resetCurve">Restaurar originales</button></div>
+<div class="editorActions minorActions"><button id="curve15Test">Probar 15 s</button><button id="curve30Safe">Volver a 30 s</button></div>
+<p class="note" id="curveIntervalInfo">Por defecto 30 s. La prueba de 15 s vuelve a 30 s tras reiniciar ATOM y no altera los puntos guardados.</p>
 </details>
 
 <section class="livePanel" id="chLivePanel">
@@ -165,10 +167,23 @@
 const $=s=>document.getElementById(s),clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),pad=n=>String(n).padStart(2,'0'),fmt=t=>(t===1440?'24:00':pad(Math.floor(t/60)%24)+':'+pad(Math.floor(t%60)));
 const CHI=[[870,0,0,0],[875,1,1,1],[880,2,2,2],[890,7,7,7],[900,18,18,18],[910,30,29,28],[920,44,42,40],[930,57,54,51],[940,70,65,60],[1270,70,65,60],[1290,68,64,60],[1310,63,60,57],[1330,54,53,52],[1340,47,47,46],[1350,40,40,40],[1360,29,29,29],[1365,22,22,22],[1370,15,15,15],[1375,7,7,7],[1380,0,0,0],[1440,0,0,0]];
 const PEZ=[[870,210,0,145,0],[875,225,130,145,1],[885,240,135,145,4],[895,250,130,120,9],[905,255,130,110,15],[915,255,145,110,22],[925,255,174,145,25],[935,240,238,230,20],[940,240,238,230,20],[1270,240,238,230,20],[1285,255,218,145,30],[1300,255,164,31,38],[1315,255,104,3,46],[1325,255,85,0,50],[1335,255,49,3,46],[1345,255,17,20,40],[1355,225,6,30,28],[1365,205,18,47,22],[1370,198,26,57,19],[1375,194,35,66,16],[1380,190,45,75,14],[1385,187,55,85,12],[1390,184,70,95,10],[1395,178,87,109,8],[1405,151,128,154,4],[1430,130,156,187,1],[1440,130,156,187,0]];
-const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false,status:null,view:'light',curve:'both',scrub:1340,preview:null,busy:false,updated:0,dirty:{chi:false,pez:false},editWhich:'pez',editIndex:0};
+const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false,status:null,view:'light',curve:'both',scrub:1340,preview:null,busy:false,updated:0,dirty:{chi:false,pez:false},baseGeneration:null,editWhich:'pez',editIndex:0,undo:[],redo:[]};
 let toastTimer;
 function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3600)}
 function vAt(points,t){if(t<points[0][0]||t>=1440)return points[0].slice(1).map(()=>0);for(let i=0;i<points.length-1;i++){let a=points[i],b=points[i+1];if(t>b[0])continue;let f=(t-a[0])/(b[0]-a[0]);return a.slice(1).map((v,j)=>Math.round(v+(b[j+1]-v)*f))}return points.at(-1).slice(1)}
+// CRC32 calculado sobre las dos listas serializadas. Canonical ASCII (sin JSON).
+function encodePoints(points){return points.map(v=>v.join(',')).join(';')}
+function crc32Ascii(str){let c=0xffffffff;for(let i=0;i<str.length;i++){
+ const x=str.charCodeAt(i);if(x>127)throw Error('Perfil contiene caracteres no ASCII');
+ c^=x;for(let j=0;j<8;j++)c=(c>>>1)^((c&1)?0xedb88320:0);
+}return ((c^0xffffffff)>>>0).toString(16).padStart(8,'0')}
+function curvePayload(pez,chi){return encodePoints(pez)+'\n'+encodePoints(chi)}
+function curveSnapshot(){return {pez:state.pez.map(x=>x.slice()),chi:state.chi.map(x=>x.slice()),dirty:{...state.dirty}}}
+function curveRemember(){state.undo.push(curveSnapshot());if(state.undo.length>20)state.undo.shift();state.redo=[]}
+function curveHistory(direction){const source=direction==='undo'?state.undo:state.redo,target=direction==='undo'?state.redo:state.undo;
+ if(!source.length){toast('No hay cambios para '+(direction==='undo'?'deshacer':'rehacer'));return}
+ target.push(curveSnapshot());const v=source.pop();state.pez=v.pez;state.chi=v.chi;state.dirty=v.dirty;
+ render();toast(direction==='undo'?'Cambio deshecho':'Cambio recuperado');}
 function scene(t){if(t<870)return ['Descanso nocturno','Luces en reposo'];if(t<935)return ['Amanecer','La luz despierta'];if(t<1270)return ['Luz natural','Pleno día'];if(t<1320)return ['Luz dorada','Tarde'];if(t<1380)return ['Atardecer','Última luz'];if(t<1440)return ['Descanso nocturno','Luces en reposo'];return ['Descanso nocturno','Luces en reposo']}
 function rgb(r,g,b){return '#'+[r,g,b].map(x=>clamp(x,0,255).toString(16).padStart(2,'0')).join('')}
 function nowMin(){let date=new Date();return date.getHours()*60+date.getMinutes()}
@@ -220,7 +235,12 @@ async function api(path,data){
  if(!r.ok)throw Error(body||('Error '+r.status));
  try{return JSON.parse(body)}catch{return body}
 }
-async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}render()}catch(e){state.connected=false;render()}}
+async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();
+ if(!state.dirty.pez&&!state.dirty.chi&&Number.isInteger(d.profileGeneration))state.baseGeneration=d.profileGeneration;
+ if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(validCurve('pez',p))state.pez=p;}
+ if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(validCurve('chi',p))state.chi=p;}
+ if($('curveIntervalInfo'))$('curveIntervalInfo').textContent='Intervalo activo: '+(d.curveIntervalSec||30)+' s · modo 15 s solo ensayo (vuelve a 30 tras reiniciar).';
+ render()}catch(e){state.connected=false;render()}}
 function hourLabel(t){return fmt(clamp(t,0,1439))}
 function render(){
  const d=state.status,v4=d?.cieloV4||{},now=currentClock();
@@ -485,10 +505,10 @@ function applyPoint(which){
  if(a.some((v,i)=>!Number.isInteger(v)||v<0||v>(i===3?100:max))){toast('Valores RGB fuera de rango');return}
  if(which==='chi'&&last&&a.some(x=>x!==0)){toast('24:00 Chihiros debe ser RGB 0');return}
  if(which==='pez'&&((idx===0&&a[3]!==0)||(last&&a[3]!==0))){toast('Pez Verde: brillo inicial y final 0');return}
- arr[idx]=[minute,...a];state.dirty[which]=true;render();toast('Punto actualizado. Recuerda Guardar.');pointEditor(which);
+ curveRemember();arr[idx]=[minute,...a];state.dirty[which]=true;render();toast('Punto actualizado. Recuerda Guardar.');pointEditor(which);
 }
 function addPoint(which){
- const arr=state[which],max=which==='chi'?32:40;
+ const arr=state[which],max=64;
  if(arr.length>=max){toast('Has alcanzado el máximo de '+max+' puntos');return}
  const pos=state.editIndex,anchor=Math.min(pos,arr.length-2);
  const lo=arr[anchor][0],hi=arr[anchor+1][0];
@@ -503,7 +523,7 @@ function addPoint(which){
    const t=editorTime();
    if(t<=arr[0][0]||t>=1440||arr.some(v=>v[0]===t)){toast('Selecciona una hora nueva posterior al comienzo y anterior a las 24:00');return}
    const value=vAt(arr,t),idx=arr.findIndex(p=>p[0]>t);
-   arr.splice(idx,0,[t,...value]);state.editIndex=idx;state.dirty[which]=true;
+   curveRemember();arr.splice(idx,0,[t,...value]);state.editIndex=idx;state.dirty[which]=true;
    render();pointEditor(which);toast('Punto '+fmt(t)+' creado con valores interpolados.');
  };
  $('cancelNewPoint').onclick=()=>pointEditor(which);
@@ -512,45 +532,53 @@ function removePoint(which){
  const arr=state[which],idx=state.editIndex;
  if(idx===arr.length-1||arr.length<=2){toast('Ese punto es necesario');return}
  if(!confirm('¿Eliminar el punto de '+fmt(arr[idx][0])+'?'))return;
- arr.splice(idx,1);state.editIndex=Math.min(idx,arr.length-1);state.dirty[which]=true;render();pointEditor(which);
+ curveRemember();arr.splice(idx,1);state.editIndex=Math.min(idx,arr.length-1);state.dirty[which]=true;render();pointEditor(which);
 }
 function validCurve(which,a){
  const max=which==='chi'?100:255,n=which==='chi'?4:5;
- if(!Array.isArray(a)||a.length<2||a.length>(which==='chi'?32:40))return false;
+ if(!Array.isArray(a)||a.length<2||a.length>64)return false;
  if(!a.every((p,i)=>Array.isArray(p)&&p.length===n&&p.every(Number.isInteger)&&p[0]>=0&&p[0]<=1440&&(!i||p[0]>a[i-1][0])&&p.slice(1,4).every(v=>v>=0&&v<=max)))return false;
  if(which==='chi')return a.at(-1)[0]===1440&&a.at(-1).slice(1).every(x=>x===0);
  return a.every(p=>p[4]>=0&&p[4]<=100)&&a[0][4]===0&&a.at(-1)[0]===1440&&a.at(-1)[4]===0;
 }
 async function saveProgram(){
- const targets=state.curve==='both'?['pez','chi']:[state.curve];
  if(!state.connected){toast('Conecta el ATOM para guardar');return}
- if(targets.some(k=>!validCurve(k,state[k]))){toast('Curva inválida; revisa sus puntos');return}
- if(targets.includes('pez')&&!confirm('Guardar Pez Verde actualizará la iluminación automática. ¿Continuar?'))return;
+ if(!validCurve('pez',state.pez)||!validCurve('chi',state.chi)){toast('Ambas curvas deben ser válidas');return}
+ if(!Number.isInteger(state.baseGeneration)){toast('Consulta primero la versión del ATOM');return}
+ if(!confirm('Guardar las dos curvas como UN ÚNICO perfil activo. La copia técnica anterior servirá solo para recuperación. ¿Continuar?'))return;
+ const payload=curvePayload(state.pez,state.chi);
  try{
-  for(const k of targets){
-   await api(k==='chi'?'/api/chihiros/curve':'/api/save',{points:state[k].map(x=>x.join(',')).join(';')});
-   state.dirty[k]=false;
-  }
-  toast(targets.includes('chi')?'Guardado en ATOM · Activa curva CIELO para que Chihiros la ejecute':'Curva Pez Verde guardada');
-  await sync();
- }catch(e){toast(e.message)}
+  const response=await api('/api/profile/transaction',{
+   pez:encodePoints(state.pez),chi:encodePoints(state.chi),
+   generation:String(state.baseGeneration),crc32:crc32Ascii(payload)});
+  if(!response||response.ok!==true||!Number.isInteger(response.generation))throw Error('No se confirmó el guardado de ambas luces');
+  state.baseGeneration=response.generation;state.dirty.pez=false;state.dirty.chi=false;
+  state.undo=[];state.redo=[];toast('Ambas curvas guardadas juntas y verificadas');await sync();
+ }catch(e){toast('Sin cambios confirmados: '+e.message)}
+}
+async function curveTestInterval(seconds){
+ if(!state.connected)return toast('Conecta el ATOM antes de cambiar la frecuencia');
+ if(seconds===15&&!confirm('Prueba de 15 segundos. Aumenta la carga BLE y vuelve a 30 s tras reiniciar. ¿Activar?'))return;
+ try{await api('/api/cielo/interval',{seconds:String(seconds)});await sync();toast('Frecuencia de la curva: '+seconds+' s');}
+ catch(e){toast(e.message)}
 }
 async function restoreProgram(){
  const targets=state.curve==='both'?['pez','chi']:[state.curve];
- if(!confirm('Restaurar curva ORIGINAL DE FÁBRICA del firmware, no el último perfil cargado. Se perderán ediciones no exportadas. ¿Continuar?'))return;
- try{
-  if(!state.connected)throw Error('Conecta el ATOM para restaurar');
-  for(const k of targets){await api(k==='chi'?'/api/chihiros/curve/reset':'/api/reset',{});state.dirty[k]=false}
-  await sync();toast('Valores originales recuperados');
- }catch(e){toast(e.message)}
+ if(!confirm('Cargar curva ORIGINAL DE FÁBRICA en el editor. No se guardará hasta pulsar Guardar las dos. ¿Continuar?'))return;
+ curveRemember();
+ for(const k of targets){state[k]=(k==='chi'?CHI:PEZ).map(v=>v.slice());state.dirty[k]=true;}
+ render();toast('Originales en el editor. Pulsa Guardar las dos para aplicar');
 }
 function exportProgram(){
- const obj={name:'IWAGUMI CIELO',version:'9.5.3',exported:new Date().toISOString(),lights:{
-  pezverde:{points:state.pez,unit:'rgb255-plus-brightness',source:'ATOM'},
-  chihiros:{points:state.chi,unit:'percent',source:'ATOM-draft-or-continuous-if-enabled'}}};
+ if(!validCurve('chi',state.chi)||!validCurve('pez',state.pez))return toast('Curva inválida para exportar');
+ const obj={schema:'iwagumi-cielo-profile',schema_version:2,name:'IWAGUMI CIELO',
+  exported:new Date().toISOString(),timezone:'Europe/Madrid',time_unit:'minute',
+  checksum:{algorithm:'CRC32',value:crc32Ascii(curvePayload(state.pez,state.chi))},
+  lights:{pezverde:{points:state.pez,unit:'rgb255-plus-brightness',source:'editor'},
+   chihiros:{points:state.chi,unit:'percent',source:'editor'}}};
  const url=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));
- const a=document.createElement('a');a.href=url;a.download='IWAGUMI-CIELO-perfil.json';a.click();
- setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Perfil exportado');
+ const a=document.createElement('a');a.href=url;a.download='IWAGUMI-CIELO-perfil-v2.json';a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Perfil versionado exportado');
 }
 async function importProgram(ev){
  const file=ev.target.files?.[0];if(!file)return;
@@ -558,9 +586,17 @@ async function importProgram(ev){
   if(file.size>100000)throw Error('Archivo demasiado grande');
   const obj=JSON.parse(await file.text()),chi=obj?.lights?.chihiros?.points,pez=obj?.lights?.pezverde?.points;
   if(!validCurve('chi',chi)||!validCurve('pez',pez))throw Error('Perfil incompatible o incompleto');
-  if(!confirm('¿Cargar este perfil en el editor? No se guardará en las luces hasta que pulses Guardar.'))return;
-  state.chi=chi.map(x=>x.slice());state.pez=pez.map(x=>x.slice());
-  state.dirty.chi=true;state.dirty.pez=true;chooseCurve('both');toast('Perfil cargado · pulsa Guardar');
+  if(obj.schema!==undefined || obj.schema_version!==undefined){
+   if(obj.schema!=='iwagumi-cielo-profile'||obj.schema_version!==2||obj.timezone!=='Europe/Madrid'||obj.time_unit!=='minute')
+    throw Error('Versión, huso horario o unidades incompatibles');
+   if(obj.lights?.chihiros?.unit!=='percent'||obj.lights?.pezverde?.unit!=='rgb255-plus-brightness')throw Error('Unidades RGB desconocidas');
+   const expected=crc32Ascii(curvePayload(pez,chi));
+   if(obj.checksum?.algorithm!=='CRC32'||obj.checksum?.value!==expected)throw Error('Archivo modificado o checksum incorrecto');
+  }
+  if(!confirm('Cargar este perfil en el editor? No se guardará en el ATOM hasta pulsar Guardar las dos.'))return;
+  curveRemember();state.chi=chi.map(x=>x.slice());state.pez=pez.map(x=>x.slice());
+  state.dirty.chi=true;state.dirty.pez=true;chooseCurve('both');
+  toast(obj.schema?'Perfil v2 validado por CRC32 · pendiente de guardar':'Perfil anterior importado · sin checksum; revisa y guarda');
  }catch(e){toast(e.message)}finally{ev.target.value=''}
 }
 function manualChooser(){
@@ -1197,7 +1233,7 @@ async function cancelContrast(){
  }catch(e){toast(e.message)}
 }
 function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>nav(b.dataset.view));document.querySelectorAll('[data-lamp]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.lamp);state.editIndex=0;pointEditor(b.dataset.lamp)});
-document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;$('cieloPauseAll').onclick=cieloPauseAllUi;
+document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('saveCurve').onclick=saveProgram;$('curveUndo').onclick=()=>curveHistory('undo');$('curveRedo').onclick=()=>curveHistory('redo');$('curve15Test').onclick=()=>curveTestInterval(15);$('curve30Safe').onclick=()=>curveTestInterval(30);$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;$('chNightOn').onclick=chNightStart;$('chNightOff').onclick=chNightStop;$('cieloPauseAll').onclick=cieloPauseAllUi;
 $('diagView').onclick=diagViewUi;
 $('diagDownload').onclick=async()=>{
  try{

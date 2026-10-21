@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1B5B3-SEGURIDAD-R2' in code
+assert '11.1.0-RC5-B1B5B3-B2B4-PERFILES' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -234,7 +234,7 @@ console.log('SHA256 UI verificado con Node');
 """
 subprocess.run(['node','-e',sha_code+'\n'+vectors],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 
-for route in ('/api/status','/api/save','/api/chihiros/curve','/api/manual',
+for route in ('/api/status','/api/profile/transaction','/api/cielo/interval','/api/manual',
               '/api/chihiros/manual','/api/ble/release','/api/chihiros/my-curve-test','/api/ota/upload',
               '/api/diagnostico/maestro','/api/service/status'):
  assert route in actual and route in (r/'src/main.cpp').read_text(),route
@@ -283,3 +283,12 @@ assert 'id="diagShare"' in actual and '?share=1&download=1' in actual
 assert 'diagReportFetchedAt' in actual and 'if(state.view===\'lab\'||$(\'diagReportText\'))' in actual
 assert 'ble_request_queue_depth()' in (r/'src/cielo_ble_worker.cpp').read_text()
 assert 'metricTime(metrics.write_last' in (r/'src/cielo_ble_worker.cpp').read_text()
+
+# RC5 B2 + B4: una transaccion doble, 64 puntos, ensayos de 15s voluntarios.
+assert 'saveBothCurves()' in code and 'if(generation!=profile.generation)' in code
+assert 'curveCrc32' in code and 'if(!saveProfile(candidate))' in code
+assert 'cieloCurveIntervalSec=30; // 15s' in code
+assert 'cielo::atSecond(profile.pv' in code and 'cielo::atSecond(profile.ch' in code
+assert "a.length>64" in actual and "max=64" in actual
+assert 'crc32Ascii' in actual and '/api/profile/transaction' in actual
+assert 'curveHistory' in actual and 'curveRemember' in actual
