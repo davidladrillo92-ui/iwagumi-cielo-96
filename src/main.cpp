@@ -996,6 +996,7 @@ static void otaResumePreviousControl(){
   return;
  }
  cieloAlwaysOn=otaTxn.wasAlwaysOn;
+ pvControlDesired=otaTxn.wasPv;
  cieloPvRun=otaTxn.wasPv;
  cieloChRun=otaTxn.wasCh;
  if(cieloChRun&&!prefs.putBool("v4_ch_takeover",true)){
@@ -1360,6 +1361,7 @@ static void configureRoutes(){
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
   if(srv.arg("confirm")!="PAUSAR_TODO")return fail(403,"Confirma pausa de ambas pantallas");
   cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
+  pvControlDesired=false;pvOffObligation=false;pvOffInFlightSeq=0;pvSafety=PvSafetyState::Paused;
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(bleReady)cieloRequestReturn("Pausa total: devolver Chihiros a My Chihiros");
   else {queue.cancel_pending(cielo::ble::Device::Chihiros);record("V4_SIN_BLE","No se puede restaurar Chihiros sin BLE; requiere My Chihiros");}
