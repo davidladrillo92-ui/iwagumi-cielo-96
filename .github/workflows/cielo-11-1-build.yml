@@ -1,0 +1,34 @@
+name: CIELO 11.1 · Compilar y verificar
+on:
+  push:
+    branches: [dev/cielo-11-1-ux-producto]
+  workflow_dispatch:
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verificar código y perfiles
+        run: python tools/validar_fuentes.py
+      - name: Instalar PlatformIO
+        run: pip install platformio==6.1.18
+      - name: Compilar ATOMS3 Lite
+        run: pio run -e atoms3_lite_c124
+      - name: Comprobar tamaño
+        run: test -s .pio/build/atoms3_lite_c124/firmware.bin
+      - name: Preparar archivo y huella
+        run: |
+          mkdir -p dist
+          cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
+          sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
+          cp partitions_8mb.csv dist/partitions_8mb.csv
+      - name: Publicar BIN candidato
+        uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_11_1_CANDIDATO_NO_INSTALAR_SIN_PRUEBAS
+          path: dist/
+          if-no-files-found: error
