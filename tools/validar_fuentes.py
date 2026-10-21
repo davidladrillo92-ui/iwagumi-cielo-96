@@ -177,7 +177,13 @@ assert 'id="otaProgress"' in actual
 assert 'Activar CIELO · siempre' in actual
 assert 'id="cieloPauseAll"' in actual
 assert 'Activar CIELO · siempre' in actual
-assert 'Volver a My Chihiros' in actual
+# El boton sigue existiendo, pero se ha trasladado a Emergencia con otro titulo.
+assert 'id="chNightOff"' in actual
+assert 'id="cieloPauseAll"' in actual
+assert 'emergencyControls' in actual
+assert 'async function otaPreflightUi()' in actual
+assert '/api/ota/preflight' in code
+assert 'otaBleHealthy()' in code
 assert "await api('/api/cielo/v4/start',{confirm:'ACTIVAR_NATURAL_V4'})" in actual
 assert "await api('/api/cielo/v4/return',{confirm:'VOLVER_MY_CHIHIROS'})" in actual
 assert "await api('/api/cielo/v4/pause',{confirm:'PAUSAR_TODO'})" in actual
