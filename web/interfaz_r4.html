@@ -929,8 +929,8 @@ async function otaInstallUi(){
   const sha=await sha256Firmware(file);
   // La clave se guarda en este iPhone solo si el usuario ha optado expresamente.
   if($('otaRemember')?.checked)try{localStorage.setItem('cieloOtaKey',key)}catch(_){}
-  await otaPrepareLights(key);
   preparationStarted=true;
+  await otaPrepareLights(key);
   const form=new FormData();form.append('firmware',file,file.name);
   output.textContent='Luces cedidas por Bluetooth. Transfiriendo BIN al ATOM…';
   await new Promise((resolve,reject)=>{
