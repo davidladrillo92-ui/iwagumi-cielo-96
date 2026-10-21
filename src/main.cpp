@@ -862,7 +862,7 @@ static void diagnosticJson(){
  j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
  j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
  j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false")+"}";
- j+=",\"lab\":"+labJson();
+ j+=",\"lab\":"+(srv.hasArg("share")?String("null"):labJson());
  j+=",\"persistent_diagnostics\":{\"boot_history\":[";
  for(uint8_t i=0;i<bootHistoryCount;i++){
   uint8_t idx=(bootHistoryHead+8-bootHistoryCount+i)%8;
