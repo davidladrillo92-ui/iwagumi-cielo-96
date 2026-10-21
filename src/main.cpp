@@ -530,6 +530,8 @@ static String cieloModeJson(){
  j+=",\"ch_last_requested\":["+String(prevCh.r)+","+String(prevCh.g)+","+String(prevCh.b)+"]";
  j+=",\"pv_last_requested_age_sec\":"+String(lastPvDesiredAt?(millis()-lastPvDesiredAt)/1000UL:0);
  j+=",\"ch_last_requested_age_sec\":"+String(lastChDesiredAt?(millis()-lastChDesiredAt)/1000UL:0);
+ j+=",\"pv_last_gatt_age_sec\":"+(cieloLastSuccessfulPvAt?String((millis()-cieloLastSuccessfulPvAt)/1000UL):String("null"));
+ j+=",\"ch_last_gatt_age_sec\":"+(cieloLastSuccessfulChAt?String((millis()-cieloLastSuccessfulChAt)/1000UL):String("null"));
  j+=",\"ch_window_now\":"+String(timeOK()?"true":"false");
  j+=",\"always_on\":"+String(cieloAlwaysOn?"true":"false");
  j+=",\"pv_online_recent\":"+String(cieloPvRun&&cieloLastSuccessfulPvAt&&millis()-cieloLastSuccessfulPvAt<650000UL?"true":"false");

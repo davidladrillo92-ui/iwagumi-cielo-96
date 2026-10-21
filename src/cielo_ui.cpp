@@ -70,6 +70,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 @media(max-width:360px){.health-title{font-size:21px}.health-light{padding:11px 8px}}
 
 /* RC5 B6+B7: interaccion tactil, visualizacion honesta y VoiceOver. */
+.confirmed-times{display:flex;flex-direction:column;gap:5px;background:#ffffff08;border-radius:12px;padding:10px 12px;margin-top:12px;font-size:11px;color:#c2cfca;font-variant-numeric:tabular-nums}
 :root{--focus:#f6caa2}
 button,select,input[type=checkbox]{touch-action:manipulation}
 button{min-height:44px}
@@ -114,7 +115,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 <section class="lamps home-lamps">
 <div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#d6cbbf" stroke-width="1.6"><path d="M4 16h16M8 7l4-4 4 4M12 3v11m-8 5h16"/></svg></span><span class="lamp-copy"><strong>Chihiros <i class="conn-tick" id="chiLed" title="Sin respuesta BLE reciente">·</i></strong><small id="chiSub">AUTO</small></span><span class="lamp-side"><b id="chiPct">—</b><small><i class="color-dot" id="chiColor"></i><span id="chiInfo">Según programa</span></small></span></div>
 <div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#b5c5d4" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M6 15c4-3 7-3 12-6M5 11c5-3 8-2 14-2"/></svg></span><span class="lamp-copy"><strong>Pez Verde <i class="conn-tick" id="pezLed" title="Sin respuesta BLE reciente">·</i></strong><small id="pezSub">AUTO</small></span><span class="lamp-side"><b id="pezPct">—</b><small><i class="color-dot" id="pezColor"></i><span id="pezInfo">Según programa</span></small></span></div>
-</section><p class="measurement-disclaimer" id="confirmedNote">Los porcentajes muestran órdenes programadas o respuestas Bluetooth, nunca luz medida con un sensor.</p></main>
+</section><div class="confirmed-times" aria-label="Últimas transmisiones Bluetooth confirmadas"><span id="lastConfirmedPv">Pez Verde · sin GATT confirmado</span><span id="lastConfirmedChi">Chihiros · sin GATT confirmado</span></div><p class="measurement-disclaimer" id="confirmedNote">Los porcentajes muestran órdenes programadas o respuestas Bluetooth, nunca luz medida con un sensor.</p></main>
 <main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><div class="chart-tools"><div class="zoom-control" role="group" aria-label="Escala de tiempo del gráfico"><button data-zoom="1">1 h</button><button data-zoom="3">3 h</button><button data-zoom="6">6 h</button><button data-zoom="24" class="active" aria-pressed="true">24 h</button></div><button id="compareCurves" type="button" aria-pressed="false" class="compare-control">Comparar</button></div><p id="chartZoomNote" class="chart-zoom-note">Vista de 24 horas · pulsa un punto para inspeccionarlo</p><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curvas de iluminación: horas y porcentajes" role="img" tabindex="0"></svg><div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div><div id="chartInspector" class="chart-inspector" aria-live="polite">Selecciona una hora para consultar las dos luces.</div><div class="color-preview"><span id="colorPreviewPv" class="color-preview-swatch" role="img" aria-label="Color calculado de Pez Verde"></span><span id="colorPreviewChi" class="color-preview-swatch" role="img" aria-label="Color calculado de Chihiros"></span><p id="previewDisclaimer">Vista calculada: respeta el brillo de Pez Verde; no equivale a intensidad ni color ópticos medidos.</p></div><div class="plot-foot" id="chartAxisTimes"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div><div class="chart-point-actions"><button id="editSelectedPoint" type="button">Editar punto seleccionado</button><span id="selectedPointNote" aria-live="polite">Pulsa un círculo para escoger un punto.</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p><p id="curvePending" class="pending-state" role="status" aria-live="polite">Sin cambios pendientes de guardar</p>
 <div class="editorActions" role="group" aria-label="Editar y guardar curvas">
 <button id="editCurve">Editar puntos</button><button id="undoCurve">Deshacer</button><button id="redoCurve">Rehacer</button><button id="saveCurve">Guardar</button><button id="loadProfile">Cargar</button><button id="exportProfile">Exportar</button>
@@ -260,7 +261,7 @@ async function api(path,data){
  try{return JSON.parse(body)}catch{return body}
 }
 async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(!state.dirty.pez&&!state.dirty.chi&&Number.isInteger(d.profileGeneration))state.profileGeneration=d.profileGeneration;setCadenceLabel(d.cadence);if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}if(!state.dirty.pez&&!state.dirty.chi){state.baseline={pez:state.pez.map(p=>p.slice()),chi:state.chi.map(p=>p.slice())};}render()}catch(e){state.connected=false;render()}}
-function hourLabel(t){return fmt(clamp(t,0,1439))}
+function hourLabel(t){return fmt(clamp(t,0,1440))}
 function render(){
  const d=state.status,v4=d?.cieloV4||{},now=currentClock();
  const preview=state.preview!==null,when=preview?state.preview:now;
@@ -306,6 +307,12 @@ function render(){
   el.textContent=state.connected&&up&&!preview?'✓':'·';
   el.title=up?'GATT correcto reciente. El enlace se libera entre envíos.':'No hay confirmación GATT reciente; no implica avería';
  }
+ const stamp=key=>{
+  const age=v4[key];
+  return typeof age==='number'&&Number.isFinite(age)?'última respuesta GATT hace '+age+' s':'sin respuesta GATT en este arranque';
+ };
+ $('lastConfirmedPv').textContent='Pez Verde · '+stamp('pv_last_gatt_age_sec');
+ $('lastConfirmedChi').textContent='Chihiros · '+stamp('ch_last_gatt_age_sec');
  $('confirmedNote').textContent=preview?'SIMULACIÓN: colores calculados; no se envía nada al ATOM.':'La pantalla muestra las órdenes y respuestas BLE recientes; no dispone de sensor óptico de color o intensidad.';
  $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+': la pantalla Luz muestra esta hora, sin cambiar la iluminación real.':'Vista del momento actual. Los colores reales son las últimas órdenes confirmadas por GATT.';
  const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
@@ -369,6 +376,7 @@ function updateEditorStatus(){
  if($('redoCurve'))$('redoCurve').disabled=!state.redoStack.length;
  if($('saveCurve'))$('saveCurve').disabled=!edited||!state.connected;
  const sel=state.selectedPoint;
+ if(sel&&!state[sel.which]?.[sel.index])state.selectedPoint=null;
  if($('editSelectedPoint'))$('editSelectedPoint').disabled=!sel;
  if($('selectedPointNote'))$('selectedPointNote').textContent=sel?`${sel.which==='chi'?'Chihiros':'Pez Verde'} · punto ${sel.index+1} · ${fmt(state[sel.which][sel.index]?.[0]??0)}`:'Pulsa un círculo para seleccionar un punto.';
  const admin=!!cieloSessionToken;

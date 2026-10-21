@@ -27,3 +27,6 @@ p=json.loads(ref.read_text())
 assert len(p['lights']['pezverde']['points'])==34 and len(p['lights']['chihiros']['points'])==31
 assert [1379,2,2,2] in p['lights']['chihiros']['points'] and [1380,1,1,2] in p['lights']['chihiros']['points']
 print('PASS B6/B7 contratos: PWA sin SW, permisos, curva V5 intacta, zoom y gráficos honestos')
+
+assert 'pv_last_gatt_age_sec' in main and 'ch_last_gatt_age_sec' in main
+assert 'id="lastConfirmedPv"' in ui and 'id="lastConfirmedChi"' in ui
