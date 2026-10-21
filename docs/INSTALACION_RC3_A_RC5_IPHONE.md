@@ -1,3 +1,7 @@
+> **Actualización 22/10:** el BIN RECOVERY descrito originalmente falló por pila de loopTask.
+> Utilizar exclusivamente STACKFIX1 y seguir [la revisión de arranque](STACKFIX1_ARRANQUE_TLS.md).
+> La copia e inspección USB siguen siendo aplicables.
+
 # Guía de copia USB, inspección y actualización RC3 → RC5 desde iPhone
 
 Destino: `11.1.0-RC5-B1-B9-RECOVERY`, ATOMS3 Lite C124 ESP32-S3 8 MiB.

@@ -24,3 +24,7 @@ GATT aceptado no demuestra luz física. No subir nunca NVS real ni contraseñas 
 ### Revisión de bloqueo BLE de RC3
 
 Candidata actual: **11.1.0-RC5-B1-B9-RECOVERY**. [Incidente 41/42 y límites de recuperación](docs/INCIDENTE_41_42_Y_RECOVERY.md). [Copia USB e instalación desde iPhone](docs/INSTALACION_RC3_A_RC5_IPHONE.md). No instalada ni validada físicamente.
+
+### Corrección actual de primer arranque
+
+**11.1.0-RC5-B1-B9-STACKFIX1** sustituye a RECOVERY, cuyo desbordamiento de pila de loopTask se confirmó físicamente. [Evidencia, corrección y ensayo](docs/STACKFIX1_ARRANQUE_TLS.md). Última instalación confirmada RC3; no reinstalar el BIN RECOVERY anterior.

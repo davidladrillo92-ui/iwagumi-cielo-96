@@ -12,10 +12,21 @@
 #include <lwip/inet.h>
 #include <string.h>
 #include <stdio.h>
+#include <memory>
+#include <new>
 namespace cielo96 {
 namespace {
 static httpd_handle_t tlsServer=nullptr;
 static String tlsCertificate,tlsPrivateKey,tlsFingerprint;
+struct ProvisionBuffers { unsigned char key[1024];unsigned char certificate[2048]; };
+struct ClearProvisionBuffers {
+ void operator()(ProvisionBuffers* p) const {
+  if(!p)return;
+  volatile unsigned char* bytes=reinterpret_cast<volatile unsigned char*>(p);
+  for(size_t i=0;i<sizeof(*p);i++)bytes[i]=0;
+  delete p;
+ }
+};
 static int randHardware(void*,unsigned char*out,size_t n){esp_fill_random(out,n);return 0;}
 // Generar identidad criptografica unica, no incluir clave privada en compilacion.
 static bool provisionTls(Preferences&prefs){
@@ -23,6 +34,9 @@ static bool provisionTls(Preferences&prefs){
  tlsPrivateKey=prefs.getString("https_key","");
  if(tlsCertificate.startsWith("-----BEGIN CERTIFICATE-----") &&
     tlsPrivateKey.startsWith("-----BEGIN EC PRIVATE KEY-----"))return true;
+ // PEM workspace on heap with deterministic cleanup; never 3 KiB of automatic arrays.
+ std::unique_ptr<ProvisionBuffers,ClearProvisionBuffers> pem(new(std::nothrow) ProvisionBuffers{});
+ if(!pem)return false;
  mbedtls_pk_context pk;mbedtls_pk_init(&pk);
  mbedtls_x509write_cert crt;mbedtls_x509write_crt_init(&crt);
  mbedtls_mpi serial;mbedtls_mpi_init(&serial);
@@ -49,12 +63,10 @@ static bool provisionTls(Preferences&prefs){
   memcpy(san+4,dns,sizeof(dns)-1);
   if(mbedtls_x509write_crt_set_extension(&crt,MBEDTLS_OID_SUBJECT_ALT_NAME,
       MBEDTLS_OID_SIZE(MBEDTLS_OID_SUBJECT_ALT_NAME),0,san,sizeof(san))!=0)break;
-  unsigned char keyPem[1024]{};
-  unsigned char certPem[2048]{};
-  if(mbedtls_pk_write_key_pem(&pk,keyPem,sizeof(keyPem))!=0)break;
-  if(mbedtls_x509write_crt_pem(&crt,certPem,sizeof(certPem),randHardware,nullptr)!=0)break;
-  tlsCertificate=String(reinterpret_cast<char*>(certPem));
-  tlsPrivateKey=String(reinterpret_cast<char*>(keyPem));
+  if(mbedtls_pk_write_key_pem(&pk,pem->key,sizeof(pem->key))!=0)break;
+  if(mbedtls_x509write_crt_pem(&crt,pem->certificate,sizeof(pem->certificate),randHardware,nullptr)!=0)break;
+  tlsCertificate=String(reinterpret_cast<char*>(pem->certificate));
+  tlsPrivateKey=String(reinterpret_cast<char*>(pem->key));
   // No sobrescribir identidad si NVS esta llena; rechazar HTTPS si no se persiste.
   if(prefs.putString("https_key",tlsPrivateKey)!=tlsPrivateKey.length() ||
      prefs.putString("https_cert",tlsCertificate)!=tlsCertificate.length())break;

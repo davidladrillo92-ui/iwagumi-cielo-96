@@ -32,8 +32,10 @@ jobs:
       - name: Preparar archivo y huella
         run: |
           mkdir -p dist
+          python tools/check_stack_build.py
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
+          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_STACKFIX1.bin
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R monitor docs dist/
           mkdir -p dist/tools dist/include
@@ -48,4 +50,13 @@ jobs:
         with:
           name: CIELO_11_1_CANDIDATO_NO_INSTALAR_SIN_PRUEBAS
           path: dist/
+          if-no-files-found: error
+      - name: Guardar símbolos de depuración y mapa
+        uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_STACKFIX1_DEBUG_ELF_MAP
+          path: |
+            .pio/build/atoms3_lite_c124/firmware.elf
+            .pio/build/atoms3_lite_c124/firmware.map
+            dist/STACK_REPORT.json
           if-no-files-found: error

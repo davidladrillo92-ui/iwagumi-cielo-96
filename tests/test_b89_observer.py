@@ -25,7 +25,7 @@ from cielo_monitor.server import serve
 NOW=1792620000
 
 def sample():
- return dict(schema='cielo-monitor-v1',firmware='11.1.0-RC5-B1-B9-RECOVERY',boot_id=1,uptime_sec=1000,epoch=NOW,
+ return dict(schema='cielo-monitor-v1',firmware='11.1.0-RC5-B1-B9-STACKFIX1',boot_id=1,uptime_sec=1000,epoch=NOW,
  clock_valid=True,ble_ready=True,worker_stalled=False,ota=False,heap_free=120000,heap_min=80000,
  largest_block=100000,ble_stack_free_bytes=4000,queue_depth=0,worker_queue_depth=0,ch_return_failed=False,off_pending=False,off_failures=0,
  profile=dict(generation=1,pv_points=34,ch_points=31),

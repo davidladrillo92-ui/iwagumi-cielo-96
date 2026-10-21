@@ -33,6 +33,11 @@
 #include "cielo_maintenance.h"
 #include "cielo_ble_recovery.h"
 
+// TLS provisioning and later signature verification run in setup/loopTask.
+// Arduino default 8192 B overflowed on the actual first RC5 boot.
+static constexpr size_t CIELO_LOOP_STACK_BYTES=32768;
+SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
+
 #if __has_include("local_config.h")
 #include "local_config.h"
 #endif
@@ -46,7 +51,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1-B9-RECOVERY";
+static constexpr const char* VERSION="11.1.0-RC5-B1-B9-STACKFIX1";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -823,6 +828,8 @@ static void diagnosticJson(){
  j+=",\"recovered_boot\":"+String(bleRecoveryBoot?"true":"false")+",\"pv_off_interlock\":"+String(bleRecoveryBootPvSafe?"true":"false");
  j+=",\"last_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(bleRecoveryRtc.phase))+",\"last_device\":"+String(bleRecoveryRtc.device);
  j+=",\"last_stall_ms\":"+String(bleRecoveryRtc.age_ms)+",\"optical_confirmation\":false}";
+ j+=",\"loop_stack_bytes\":"+String(CIELO_LOOP_STACK_BYTES);
+ j+=",\"loop_stack_min_free_bytes\":"+String(uxTaskGetStackHighWaterMark(nullptr));
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"fragmentation_pct\":"+(freeMem?String(cielo96::diag::fragmentationPct(freeMem,largest)):String("null"));
  j+=",\"fragmentation_definition\":\"100 x (1 - largest_free_block / free_heap), solo estimacion\"";
@@ -2189,8 +2196,12 @@ void setup(){
  Serial.printf("WIFI de rescate si fuera necesaria: CIELO96-CONFIG | clave: %s\n",apPassword.c_str());
  tracePhase(TracePhase::WebInit);
  configureRoutes();
+ Serial.printf("CIELO STACK antes HTTPS: loop=%u bytes, minimo libre=%u bytes\n",
+  (unsigned)CIELO_LOOP_STACK_BYTES,(unsigned)uxTaskGetStackHighWaterMark(nullptr));
  if(!cielo96::https_begin(prefs))record("HTTPS_NO_DISPONIBLE","Acceso de escritura bloqueado; USB para recuperacion");
- else record("HTTPS_INICIADO","Certificado unico generado, peticiones de escritura via TLS");
+ else record("HTTPS_INICIADO","Identidad TLS unica disponible, peticiones de escritura via TLS");
+ Serial.printf("CIELO STACK despues HTTPS: minimo libre=%u bytes\n",
+  (unsigned)uxTaskGetStackHighWaterMark(nullptr));
  record("WEB_PRIMERO","HTTP y AP de recuperación inicializados; Bluetooth en espera");
  tracePhase(TracePhase::Idle);
 }
