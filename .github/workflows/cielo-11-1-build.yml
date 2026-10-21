@@ -1,7 +1,7 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021]
   workflow_dispatch:
 jobs:
   firmware:
@@ -17,6 +17,10 @@ jobs:
           python tools/validar_fuentes.py
           pip install cryptography==46.0.4
           python tools/test_security_crypto.py
+          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_night_safety.cpp -o /tmp/test_night_safety
+          /tmp/test_night_safety
+          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_b1_scenarios.cpp -o /tmp/test_b1_scenarios
+          /tmp/test_b1_scenarios
       - name: Instalar PlatformIO
         run: pip install platformio==6.1.18
       - name: Compilar ATOMS3 Lite

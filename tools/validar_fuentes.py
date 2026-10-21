@@ -19,7 +19,7 @@ assert 'BLE_COEX_BLOQUEADO' in code and 'wifi_modem_sleep' in code
 assert 'COEX_AVISO' not in code and 'esp_wifi_set_ps(WIFI_PS_MIN_MODEM)' in code
 assert 'lightingTask();' in code # RC4: activo solo mediante boton, nunca desde BLE por si mismo
 assert 'static bool cieloPvRun=false,cieloChRun=false' in code
-assert 'if(!cieloPvRun && !cieloChRun && !cieloChWasDriven)return;' in code
+assert 'if(!cieloPvRun && !cieloChRun && !cieloChWasDriven && !pvOffObligation && !pvControlDesired)return;' in code
 assert 'cielo::at(profile.pv,profile.pvCount,minuteOfDay())' not in code or 'desiredPv()' in code
 assert 'const bool chWindow=true' in code
 assert 'const bool schedulerCH=cieloChRun&&timeOK()&&' in code
@@ -36,7 +36,7 @@ assert 'lastPvDesiredAt' in code and 'lastChDesiredAt' in code
 assert 'queue.cancel_pending(cielo::ble::Device::Chihiros)' in code
 assert 'cielo96::ble_custom_resume_request()' in code
 assert 'cieloReturnTries<2' in code and 'V4_RETORNO_GATT_OK' in code
-assert 'V4_PV_FALLO' in code and 'V5_24H_ACTIVADA' in code
+assert 'PV_DEGRADADA' in code and 'V5_24H_ACTIVADA' in code
 assert 'cieloChRun&&timeOK()' in code
 assert '/api/cielo/v4/start' in code and '/api/cielo/v4/return' in code and '/api/cielo/v4/pause' in code
 assert '!cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse' in code
@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC4-FIRMA-KDF' in code
+assert '11.1.0-RC5-B1-SEGURIDAD' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -259,3 +259,9 @@ assert 'verifyFirmwareSignature(otaDigestOut' in code
 assert code.index('verifyFirmwareSignature(otaDigestOut') < code.index('Update.end(true)')
 assert 'id="otaSignatureFile"' in actual
 assert "x.setRequestHeader('X-Cielo-Signature',signature);" in actual
+
+# RC5 B1: seguridad nocturna no equivale a confirmacion optica.
+assert 'PV_POWER_OFF_INTENTO' in code and 'PV_POWER_OFF_REINTENTO' in code
+assert 'PV_POWER_OFF_GATT_OK' in code and 'pv_optically_confirmed' in code
+assert 'PV_RGB_OBSOLETO_BLOQUEADO' in code and 'pvOffInFlightSeq' in code
+assert 'PV_RECONECTANDO' in code and 'pvOffObligation' in code
