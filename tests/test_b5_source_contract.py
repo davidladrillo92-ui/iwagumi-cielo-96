@@ -38,3 +38,7 @@ class Buttons(HTMLParser):
 p=Buttons();p.feed(ui)
 assert len(p.ids)==len(set(p.ids)), 'Elementos de diagnóstico con IDs duplicados'
 print('B5 source contracts: PASS')
+
+assert 'resetReasonName((esp_reset_reason_t)b.cause)' in s
+assert '(badReset&&!currentBootMarkedHealthy)' in s
+assert 'CIELO_INFORME_COMPARTIBLE.json' in s
