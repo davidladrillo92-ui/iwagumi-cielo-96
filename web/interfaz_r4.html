@@ -343,10 +343,13 @@ async function restoreAll(){
  }catch(e){toast(e.message)}
 }
 function sceneChoose(name){let times={dawn:900,day:1100,dusk:1340,moon:1400};state.preview=times[name];state.scrub=times[name];$('scrub').value=state.scrub;document.querySelectorAll('.scene').forEach(b=>b.classList.toggle('active',b.dataset.scene===name));render();toast('Vista previa · sin cambios en las luces')}
+function cieloEscapeHtml(value){
+ return String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+}
 function wifiSetup(){
  const d=state.status||{};
  sheet(`<h2 class="sheet-title">Red Wi-Fi</h2>
- <p class="sheet-sub">Conectada: ${d.homeSsid||'—'} · ${d.homeIp||'sin IP'}</p>
+ <p class="sheet-sub">Conectada: ${cieloEscapeHtml(d.homeSsid||'—')} · ${cieloEscapeHtml(d.homeIp||'sin IP')}</p>
  <p class="note">La red de recuperación WPA2 sigue disponible como <strong>CIELO96-CONFIG</strong>, IP <strong>192.168.4.1</strong>.</p>
  <div class="wifiForm">
  <button class="wifiSecondary" id="wifiScan">Buscar redes cercanas</button>
@@ -529,7 +532,7 @@ function settings(){
  const d=state.status||{};
  sheet(`<h2 class="sheet-title">Ajustes</h2>
  <p class="sheet-sub">ATOM · ${d.firmware||'CIELO'} </p>
- <div class="settings-row"><span>Wi-Fi</span><button id="wifiHome">${d.homeSsid||'Elegir red'} ↗</button></div>
+ <div class="settings-row"><span>Wi-Fi</span><button id="wifiHome">${cieloEscapeHtml(d.homeSsid||'Elegir red')} ↗</button></div>
  <div class="settings-row"><span>IP local</span><small>${d.homeIp||'Sin dirección actual'}</small></div>
  <div class="settings-row"><span>Reloj de Madrid</span><small>${d.clockValid?d.clock:'Pendiente de sincronización'}</small></div>
  <div class="settings-row"><span>Sincronizar hora</span><button id="syncClock">Sincronizar ↗</button></div>
