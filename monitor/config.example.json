@@ -1,0 +1,11 @@
+{
+  "atom_url": "https://iwagumi-cielo96.local",
+  "certificate_sha256": "REEMPLAZAR_POR_HUELLA_SHA256_LEIDA_POR_USB",
+  "database": "private/history.sqlite",
+  "poll_seconds": 60,
+  "daily_hour": 9,
+  "port": 8765,
+  "telegram": {"enabled": false},
+  "mqtt": {"enabled": false, "host": "broker.example.invalid", "port": 8883, "topic": "cielo/iwagumi96", "client_id": "cielo-observer", "username": "cielo", "home_assistant": false},
+  "external_heartbeat": false
+}

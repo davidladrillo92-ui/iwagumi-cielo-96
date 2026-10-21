@@ -458,7 +458,7 @@ function drawChart(){
 function nav(n){state.view=n;document.querySelectorAll('.page').forEach(e=>e.classList.toggle('active',e.id==='view'+(n==='light'?'Light':n==='curves'?'Curves':n==='lab'?'Lab':'Service')));document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===n));render();if(n==='lab'){labRefresh();serviceRefresh();}}
 let lastModalFocus=null;
 function sheet(html){lastModalFocus=document.activeElement;$('modalBody').innerHTML=html;$('modal').classList.add('open');document.body.style.overflow='hidden';$('sheetClose').focus();}
-function close(){$('modal').classList.remove('open');document.body.style.overflow='';if(lastModalFocus?.focus)lastModalFocus.focus();lastModalFocus=null;}
+function close(){if($('monitorToken'))$('monitorToken').textContent='';$('modal').classList.remove('open');document.body.style.overflow='';if(lastModalFocus?.focus)lastModalFocus.focus();lastModalFocus=null;}
 function dialogKeydown(e){
  if(!$('modal').classList.contains('open')||e.key!=='Tab')return;
  const nodes=Array.from($('modal').querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex="0"]')).filter(el=>el.getClientRects().length);
@@ -700,6 +700,20 @@ function manualChooser(){
  $('testChi').onclick=()=>lampSheet('chi');$('testPez').onclick=()=>lampSheet('pez');
 }
 
+async function monitorSettings(){
+ try{
+  await cieloEnsureSession();const d=await api('/api/monitor/status');
+  sheet('<h2 class="sheet-title">Alertas e historial</h2><p>El observador independiente guarda 7 y 30 días y envía avisos. Las luces funcionan aunque el observador se desconecte.</p><p>'+ (d.enabled?'Lectura externa habilitada. Esto no confirma que el observador esté funcionando.':'Lectura externa desactivada.')+'</p><p>La clave siguiente solo permite consultar el estado; no controla las luces. Configura el observador antes de confiar en sus avisos.</p><div class="actions"><button class="btn" id="monitorRotate">Crear o renovar clave de lectura</button><button class="btn" id="monitorDisable">Desactivar seguimiento</button></div><pre id="monitorToken" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite"></pre>');
+  $('monitorRotate').onclick=async()=>{if(!confirm('La clave anterior dejará de funcionar. ¿Crear una nueva?'))return;try{const r=await api('/api/monitor/token',{});$('monitorToken').textContent='Guarda esta clave en el observador; se muestra solo ahora:\n'+r.token}catch(e){toast(e.message)}};
+  $('monitorDisable').onclick=async()=>{try{await api('/api/monitor/disable',{});$('monitorToken').textContent='Lectura revocada. Los avisos externos dejarán de recibir datos.'}catch(e){toast(e.message)}};
+ }catch(e){toast(e.message)}
+}
+async function maintenanceRead(){
+ try{await cieloEnsureSession();const d=await api('/api/maintenance');
+  sheet('<h2 class="sheet-title">Mantenimiento</h2><p>Consulta sin modificar memoria. El respaldo completo requiere USB; no se ha realizado desde esta pantalla.</p><pre id="maintenanceResult" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>');
+  $('maintenanceResult').textContent=JSON.stringify(d,null,2);
+ }catch(e){toast(e.message)}
+}
 function settings(){
  const d=state.status||{};
  sheet(`<h2 class="sheet-title">Ajustes</h2>
@@ -708,10 +722,14 @@ function settings(){
  <div class="settings-row"><span>IP local</span><small>${cieloEscapeHtml(d.homeIp||'Sin dirección actual')}</small></div>
  <div class="settings-row"><span>Reloj de Madrid</span><small>${cieloEscapeHtml(d.clockValid?d.clock:'Pendiente de sincronización')}</small></div>
  <div class="settings-row"><span>Sincronizar hora</span><button id="syncClock">Sincronizar ↗</button></div>
+ <div class="settings-row"><span>Alertas e historial</span><button id="monitorSettings">Configurar ↗</button></div>
+ <div class="settings-row"><span>Mantenimiento</span><button id="maintenanceRead">Consultar ↗</button></div>
  <details class="curveHelper"><summary>Recuperación y conexiones</summary>
  <p class="note">Punto de acceso: <strong>CIELO96-CONFIG</strong> · IP <strong>192.168.4.1</strong>.
  El Wi-Fi de casa puede cambiar de IP. La recuperación USB sigue disponible.
  Bluetooth se desconecta entre órdenes y la portada muestra la última respuesta GATT, no una conexión permanente.</p><p class="note">Acceso actual: <strong>https://iwagumi-cielo96.local</strong>. Alias corto cielo.local pendiente de certificado y prueba mDNS; no se activa automáticamente para evitar avisos de Safari.</p><p class="note">Añadir a pantalla de inicio utiliza manifiesto e icono locales. La web no controla las luces sin conexión ni guarda órdenes en caché.</p></details>`);
+ $('monitorSettings').onclick=monitorSettings;
+ $('maintenanceRead').onclick=maintenanceRead;
  $('wifiHome').onclick=wifiSetup;
  $('syncClock').onclick=async()=>{
   try{await api('/api/clock',{epoch:Math.floor(Date.now()/1000)});toast('Hora del ATOM sincronizada con iPhone');close();await sync()}

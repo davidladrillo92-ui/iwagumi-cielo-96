@@ -1,0 +1,13 @@
+{
+  "include/cielo_engine.h": "845a77f9cf8278d79c72b69e6ac214a9b53ec86930fbff06e5df9d6946f1f0b8",
+  "include/cielo_curve_policy.h": "d68569b1f4f5f1680235afd2313cfa65cdfb027019e9abcb1dccbae2c66f5319",
+  "include/cielo_profile_store.h": "9b88b2dad7b720c9badbc3fe605f5b2e6f83233738b12a57246093fc7745c262",
+  "include/cielo_codec.h": "383f31a323b6270d2094a85dbfa1a1c2255c858b3b4299b72796c3feeeda3aad",
+  "include/cielo_night_safety.h": "cfa2138a3a41c17dd19585361b28f2ae742d00d60f354535b3307dce295a9835",
+  "include/cielo_ble_queue.h": "b30907e8eca3295ee3a37db177336a3a48dcf56568370cba4a3d78769b5fef1a",
+  "include/cielo_ota_signing_public.h": "ece4b86e09828119ef3e8f82845d2ae29e1e8bb9d9d86b1df8eb2a794b303952",
+  "partitions_8mb.csv": "dc7a0f73550d3bdb3a85edab3d3f5d00f9ea4bd751f9003783564abeacab4996",
+  "reference/CIELO_V5_LUNA_DIRECTA_PERFIL_V2_VERIFICADO.json": "6cc6c2ac4c97e77b5f3ed8ce3d6081bcb6bdd6da449eb4a8217ee32f59a604da",
+  "reference/CURVAS_NATURALES_V4_CONFIRMADAS_EN_ATOM.json": "ba94ea1d3a4b88c494166720f50652277e988beea1e21dac89c6cf07eef67566",
+  "reference/CIELO_V5_LUNA_DIRECTA_2026-10-21.json": "10671b8a0f991b3cb1030141003bbc747f9b3fc0e358eebf2e5a5d42ce4cc6ad"
+}

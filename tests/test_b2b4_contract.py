@@ -6,7 +6,7 @@ e=Path('include/cielo_engine.h').read_text()
 b=Path('include/cielo_curve_policy.h').read_text()
 s=Path('include/cielo_profile_store.h').read_text()
 f=Path('reference/CIELO_V5_LUNA_DIRECTA_2026-10-21.json')
-assert '11.1.0-RC5-B1B5B3-B2B4-B6B7-UX' in p
+assert '11.1.0-RC5-B1-B9-MONITOR' in p
 assert 'const bool schedulerCH=cieloChRun&&timeOK()&&' in p
 assert 'pvOffObligation' in p and 'PV_POWER_OFF_GATT_OK' in p
 assert 'verifyFirmwareSignature(otaDigestOut' in p

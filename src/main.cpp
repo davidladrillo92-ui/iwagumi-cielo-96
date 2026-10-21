@@ -29,6 +29,8 @@
 #include "cielo_diagnostic_policy.h"
 #include "cielo_ui.h"
 #include "cielo_pwa_assets.h"
+#include "cielo_monitor_service.h"
+#include "cielo_maintenance.h"
 
 #if __has_include("local_config.h")
 #include "local_config.h"
@@ -43,7 +45,7 @@
 #define CIELO_ENABLE_OTA 1 // OTA solo con clave local + concesion fisica 3-7s; RC, probar primero en USB
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1B5B3-B2B4-B6B7-UX";
+static constexpr const char* VERSION="11.1.0-RC5-B1-B9-MONITOR";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -170,7 +172,6 @@ static bool pvOffObligation=false,pvControlDesired=false;
 static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffScheduled=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
-static uint32_t cieloLastNightSample=0;
 static uint32_t cieloDaySamples=0,cieloNightSamples=0;
 static uint32_t cieloLastSuccessfulPvAt=0,cieloLastSuccessfulChAt=0;
 struct CieloTrendSample {uint32_t epoch=0,pv=0,ch=0,pvErrors=0,chErrors=0,heap=0;};
@@ -193,7 +194,7 @@ static const char* chSafetyName(){
  return "CONTROL_CEDIDO";
 }
 static uint32_t pezManualUntil=0,chiManualUntil=0;
-static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaRestarts=0,otaLastChunkAt=0;
+static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaLastChunkAt=0;
 static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
 static bool cadenceTrial15=false;
 static uint32_t cadenceEndsAt=0,cadenceStartBleErrors=0,cadenceTicks15=0,cadenceTicks30=0;
@@ -951,11 +952,6 @@ static void submitCh(cielo::ChiValue c,uint32_t ttl=90000){
  if(!labTxEnabled()){lab.txBlocked++;record("LAB_TX_BLOQUEADA","Chihiros: falta autorizacion");return;}
  if(!queue.submit(cielo::ble::Device::Chihiros,cielo::ble::Action::Apply,c.r,c.g,c.b,0,millis(),ttl))record("COLA_RECHAZADA","CH");
 }
-static void requestAuto(){
- chiAutoPending=false;
- lab.txBlocked++;
- record("CH_AUTO_INSEGURO","Restauracion BLE bloqueada hasta verificar modo desde My Chihiros");
-}
 static void manualPv(){
  if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
     otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA preparando o instalando");
@@ -1109,6 +1105,28 @@ static bool requireAdminWrite(){
   return false;
  }
  return true;
+}
+static cielo96::monitor::Snapshot monitorSnapshot(){
+ const uint32_t now=millis();
+ cielo96::monitor::Snapshot m{};m.firmware=VERSION;m.bootId=previousBootCount+1;
+ m.uptime=(now-bootMs)/1000UL;m.clockValid=timeOK();m.epoch=m.clockValid?(uint32_t)time(nullptr):0;
+ m.heap=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);m.heapMin=heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+ m.largestBlock=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+ m.bleReady=bleReady;m.workerStalled=bleReady&&now-cielo96::ble_last_heartbeat()>45000UL;
+ m.ota=otaBusy||otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready;
+ m.offPending=pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk;m.offFailures=pvOffFailures;
+ m.pv.expected=pvControlDesired||cieloPvRun||pvOffObligation;
+ m.ch.expected=cieloChRun||cieloChReturnPending||cieloChAwaitResponse||cieloChWasDriven;
+ m.chReturnFailed=cieloChWasDriven&&!cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse&&cieloReturnTries>=2;
+ m.pv.everOk=cieloLastSuccessfulPvAt>0;m.ch.everOk=cieloLastSuccessfulChAt>0;
+ m.pv.okAgeSeconds=(now-cieloLastSuccessfulPvAt)/1000UL;m.ch.okAgeSeconds=(now-cieloLastSuccessfulChAt)/1000UL;
+ m.pv.consecutiveErrors=cieloPvConsecutiveFailures;m.ch.consecutiveErrors=cieloChConsecutiveFailures;
+ m.pv.operations=devices[0].completed;m.ch.operations=devices[1].completed;
+ m.pv.errors=devices[0].errors;m.ch.errors=devices[1].errors;
+ m.queueDepth=(queue.pending(cielo::ble::Device::PezVerde)?1:0)+(queue.pending(cielo::ble::Device::Chihiros)?1:0);
+ m.workerQueueDepth=cielo96::ble_request_queue_depth();m.stackFreeBytes=cielo96::ble_stack_free_bytes();
+ m.profileGeneration=profile.generation;m.pvPoints=profile.pvCount;m.chPoints=profile.chCount;
+ return m;
 }
 static void physicalButtonTask(){
  const uint32_t now=millis();
@@ -1472,12 +1490,14 @@ static void configureWifi(){
  ok();
 }
 static void configureRoutes(){
+ cielo96::monitor::attach(srv,prefs,requireAdminWrite,requirePrivateRead,monitorSnapshot);
+ srv.on("/api/maintenance",HTTP_GET,[]{if(requirePrivateRead())jsonSend(200,cielo96::maintenanceInventory());});
   // Recursos PWA de solo lectura. No habilitar cache de comandos u OTA offline.
   srv.on("/manifest.webmanifest",HTTP_GET,[]{srv.sendHeader("Cache-Control","no-store");srv.send_P(200,"application/manifest+json",CIELO_MANIFEST);});
   srv.on("/icon.svg",HTTP_GET,[]{srv.sendHeader("Cache-Control","public, max-age=86400");srv.send_P(200,"image/svg+xml",CIELO_ICON_SVG);});
   srv.on("/icon-180.png",HTTP_GET,[]{srv.sendHeader("Cache-Control","public, max-age=86400");srv.send_P(200,"image/png",reinterpret_cast<const char*>(CIELO_ICON_180_PNG),sizeof(CIELO_ICON_180_PNG));});
 
- const char*keys[]={"X-Cielo-Key","X-Cielo-Session","X-Cielo-Sha256","X-Cielo-Signature"};srv.collectHeaders(keys,4);
+ const char*keys[]={"X-Cielo-Key","X-Cielo-Session","X-Cielo-Monitor","X-Cielo-Sha256","X-Cielo-Signature"};srv.collectHeaders(keys,sizeof(keys)/sizeof(keys[0]));
  srv.on("/",HTTP_GET,[]{if(!rescueOpen && srv.client().remoteIP()!=IPAddress(127,0,0,1)){
   srv.sendHeader("Location","https://iwagumi-cielo96.local/");
   srv.send(307,"text/plain","CIELO: conecta por HTTPS. Confirma la huella de certificado por USB.");return;
@@ -1747,8 +1767,8 @@ static void configureRoutes(){
    "/api/pez/cielo931/apply","/api/pez/cielo931/restore","/api/pez/cielo94/apply","/api/pez/cielo94/restore",
    "/api/updates/check","/api/updates/install","/api/updates/status",
    "/api/diagnostico/nube/configurar","/api/diagnostico/nube/desactivar","/api/diagnostico/nube/estado","/api/diagnostico/nube/sincronizar"};
- for(const char*path:unsupported){srv.on(path,HTTP_ANY,[]{fail(501,"Funcion todavia no implementada en R4; no se ha modificado la iluminacion");});}
- srv.onNotFound([](){fail(404,"Ruta no disponible en R4");});
+ for(const char*path:unsupported){srv.on(path,HTTP_ANY,[]{fail(410,"Funcion antigua retirada; no se ha modificado la iluminacion");});}
+ srv.onNotFound([](){fail(404,"Ruta no disponible en CIELO");});
  srv.begin();
 }
 static void wifiTask(){

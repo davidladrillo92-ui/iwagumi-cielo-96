@@ -101,7 +101,7 @@ static esp_err_t gateway(httpd_req_t*req){
  String url=String(req->uri);
  if(url.length()>180||url.indexOf('\r')>=0||url.indexOf('\n')>=0){close(sock);httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"URI invalida");return ESP_FAIL;}
  String head=String(method)+" "+url+" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n";
- const char*forward[]={"Content-Type","X-Cielo-Key","X-Cielo-Session","X-Cielo-Sha256","X-Cielo-Signature"};
+ const char*forward[]={"Content-Type","X-Cielo-Key","X-Cielo-Session","X-Cielo-Monitor","X-Cielo-Sha256","X-Cielo-Signature"};
  for(const char*name:forward){String v=headerValue(req,name);if(v.length() && v.indexOf('\r')<0&&v.indexOf('\n')<0)head+=String(name)+": "+v+"\r\n";}
  head+="Content-Length: "+String((unsigned)req->content_len)+"\r\n\r\n";
  if(!sendAll(sock,head)){close(sock);httpd_resp_send_500(req);return ESP_FAIL;}

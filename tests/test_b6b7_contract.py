@@ -3,7 +3,7 @@ import json,re
 ui=Path('web/interfaz_r4.html').read_text()
 main=Path('src/main.cpp').read_text()
 header=Path('include/cielo_pwa_assets.h').read_text()
-assert '11.1.0-RC5-B1B5B3-B2B4-B6B7-UX' in main
+assert '11.1.0-RC5-B1-B9-MONITOR' in main
 assert 'srv.on("/manifest.webmanifest"' in main
 assert 'srv.on("/icon-180.png"' in main
 assert 'srv.on("/icon.svg"' in main

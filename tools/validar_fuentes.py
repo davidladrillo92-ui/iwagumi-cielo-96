@@ -65,7 +65,7 @@ assert 'r.observed_count<8' in bleworker
 assert 'lab.lastScan.observed_count' in code and 'nearby' in code
 assert 'res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto)' in code
 assert 'CH_AUTO_ERROR' in code and 'CH_AUTO_NO_ENVIADO' in code
-assert 'CH_AUTO_INSEGURO' in code
+assert 'static void requestAuto()' not in code # B9: función muerta retirada, AUTO sigue bloqueado en worker
 assert 'CH_AUTO_MODE_UNVERIFIED' in bleworker
 assert 'if(!put(t,frame,size,err))return false;\n  t.manualEntered=false' not in bleworker
 assert 'AUTO Chihiros bloqueado' in code
@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1B5B3-B2B4-B6B7-UX' in code
+assert '11.1.0-RC5-B1-B9-MONITOR' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code

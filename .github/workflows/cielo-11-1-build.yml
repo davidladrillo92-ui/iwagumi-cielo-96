@@ -1,8 +1,15 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021]
+  pull_request:
+    branches: [dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021]
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cielo-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   firmware:
     runs-on: ubuntu-latest
@@ -14,28 +21,8 @@ jobs:
           python-version: "3.11"
       - name: Verificar código y perfiles
         run: |
-          python tools/validar_fuentes.py
-          pip install cryptography==46.0.4
-          python tools/test_security_crypto.py
-          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_night_safety.cpp -o /tmp/test_night_safety
-          /tmp/test_night_safety
-          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_b1_scenarios.cpp -o /tmp/test_b1_scenarios
-          /tmp/test_b1_scenarios
-          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_b5_diagnostics.cpp -o /tmp/test_b5_diagnostics
-          /tmp/test_b5_diagnostics
-          python tests/test_b5_source_contract.py
-          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_b3_security_policy.cpp -o /tmp/test_b3_security
-          /tmp/test_b3_security
-          python tests/test_b3_contract.py
-          python -c "from pathlib import Path; h=Path('web/interfaz_r4.html').read_text(); Path('/tmp/cielo_ui_test.js').write_text(h.split('<script>',1)[1].split('</script>',1)[0])"
-          node --check /tmp/cielo_ui_test.js
-          node tests/test_b3_browser_live.js
-          g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/test_b2b4_curves.cpp -o /tmp/test_b2b4_curves
-          /tmp/test_b2b4_curves
-          node tests/test_b2b4_editor.js
-          python tests/test_b2b4_contract.py
-          node tests/test_b6b7_ui.js
-          python tests/test_b6b7_contract.py
+          pip install cryptography==46.0.4 paho-mqtt==2.1.0
+          python tools/check_b89.py
       - name: Instalar PlatformIO
         run: pip install platformio==6.1.18
       - name: Compilar ATOMS3 Lite
@@ -48,9 +35,12 @@ jobs:
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
           cp partitions_8mb.csv dist/partitions_8mb.csv
+          cp -R monitor docs dist/
+          cp tools/cielo_flash.py tools/cielo_spiffs.py dist/
+          python tools/package_manifest.py .pio/build/atoms3_lite_c124/firmware.bin dist/BUILD_MANIFEST.json
           git archive --format=zip --output=dist/CIELO_11_1_FUENTES_COMPLETAS.zip HEAD
           sha256sum dist/CIELO_11_1_FUENTES_COMPLETAS.zip >> dist/SHA256.txt
-          printf '%s\n' "ATOMS3 Lite C124, fuente GitHub HEAD, firmware SOLO APLICACION, NO FLASHEAR SIN VALIDACION FISICA" > dist/LEEME_RECUPERACION.txt
+          printf '%s\n' "ATOMS3 Lite C124, fuente GitHub HEAD, firmware SOLO APLICACION, NO FIRMADO PARA OTA; NO FLASHEAR SIN BACKUP USB Y VALIDACION FISICA" > dist/LEEME_RECUPERACION.txt
       - name: Publicar BIN candidato
         uses: actions/upload-artifact@v4
         with:
