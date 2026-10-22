@@ -1,3 +1,7 @@
+# Candidata actual: RC5 SIMPLE1
+
+Portada compacta, un solo informe descargable y control automático sin botón inicial. Conserva acceso LAN sin claves, V5 PV34/CH31 y recuperación BLE. [Cambios, análisis del informe LAN1 y ensayo](docs/SIMPLE1_INTERFAZ_AUTONOMIA.md). Última instalación confirmada: LAN1, 12 minutos en el primer informe; SIMPLE1 pendiente de prueba física.
+
 # Candidata actual: RC5 LAN1
 
 Acceso local HTTP sin contraseñas, clave OTA, firma obligatoria ni pulsación física para actualizar, por decisión expresa del propietario. Corrige también la espera posarranque y evita iniciar HTTPS. [Uso, migración desde RC3 y ensayo físico](docs/LAN1_ACCESO_SIMPLE.md). V5 PV34/CH31 intacta. RECOVERY y STACKFIX1 quedan retiradas del ensayo.

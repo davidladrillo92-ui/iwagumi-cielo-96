@@ -8,7 +8,7 @@ assert 'IWAGUMI CIELO' in original and len(original)>70000
 assert '/api/updates/' not in actual and 'workers.dev' not in actual
 assert 'Actualizar CIELO · desde GitHub' not in actual
 assert '<button id="otaInstall" disabled>' in actual
-assert 'Descargar JSON' in actual
+assert 'Descargar informe' in actual
 code=(r/'src/main.cpp').read_text()
 assert 'ESP_RST_PANIC' in code and 'reset_reason_name' in code
 assert 'boot_marked_healthy' in code and 'latencyP95' in code
@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1-B9-LAN1' in code
+assert '11.1.0-RC5-B1-B9-SIMPLE1' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -90,7 +90,7 @@ assert 'if(queue.busy()||contrastStage==1||contrastStage==4)' in code
 assert "30,30,30,0,millis(),45000" in code
 
 assert 'ble_release_request(index)' in code and '/api/ble/release' in code
-assert 'releaseIdleLinks()' in bleworker and 'BLE_IDLE_RELEASE_MS=5000UL' in bleworker
+assert 'releaseIdleLinks()' in bleworker and 'BLE_IDLE_RELEASE_MS=90000UL' in bleworker
 assert 'ble_link_status(linkIndex)' in code
 assert '/api/lab/preview' in code and 'CURVA_PREVIA_CH' in code
 assert 'chihiros_auto_verified' in code and 'CH_AUTO_MODE_UNVERIFIED' in bleworker
@@ -133,7 +133,7 @@ assert 'Update.begin' in code and 'Update.end(true)' in code
 
 assert '<title>CIELO 11 · Iwagumi en vivo</title>' in actual
 assert 'id="viewLab"' in actual and 'data-view="lab"' in actual
-for identifier in ('labGuided','heroTint','chiLed','pezLed','scrubHint','otaProgress','diagView','diagDownload','otaInstall'):
+for identifier in ('heroTint','chiLed','pezLed','scrubHint','otaProgress','diagDownload','otaInstall'):
  assert ('id="'+identifier+'"') in actual,identifier
 for removed in ('labStart','labScan','labBrowser','labArm','labProbePv','labProbeCh','labCh10','labCh20','labCh35','labReport','labMetrics'):
  assert ('id="'+removed+'"') not in actual,removed
@@ -146,16 +146,16 @@ assert "function labPretty(d)" in actual and "$('cieloLinks')" not in actual
 assert "id=\"cielo95Diagnostics\"" in actual
 assert actual.count('id="cielo95Diagnostics"')==1
 assert actual.count('id="diagDownload"')==1
-assert actual.count('id="labGuided"')==1
+assert 'id="labGuided"' not in actual
 assert 'id="viewLab"' in actual and 'id="viewLight"' in actual and 'id="viewCurves"' in actual
 assert "n==='lab'?'Lab'" in actual
 assert 'id="viewService"' not in actual and 'data-view="service"' not in actual
-assert 'id="cieloLinks"' not in actual and 'id="labGuided"' in actual
+assert 'id="cieloLinks"' not in actual and 'id="labGuided"' not in actual
 assert 'id="releaseCh"' not in actual and 'id="releasePv"' not in actual
 assert 'id="curveChEvening"' not in actual
 assert 'function labGuided()' in actual and 'function previewNatural' not in actual
 assert 'function releaseLight' in actual
-assert "fetch(full?'/api/diagnostico/maestro?download=1'" in actual
+assert "fetch('/api/diagnostico/maestro?download=1'" in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
 import tempfile
 with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as js:
@@ -174,18 +174,18 @@ assert "await api('/api/wifi/networks')" in actual
 assert 'new Option(' in actual and "if(state.preview===null)" in actual
 assert 'XMLHttpRequest()' in actual and 'upload.onprogress' in actual
 assert 'id="otaProgress"' in actual
-assert 'Activar CIELO · siempre' in actual
+assert 'Activar CIELO · siempre' not in actual and 'Reanudar curvas' in actual
 assert 'id="cieloPauseAll"' in actual
 # P0: toda ruta POST mutable queda protegida por la misma clave OTA.
 for protected_path in ['/api/lab/start','/api/lab/stop','/api/lab/scan','/api/lab/probe','/api/cielo/v4/start','/api/cielo/v4/return','/api/cielo/v4/pause','/api/chihiros/contrast/start','/api/chihiros/contrast/cancel','/api/chihiros/my-curve-test','/api/ble/release','/api/lab/preview','/api/lab/tx/arm','/api/lab/tx/disarm','/api/lab/browser-sample','/api/clock','/api/save','/api/reset','/api/chihiros/curve','/api/chihiros/curve/reset','/api/manual','/api/chihiros/manual','/api/chihiros/stop','/api/chihiros/evening/off','/api/chihiros/evening/on','/api/chihiros/live/stop','/api/wifi/scan','/api/wifi','/api/wifi/forget']:
  assert 'srv.on("'+protected_path+'",HTTP_POST,[]{if(!requireAdminWrite())return;' in code, protected_path
 assert 'sameLanOrigin' in code and 'requireAdminWrite()' in code
 
-assert 'Activar CIELO · siempre' in actual
+assert 'Activar CIELO · siempre' not in actual and 'Reanudar curvas' in actual
 # El boton sigue existiendo, pero se ha trasladado a Emergencia con otro titulo.
 assert 'id="chNightOff"' in actual
 assert 'id="cieloPauseAll"' in actual
-assert 'emergencyControls' in actual
+assert 'Pausar CIELO' in actual
 assert 'async function otaPreflightUi()' in actual
 assert 'async function otaPrepareLights()' in actual
 assert "otaPost('/api/ota/prepare')" in actual
@@ -277,7 +277,7 @@ assert 'flushJournal();' in code and 'importantEvent(name)' in code
 assert 'canReportP95' in code and 'fragmentationPct' in code
 assert 'diagnostic_v3' not in code  # name actually uses hyphens
 assert 'id="serviceRefresh"' not in actual
-assert 'id="diagShare"' in actual and '?share=1&download=1' in actual
-assert 'diagReportFetchedAt' in actual and 'if(state.view===\'lab\'||$(\'diagReportText\'))' in actual
+assert 'id="diagShare"' not in actual and 'id="diagDownload"' in actual
+assert 'diagReportFetchedAt' not in actual and 'if(state.view===\'lab\')diagLoad()' in actual
 assert 'ble_request_queue_depth()' in (r/'src/cielo_ble_worker.cpp').read_text()
 assert 'metricTime(metrics.write_last' in (r/'src/cielo_ble_worker.cpp').read_text()

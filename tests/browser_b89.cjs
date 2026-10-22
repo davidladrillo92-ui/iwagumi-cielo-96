@@ -19,9 +19,10 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CODEX_
  });
  await page.goto('http://cielo.test/');
  await page.evaluate(()=>settings());
+ await page.locator('#modalBody summary').filter({hasText:'Más opciones'}).click();
  await page.locator('#monitorSettings').click();await page.locator('#monitorEnable').click();
  await page.waitForTimeout(50);await page.locator('#sheetClose').click();
- await page.evaluate(()=>settings());await page.locator('#maintenanceRead').click();
+ await page.evaluate(()=>settings());await page.locator('#modalBody summary').filter({hasText:'Más opciones'}).click();await page.locator('#maintenanceRead').click();
  await page.waitForFunction(()=>document.getElementById('maintenanceResult').textContent.includes('USB_REQUIRED'));
  assert.deepEqual(writes,['/api/monitor/enable']);
  assert.deepEqual(errors,[]);

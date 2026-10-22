@@ -35,7 +35,7 @@ jobs:
           python tools/check_stack_build.py
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
-          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_LAN1.bin
+          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_SIMPLE1.bin
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R monitor docs dist/
           mkdir -p dist/tools dist/include
@@ -55,7 +55,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CIELO_LAN1_DEBUG_ELF_MAP
+          name: CIELO_SIMPLE1_DEBUG_ELF_MAP
           path: |
             .pio/build/atoms3_lite_c124/firmware.elf
             .pio/build/atoms3_lite_c124/firmware.map

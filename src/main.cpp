@@ -28,6 +28,7 @@
 #include "cielo_maintenance.h"
 #include "cielo_ble_recovery.h"
 #include "cielo_ota_validation.h"
+#include "cielo_autonomy_policy.h"
 
 // TLS is not started in this LAN edition. Keep an explicit stack margin for HTTP/OTA.
 static constexpr size_t CIELO_LOOP_STACK_BYTES=16384;
@@ -46,7 +47,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-B1-B9-LAN1";
+static constexpr const char* VERSION="11.1.0-RC5-B1-B9-SIMPLE1";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -171,6 +172,7 @@ static void statusLedTick(){
 static bool pezManual=false,chiManual=false,chiCieloNight=false,chiAutoPending=false;
 static bool cieloPvRun=false,cieloChRun=false,cieloChWasDriven=false;
 static bool cieloAlwaysOn=false,cieloResumePending=false;
+static cielo96::autonomy::Retry chReconnect;
 enum class PvSafetyState:uint8_t {Paused,Active,Degraded,OffPending,OffRetrying,OffGattOk};
 static PvSafetyState pvSafety=PvSafetyState::Paused;
 static bool pvOffObligation=false,pvControlDesired=false;
@@ -540,6 +542,9 @@ static String cieloModeJson(){
  j+=",\"pv_last_gatt_age_sec\":"+(cieloLastSuccessfulPvAt?String((millis()-cieloLastSuccessfulPvAt)/1000UL):String("null"));
  j+=",\"ch_last_gatt_age_sec\":"+(cieloLastSuccessfulChAt?String((millis()-cieloLastSuccessfulChAt)/1000UL):String("null"));
  j+=",\"ch_window_now\":"+String(timeOK()?"true":"false");
+ j+=",\"ch_reconnect_pending\":"+String(chReconnect.recovering?"true":"false");
+ j+=",\"ch_reconnect_attempts\":"+String(chReconnect.attempts);
+ j+=",\"ch_reconnect_episodes\":"+String(chReconnect.episodes);
  j+=",\"always_on\":"+String(cieloAlwaysOn?"true":"false");
  j+=",\"pv_online_recent\":"+String(cieloPvRun&&cieloLastSuccessfulPvAt&&millis()-cieloLastSuccessfulPvAt<650000UL?"true":"false");
  j+=",\"ch_online_recent\":"+String(cieloChRun&&cieloLastSuccessfulChAt&&millis()-cieloLastSuccessfulChAt<650000UL?"true":"false");
@@ -1008,7 +1013,7 @@ static cielo96::monitor::Snapshot monitorSnapshot(){
  m.ota=otaBusy||otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready;
  m.offPending=pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk;m.offFailures=pvOffFailures;
  m.pv.expected=pvControlDesired||cieloPvRun||pvOffObligation;
- m.ch.expected=cieloChRun||cieloChReturnPending||cieloChAwaitResponse||cieloChWasDriven;
+ m.ch.expected=chReconnect.recovering||cieloChRun||cieloChReturnPending||cieloChAwaitResponse||cieloChWasDriven;
  m.chReturnFailed=cieloChWasDriven&&!cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse&&cieloReturnTries>=2;
  m.pv.everOk=cieloLastSuccessfulPvAt>0;m.ch.everOk=cieloLastSuccessfulChAt>0;
  m.pv.okAgeSeconds=(now-cieloLastSuccessfulPvAt)/1000UL;m.ch.okAgeSeconds=(now-cieloLastSuccessfulChAt)/1000UL;
@@ -1409,7 +1414,7 @@ static void configureRoutes(){
    return fail(507,"No se pudo guardar el control continuo en NVS");
   if(!prefs.putBool("pv_auto",true))
    return fail(507,"No se pudo conservar la recuperacion independiente de Pez Verde");
-  cieloAlwaysOn=true;cieloResumePending=false;
+  cieloAlwaysOn=true;cieloResumePending=false;chReconnect.cancel();
   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
   pvControlDesired=true;pvSafety=PvSafetyState::Active;pvRetryNext=0;pvOffNextTry=0;
   cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
@@ -1428,7 +1433,7 @@ static void configureRoutes(){
   if(customResumePending||lab.scanPending||lab.probePending||
      contrastStage==1||contrastStage==2||contrastStage==4)
    return fail(409,"Espera a que finalice el ensayo previo");
-  cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
+  cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;chReconnect.cancel();prefs.putBool("v5_always",false);
   cieloRequestReturn("Emergencia: volver a My Chihiros");
   record("V4_BOTON_MYCHIHIROS","Pez Verde sigue usando Natural V4 si estaba activa");
   ok();
@@ -1438,7 +1443,7 @@ static void configureRoutes(){
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA ya gestiona las luces: no pulses pausa");
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
   if(srv.arg("confirm")!="PAUSAR_TODO")return fail(403,"Confirma pausa de ambas pantallas");
-  cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;prefs.putBool("v5_always",false);
+  cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;chReconnect.cancel();prefs.putBool("v5_always",false);
   pvControlDesired=false;pvOffObligation=false;pvOffInFlightSeq=0;pvSafety=PvSafetyState::Paused;
   if(!prefs.putBool("pv_auto",false))record("PV_NVS_FALLO","Pausa PV no persistida, verificar tras reinicio");
   queue.cancel_pending(cielo::ble::Device::PezVerde);
@@ -1669,6 +1674,7 @@ static void lightingTask(){
  if(bleReady && !cieloWatchdogTripped &&
     now-cielo96::ble_last_heartbeat()>45000UL){
   cieloWatchdogTripped=true;cieloPvRun=false;cieloChRun=false;
+  if(cieloAlwaysOn)chReconnect.arm(now);
   if(pvControlDesired){pvSafety=PvSafetyState::Degraded;pvRetryNext=now+5000UL;}
   queue.cancel_pending(cielo::ble::Device::PezVerde);
   if(cieloChWasDriven)cieloRequestReturn("Watchdog BLE 45s: parada preventiva y retorno pendiente");
@@ -1795,7 +1801,7 @@ static void bleTick(){
      ++pvOffFailures;
      const uint32_t backoff=cielo96::safety::offRetryDelayMs(pvOffFailures);
      pvOffNextTry=now+backoff;pvSafety=PvSafetyState::OffRetrying;
-     record("PV_POWER_OFF_REINTENTO",String("Fallo ")+String(pvOffFailures)+", reintento "+String(backoff/1000UL)+"s");
+     record("PV_POWER_OFF_REINTENTO",String("Fallo ")+String(pvOffFailures)+"; cola BLE reintenta; siguiente programacion de seguridad en "+String(backoff/1000UL)+"s");
     }else if(++cieloPvConsecutiveFailures>=3){
      cieloPvRun=false;queue.cancel_pending(cielo::ble::Device::PezVerde);
      pvSafety=PvSafetyState::Degraded;pvRetryNext=now+30000UL;
@@ -1804,9 +1810,10 @@ static void bleTick(){
    }
    if(res.device==1 && (cieloChRun||cieloChWasDriven)){
     if(res.success){
-     cieloChConfirmed++;cieloChWasDriven=true;cieloChConsecutiveFailures=0;cieloLastSuccessfulChAt=now;
+     cieloChConfirmed++;cieloChWasDriven=true;cieloChConsecutiveFailures=0;cieloLastSuccessfulChAt=now;chReconnect.success();
     }else if(++cieloChConsecutiveFailures>=2){
      cieloChRun=false;cieloFallbacks++;
+     if(cieloAlwaysOn)chReconnect.arm(now);
      cieloRequestReturn("2 errores BLE de Chihiros; recuperacion de My Chihiros");
     }
    }
@@ -1831,7 +1838,7 @@ static void bleTick(){
  }
  queue.tick(now);
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
- if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Web sigue activo; tarea BLE no liberada artificialmente");}
+ if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Operacion supera 3,5s; puede terminar correctamente. No es por si sola un fallo");}
  const bool pvOffFirst=pvOffObligation && pvSafety!=PvSafetyState::OffGattOk &&
    pvOffFailures<3 && queue.pending(cielo::ble::Device::PezVerde);
  if(cieloChReturnPending && !pvOffFirst && !queue.busy() && !customResumePending &&
@@ -1884,6 +1891,20 @@ static void bleTick(){
     record("BLE_COLA_LLENA","No se envio comando al worker");
   }
  }
+}
+static void chReconnectTick(){
+ if(!cieloAlwaysOn){chReconnect.cancel();return;}
+ const bool allowed=bleReady && !rescueOpen && !bleRecoveryBootPvSafe &&
+  currentBootMarkedHealthy && timeOK() && cielo96::profileValid(profile) &&
+  otaBleHealthy() && !otaBusy && otaTxn.phase==OtaPhase::Idle &&
+  !labTxEnabled() && !lab.scanPending && !lab.probePending &&
+  !customResumePending && !cieloChReturnPending && !cieloChAwaitResponse &&
+  !queue.busy() && !queue.pending(cielo::ble::Device::Chihiros);
+ if(!chReconnect.ready(millis(),allowed))return;
+ if(prefs.putBool("v4_ch_takeover",true)!=1){chReconnect.defer(millis());return;}
+ chReconnect.begin();cieloChRun=true;cieloChConsecutiveFailures=0;
+ lastChDesired=false;lastScheduleAt=millis()-30000UL;
+ record("CH_RECONEXION_AUTO","Recuperar consigna actual; sin reproducir colores anteriores");
 }
 static void bleRecoveryTick(){
  const auto snapshot=cielo96::ble_worker_snapshot();
@@ -1947,7 +1968,7 @@ void setup(){
  const String previousOtaApp=prefs.getString("ota_prev","");
  otaCandidateBoot=running && (previousOtaApp=="app0"||previousOtaApp=="app1") &&
     previousOtaApp!=String(running->label);
- otaCandidateNeedsGATT=otaCandidateBoot && prefs.getBool("v5_always",false);
+ otaCandidateNeedsGATT=otaCandidateBoot && cielo96::autonomy::enabled(prefs.isKey("v5_always"),prefs.getBool("v5_always",false));
  if(otaCandidateBoot){
   const uint8_t attempts=prefs.getUChar("ota_attempts",0)+1;
   prefs.putUChar("ota_attempts",attempts);
@@ -1967,8 +1988,14 @@ void setup(){
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
  tracePhase(TracePhase::Profile);
  loadProfile();
- cieloAlwaysOn=prefs.getBool("v5_always",false);
+ cieloAlwaysOn=cielo96::autonomy::enabled(prefs.isKey("v5_always"),prefs.getBool("v5_always",false));
+ if(cieloAlwaysOn && !prefs.isKey("v5_always") && prefs.putBool("v5_always",true)!=1){
+  cieloAlwaysOn=false;record("AUTO_NVS_FALLO","No se pudo guardar el arranque automatico");
+ }
  pvControlDesired=prefs.getBool("pv_auto",cieloAlwaysOn);
+ if(pvControlDesired && !prefs.isKey("pv_auto") && prefs.putBool("pv_auto",true)!=1){
+  pvControlDesired=false;cieloAlwaysOn=false;record("AUTO_NVS_FALLO","No se pudo guardar control PV");
+ }
  cieloResumePending=cieloAlwaysOn;
  if(bleRecoveryBoot){
   record("BLE_RESCATE_ARRANQUE",String("Reinicio automatico ")+String(bleRecoveryRtc.attempts)+"; sin confirmacion optica");
@@ -2128,6 +2155,7 @@ void loop(){
  lightingTask();
  cieloTrendTick();
  labTick();
+ chReconnectTick();
  otaPreparationTick();
  bleRecoveryTick();
  flushJournal(); // nunca escribir en flash por polling de diagnóstico

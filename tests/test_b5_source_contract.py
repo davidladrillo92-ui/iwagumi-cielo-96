@@ -27,9 +27,9 @@ assert 'metricTime(metrics.connect_last' in w
 assert 'metricTime(metrics.write_last' in w
 assert 'metricTime(metrics.disconnect_last' in w
 assert 'id="serviceRefresh"' not in ui
-assert 'id="diagShare"' in ui
-assert 'diagReportFetchedAt' in ui
-assert 'setInterval(()=>{if(state.view===\'lab\'||$(\'diagReportText\'))' in ui
+assert 'id="diagShare"' not in ui and 'id="diagDownload"' in ui
+assert 'diagReportFetchedAt' not in ui
+assert 'setInterval(()=>{if(state.view===\'lab\')diagLoad()' in ui
 class Buttons(HTMLParser):
  def __init__(self):super().__init__();self.ids=[]
  def handle_starttag(self,tag,attrs):
