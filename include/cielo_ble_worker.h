@@ -58,6 +58,7 @@ struct BleTransportStats {
 };
 BleTransportStats ble_transport_stats(uint8_t device);
 uint32_t ble_request_queue_depth();
+uint32_t ble_stack_free_bytes();
 struct BleWorkerSnapshot {
  uint8_t phase=0,device=255;
  uint32_t phase_age_ms=0,heartbeat_age_ms=0;

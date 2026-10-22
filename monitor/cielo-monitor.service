@@ -1,0 +1,21 @@
+[Unit]
+Description=Observador IWAGUMI CIELO (solo lectura)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=cielo
+Group=cielo
+WorkingDirectory=/opt/cielo/monitor
+EnvironmentFile=/etc/cielo/monitor.env
+ExecStart=/opt/cielo/venv/bin/python -m cielo_monitor --config /etc/cielo/config.json
+Restart=on-failure
+RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cielo
+[Install]
+WantedBy=multi-user.target

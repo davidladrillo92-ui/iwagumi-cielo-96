@@ -38,7 +38,9 @@ inline void metricTime(volatile uint32_t&last,volatile uint32_t&maxVal,uint32_t 
 }
 
 uint32_t linkTouched[2]{};
-static constexpr uint32_t BLE_IDLE_RELEASE_MS=5000UL;
+// Reuse links across 30/60s curve updates; explicit app/OTA release is immediate.
+static constexpr uint32_t BLE_IDLE_RELEASE_MS=90000UL;
+TaskHandle_t workerHandle=nullptr;
 volatile uint32_t lastHeartbeat=0;
 volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
 volatile uint8_t workerDevice=255;
@@ -49,7 +51,6 @@ void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
 void releaseTarget(uint8_t device,bool userRequested){
  setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  Target& t=targets[device];
- setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  if(t.client && t.client->isConnected()){
   const uint32_t started=millis();
   t.client->disconnect();
@@ -304,16 +305,29 @@ void task(void*){
  }
 }
 }
+// B9: inicio transaccional; una asignación parcial nunca simula un worker vivo.
 bool ble_begin(){
- if(requests)return true;
- requests=xQueueCreate(2,sizeof(cielo::ble::Command));responses=xQueueCreate(4,sizeof(BleResult));
- scanRequests=xQueueCreate(1,sizeof(uint8_t));scanResponses=xQueueCreate(2,sizeof(BleScanResult));
- probeRequests=xQueueCreate(1,sizeof(uint8_t));probeResponses=xQueueCreate(2,sizeof(BleProbeResult));
- releaseRequests=xQueueCreate(2,sizeof(uint8_t));
- customRequests=xQueueCreate(1,sizeof(uint8_t));
- customResults=xQueueCreate(1,sizeof(BleCustomResumeResult));
- if(!requests || !responses || !scanRequests || !scanResponses || !probeRequests || !probeResponses || !releaseRequests || !customRequests || !customResults)return false;
- return xTaskCreatePinnedToCore(task,"cielo_ble",16384,nullptr,1,nullptr,0)==pdPASS;
+ if(workerHandle)return true;
+ QueueHandle_t* handles[]={&requests,&responses,&scanRequests,&scanResponses,
+  &probeRequests,&probeResponses,&releaseRequests,&customRequests,&customResults};
+ const UBaseType_t lengths[]={2,4,1,2,1,2,2,1,1};
+ const UBaseType_t sizes[]={sizeof(cielo::ble::Command),sizeof(BleResult),sizeof(uint8_t),
+  sizeof(BleScanResult),sizeof(uint8_t),sizeof(BleProbeResult),sizeof(uint8_t),sizeof(uint8_t),sizeof(BleCustomResumeResult)};
+ for(size_t i=0;i<9;i++){
+  *handles[i]=xQueueCreate(lengths[i],sizes[i]);
+  if(!*handles[i]){
+   for(size_t j=0;j<i;j++){vQueueDelete(*handles[j]);*handles[j]=nullptr;}
+   return false;
+  }
+ }
+ if(xTaskCreatePinnedToCore(task,"cielo_ble",16384,nullptr,1,&workerHandle,0)==pdPASS)return true;
+ workerHandle=nullptr;
+ for(auto handle:handles){vQueueDelete(*handle);*handle=nullptr;}
+ return false;
+}
+uint32_t ble_stack_free_bytes(){
+ // ESP-IDF FreeRTOS expresa uxTaskGetStackHighWaterMark en bytes.
+ return workerHandle?uxTaskGetStackHighWaterMark(workerHandle):0;
 }
 bool ble_custom_resume_request(){
  uint8_t token=1;

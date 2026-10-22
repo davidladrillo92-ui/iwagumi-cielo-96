@@ -12,3 +12,18 @@ local_config.h
 *.bin
 *.elf
 FLASH_ATOM_8MB_COMPLETA_PRIVADA.bin
+# Datos privados de mantenimiento y observación
+private/
+**/private/
+monitor/config.json
+*.sqlite
+*.sqlite-*
+*.cieloenc
+*.env
+*.sig
+*.pem
+*.key
+*.p12
+tests/test_ble_match
+dist/
+build-src/

@@ -32,6 +32,13 @@ inline bool sameOrigin(const char*origin,const char*host){
  if(strncmp(origin,scheme,sizeof(scheme)-1)!=0)return false;
  return strcmp(origin+sizeof(scheme)-1,host)==0;
 }
+inline bool sameLanOrigin(const char*origin,const char*host){
+ if(!safeHost(host))return false;
+ if(!origin||!*origin)return true;
+ static constexpr char scheme[]="http://";
+ return strncmp(origin,scheme,sizeof(scheme)-1)==0 &&
+        strcmp(origin+sizeof(scheme)-1,host)==0;
+}
 inline bool safeFetchSite(const char*site){
  return !site||!*site||strcmp(site,"same-origin")==0||strcmp(site,"none")==0;
 }
