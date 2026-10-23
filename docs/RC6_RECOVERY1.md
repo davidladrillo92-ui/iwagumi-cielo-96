@@ -56,16 +56,31 @@ Las suites host cubren callbacks ausentes, timeout de ambos destinos y rollover,
 
 No se instala firmware ni se modifica el iMac a distancia. Para garantizar apagado ante una radio averiada hace falta un corte eléctrico independiente probado sobre la alimentación de PV; ningún envío BLE por sí solo puede garantizarlo.
 
-## Actualizar el observador del iMac
+## Actualizar el observador del iMac · adaptación Sierra completada
 
-El instalador Sierra V3 adaptado no está en este repositorio. No se presupone que su distribución coincida con `monitor/cielo_monitor`. `tools/update_observer.py` solo actualiza una instalación identificada del paquete, con el proceso detenido y su DB bloqueable; rechaza una distribución desconocida. Conserva configuración y credenciales, crea copia consistente de SQLite y backup del código, y no cambia el LaunchAgent.
+Se ha localizado y leído el paquete `CIELO_VIGILANCIA_iMAC_SIERRA_V3.zip` usado
+por el propietario. Su script único y SQLite tienen formato distinto al paquete
+genérico. La adaptación específica está en `monitor/macos_sierra`, versión
+`4.0.0-SIERRA`; su procedimiento es `ACTUALIZAR.command`. Conserva el token,
+chat, IP, histórico, condiciones/outbox y etiqueta del LaunchAgent originales.
 
-```bash
-python3.9 tools/update_observer.py "/ruta/que/contiene/cielo_monitor" --database "/ruta/real/history.sqlite" --check
-python3.9 tools/update_observer.py "/ruta/que/contiene/cielo_monitor" --database "/ruta/real/history.sqlite"
-```
+Busca Python 3.9 e incluye el mismo CA bundle del V3 verificado por SHA-256,
+usa TLS >=1.2 y `launchctl load/unload`, sin pip ni dependencias nuevas. Prepara
+los archivos antes de parar el servicio, comprueba el bloqueo, crea copia SQLite
+consistente y restaura código/servicio si falla la carga. No modifica tablas de
+V3 ni vuelve a emparejar Telegram. `VOLVER_A_VERSION_ANTERIOR.command` conserva
+el histórico y configuración actuales al restaurar el código anterior.
 
-Después se reinicia el LaunchAgent existente. Si es un script único V3, primero se debe revisar ese código local y adaptar el instalador; la herramienta se detiene sin alterar nada. Compatibilidad de sintaxis Python 3.9 y actualización probadas en host; ejecución real en macOS Sierra y certificados de Telegram pendientes de comprobar en ese iMac. No se requiere enviar el token.
+Las pruebas `test_sierra_observer.py` ejecutan el instalador real con un V3 y
+launchctl simulados; cubren conservación, rollback, rechazo de DB incompatible,
+CA alterado, primer reinicio y segundo entre consultas, deduplicación y Madrid
+con DST. Actions ejecuta esas pruebas con **Python 3.9 real en Linux**: esto no
+se presenta como ejecución sobre macOS Sierra físico. La comprobación final
+consiste en instalar en ese iMac y ver `4.0.0-SIERRA` con una muestra reciente.
+
+El actualizador genérico `tools/update_observer.py` permanece reservado para
+instalaciones del paquete; no se aplica al V3. El firmware y la instalación del
+ATOM no se cambian al instalar el vigilante.
 
 Fuentes primarias del transporte:
 - https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/BLE/src/BLEClient.cpp

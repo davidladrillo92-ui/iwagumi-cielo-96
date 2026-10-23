@@ -11,6 +11,23 @@ concurrency:
   group: cielo-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  sierra_python39:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Probar instalador Sierra V3 a V4 con Python 3.9
+        run: python tests/test_sierra_observer.py
+      - name: Empaquetar instalador Sierra
+        run: python tools/package_sierra.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_VIGILANCIA_iMAC_SIERRA_V4
+          path: dist/CIELO_VIGILANCIA_iMAC_SIERRA_V4.zip
+          if-no-files-found: error
   firmware:
     runs-on: ubuntu-latest
     timeout-minutes: 25
