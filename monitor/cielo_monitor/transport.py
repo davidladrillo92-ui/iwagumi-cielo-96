@@ -56,6 +56,44 @@ def validate(data):
         if type(n) is not int or not 0 <= n <= (64 if "points" in key else 0xffffffff):
             raise PollError("schema")
         result["profile"][key] = n
+    # Additive extension: old SIMPLE1 /api/monitor remains supported unchanged.
+    if "recovery_schema" in data:
+        if type(data["recovery_schema"]) is not int or data["recovery_schema"] != 1:
+            raise PollError("schema")
+        result["recovery_schema"] = 1
+        for key in ("boot_marked_healthy", "recovered_boot"):
+            if type(data.get(key)) is not bool:
+                raise PollError("schema")
+            result[key] = data[key]
+        for key in ("reset_reason", "restart_total", "last_stall_phase", "last_stall_device", "last_stall_ms"):
+            v = data.get(key)
+            if type(v) is not int or not 0 <= v <= 0xffffffff:
+                raise PollError("schema")
+            result[key] = v
+        entries = data.get("recent_boots")
+        if not isinstance(entries, list) or len(entries) > 8:
+            raise PollError("schema")
+        result["recent_boots"] = []
+        seen = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise PollError("schema")
+            record = {}
+            for key in ("boot_id", "previous_boot_id", "epoch", "reset_reason", "phase", "device",
+                        "stall_ms", "stall_epoch", "outcome", "recovered_epoch"):
+                v = entry.get(key)
+                if type(v) is not int or not 0 <= v <= 0xffffffff:
+                    raise PollError("schema")
+                record[key] = v
+            if (record["boot_id"] > result["boot_id"] or record["boot_id"] in seen
+                    or record["outcome"] not in (0, 1) or record["device"] not in (0, 1, 255)
+                    or record["phase"] > 11 or record["reset_reason"] > 10):
+                raise PollError("schema")
+            if type(entry.get("ble_recovery")) is not bool:
+                raise PollError("schema")
+            record["ble_recovery"] = entry["ble_recovery"]
+            seen.add(record["boot_id"])
+            result["recent_boots"].append(record)
     result["optical_feedback"] = None
     return result
 

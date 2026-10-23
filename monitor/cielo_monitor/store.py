@@ -5,6 +5,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from .coverage import coverage
 
 
 class Store:
@@ -80,7 +81,11 @@ class Store:
             meta = self.meta_get(c, "state", {})
             count = c.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
             delivery = self.meta_get(c, "delivery", {})
-        return {"days": days, "generated_at": now, "hours": [dict(x) for x in rows],
+            poll_seconds = self.meta_get(c, "poll_seconds", 60)
+            all_samples = c.execute("SELECT ts,data FROM samples WHERE ts>=? ORDER BY ts", (start-poll_seconds,)).fetchall()
+            cov = coverage(all_samples, start, now, poll_seconds)
+        rows = [dict(r, expected=max(1, (min(now,r['hour']+3600)-max(start,r['hour']))//poll_seconds)) for r in rows]
+        return {"days": days, "generated_at": now, "coverage": cov, "hours": rows,
                 "events": [dict(x) for x in events], "events_limit": 1000,
                 "latest": {"ts": latest["ts"], "data": json.loads(latest["data"]) if latest["data"] else None,
                            "error": latest["error"]} if latest else None,

@@ -68,13 +68,17 @@ public:
       metrics_.soft_timeouts++;
     }
   }
-  bool start_next(uint32_t now,Command& cmd) {
+  bool start_next(uint32_t now,Command& cmd,bool prioritize_pv_off=false) {
     tick(now);
     if(inflight_) return false;
     int pick=-1;
+    // Explicit PV OFF may precede ordinary RGB. Cooldowns still bound retries;
+    // while PV is cooling down the other lamp can continue.
+    if(prioritize_pv_off && ready(0,now) && queue_[0].cmd.action==Action::Apply &&
+       queue_[0].cmd.brightness==0)pick=0;
     // Restaurar AUTO antes que cualquier cambio visual: prioridad de seguridad.
     for(int i=0;i<2;i++) {
-      if(ready(i,now) && queue_[i].cmd.action==Action::RestoreAuto) { pick=i; break; }
+      if(pick<0 && ready(i,now) && queue_[i].cmd.action==Action::RestoreAuto) { pick=i; break; }
     }
     if(pick<0) {
       if(ready(next_device_,now)) pick=next_device_;

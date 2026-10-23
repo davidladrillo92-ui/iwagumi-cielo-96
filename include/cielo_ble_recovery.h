@@ -2,13 +2,13 @@
 #include <stdint.h>
 namespace cielo96 { namespace recovery {
 constexpr uint32_t STALL_MS=120000UL, REARM_MS=1800000UL;
-constexpr uint32_t MAGIC=0xC1E1B142UL;
+constexpr uint32_t MAGIC=0xC1E1B143UL;
 constexpr uint8_t MAX_RESTARTS=2;
 struct Retained {
- uint32_t magic, attempts, pending, phase, device, age_ms, check;
+ uint32_t magic, attempts, pending, phase, device, age_ms, epoch, originBoot, check;
 };
 inline uint32_t checksum(const Retained&r){
- return MAGIC^r.attempts^r.pending^r.phase^r.device^r.age_ms^0x947B5261UL;
+ return MAGIC^r.attempts^r.pending^r.phase^r.device^r.age_ms^r.epoch^r.originBoot^0x947B5261UL;
 }
 inline void seal(Retained&r){r.magic=MAGIC;r.check=checksum(r);}
 inline bool valid(const Retained&r){

@@ -20,6 +20,9 @@ const char* ble_worker_phase_name(unsigned char){return "CONEXION";}
 }
 enum class OtaPhase {Idle,Preparing,Ready,Uploading,Completed,Failed};
 struct {OtaPhase phase=OtaPhase::Idle;} otaTxn;
+bool timeOK(){return true;}
+unsigned long time(void*){return 1792750000;}
+unsigned previousBootCount=111;
 bool otaBusy=false,rescueOpen=false,bleReady=true,bleRecoveryExhausted=false;
 cielo96::recovery::Retained bleRecoveryRtc{};
 cielo96::recovery::Supervisor bleSupervisor;
