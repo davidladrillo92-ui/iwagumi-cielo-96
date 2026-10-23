@@ -1,11 +1,9 @@
 #include "cielo_ble_worker.h"
 #include "cielo_codec.h"
 #include "cielo_ble_match.h"
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEScan.h>
-#include <BLEClient.h>
-#include <BLERemoteCharacteristic.h>
+#include <NimBLEDevice.h>
+#include "cielo_ble_connection.h"
+#include <atomic>
 #include <string.h>
 
 namespace cielo96 {
@@ -15,9 +13,9 @@ struct Target {
  const char* name; const char* service; const char* writeUuid;
  bool addressKnown=false;
  String address;
- esp_ble_addr_type_t addressType=BLE_ADDR_TYPE_PUBLIC;
- BLEClient* client=nullptr;
- BLERemoteCharacteristic* writer=nullptr;
+ uint8_t addressType=0;
+ NimBLEClient* client=nullptr;
+ NimBLERemoteCharacteristic* writer=nullptr;
  bool manualEntered=false;
  bool pvOn=false;
 };
@@ -26,6 +24,20 @@ Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
 QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr,releaseRequests=nullptr,customRequests=nullptr,customResults=nullptr;
 struct SharedLink { volatile bool connected=false;volatile bool released=false;volatile uint32_t releases=0;volatile uint32_t lastDisconnect=0;};
 SharedLink shared[2]{};
+std::atomic<int> connectState[2]{};
+std::atomic<bool> pvOffRequired{false};
+std::atomic<bool> keepLink[2]{};
+volatile uint32_t connectTimeouts[2]{};
+volatile int lastStackError[2]{};
+bool offWrittenInCurrentOperation=false;
+struct LinkCallbacks: NimBLEClientCallbacks {
+ uint8_t device;explicit LinkCallbacks(uint8_t d):device(d){}
+ void onConnect(NimBLEClient*) override {connectState[device]=1;shared[device].connected=true;}
+ void onConnectFail(NimBLEClient*,int reason) override {lastStackError[device]=reason;connectState[device]=-1;shared[device].connected=false;}
+ void onDisconnect(NimBLEClient*,int reason) override {lastStackError[device]=reason;connectState[device]=-1;shared[device].connected=false;}
+};
+LinkCallbacks linkCallbacks[2]={LinkCallbacks(0),LinkCallbacks(1)};
+
 // Escritos solo desde la tarea BLE; enteros de 32 bits leídos pasivamente desde HTTP.
 struct PhaseCounters {
  volatile uint32_t connect_count=0,connect_failed=0,connect_last=0,connect_max=0;
@@ -45,8 +57,12 @@ volatile uint32_t lastHeartbeat=0;
 volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
 volatile uint8_t workerDevice=255;
 volatile uint32_t phaseEnteredAt=0;
+portMUX_TYPE snapshotMux=portMUX_INITIALIZER_UNLOCKED;
+void touchHeartbeat(){portENTER_CRITICAL(&snapshotMux);lastHeartbeat=millis();portEXIT_CRITICAL(&snapshotMux);}
 void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
+ portENTER_CRITICAL(&snapshotMux);
  workerDevice=dev;phaseEnteredAt=millis();workerPhase=static_cast<uint8_t>(p);
+ portEXIT_CRITICAL(&snapshotMux);
 }
 void releaseTarget(uint8_t device,bool userRequested){
  setWorkerPhase(BleWorkerPhase::Disconnecting,device);
@@ -69,56 +85,81 @@ void releaseTarget(uint8_t device,bool userRequested){
 void releaseIdleLinks(){
  uint32_t now=millis();
  for(uint8_t k=0;k<2;k++)
-  if(linkTouched[k] && now-linkTouched[k]>=BLE_IDLE_RELEASE_MS)
+  if(!keepLink[k].load() && linkTouched[k] && now-linkTouched[k]>=BLE_IDLE_RELEASE_MS)
    releaseTarget(k,false);
 }
 uint16_t chMessageId=1;
 uint8_t writesInCurrentOperation=0;
 // Exactly one FreeRTOS task owns all BLE calls. Web thread NEVER interacts with the stack.
 void copyReason(BleResult& r,const char* msg){strncpy(r.reason,msg,sizeof(r.reason)-1);r.reason[sizeof(r.reason)-1]='\0';}
+NimBLEScanResults boundedScan(uint16_t interval,uint16_t window){
+ NimBLEScan* scan=NimBLEDevice::getScan();
+ scan->setActiveScan(true);scan->setInterval(interval);scan->setWindow(window);
+ scan->setMaxResults(32); // bound memory in crowded radio environments
+ scan->clearResults();
+ if(!scan->start(connection::SCAN_MS,false))return scan->getResults();
+ const uint32_t start=millis();
+ while(scan->isScanning() && uint32_t(millis()-start)<connection::SCAN_MS+500)
+  vTaskDelay(pdMS_TO_TICKS(20));
+ if(scan->isScanning())scan->stop();
+ return scan->getResults();
+}
 bool locate(Target& t) {
- if(t.addressKnown) return true;
- BLEScan* scan=BLEDevice::getScan();
- scan->setActiveScan(true);
- scan->setInterval(150);scan->setWindow(75);
+ if(t.addressKnown)return true;
  setWorkerPhase(BleWorkerPhase::Discovery,&t==&targets[0]?0:1);
- BLEScanResults result=scan->start(5,false);
- bool found=false;
+ NimBLEScanResults result=boundedScan(150,75);bool found=false;
  for(int i=0;i<result.getCount();++i){
-  BLEAdvertisedDevice d=result.getDevice(i);
-  if(d.haveName() && bleNameMatches(d.getName().c_str(),t.name)){
-   t.address=String(d.getAddress().toString().c_str());
-   t.addressType=d.getAddressType();t.addressKnown=true;found=true;break;
+  const NimBLEAdvertisedDevice* d=result.getDevice(i);
+  if(d->haveName() && bleNameMatches(d->getName().c_str(),t.name)){
+   t.address=String(d->getAddress().toString().c_str());
+   t.addressType=d->getAddress().getType();t.addressKnown=true;found=true;break;
   }
  }
- scan->clearResults();
- return found;
+ NimBLEDevice::getScan()->clearResults();return found;
+}
+bool openConnection(Target&t){
+ const uint8_t device=&t==&targets[0]?0:1;
+ if(!t.client){
+  t.client=NimBLEDevice::createClient();
+  if(!t.client)return false;
+  t.client->setClientCallbacks(&linkCallbacks[device],false);
+  t.client->setSelfDelete(false,false); // callbacks never invalidate the worker's pointer
+  t.client->setConnectTimeout(connection::CONNECT_MS); // milliseconds in NimBLE 2.x
+ }
+ // A previous asynchronous disconnect must complete before reusing this client.
+ if(t.client->isConnected()){t.client->disconnect();return false;}
+ NimBLEAddress address(std::string(t.address.c_str()),t.addressType);
+ connectState[device]=0;
+ setWorkerPhase(BleWorkerPhase::Connecting,device);
+ const uint32_t started=millis();
+ // Async initiation avoids the old indefinite Bluedroid semaphore wait. MTU
+ // exchange is unnecessary: all our protocol frames fit the default ATT MTU.
+ bool accepted=t.client->connect(address,true,true,false);
+ const bool connected=accepted && connection::await(started,
+  []{return millis();},[device]{return connectState[device].load();},
+  [&]{t.client->cancelConnect();if(t.client->isConnected())t.client->disconnect();},
+  []{vTaskDelay(pdMS_TO_TICKS(20));});
+ PhaseCounters& metrics=phaseCounters[device];metrics.connect_count++;
+ if(!connected){metrics.connect_failed++;if(uint32_t(millis()-started)>=connection::CONNECT_MS)connectTimeouts[device]++;}
+ metricTime(metrics.connect_last,metrics.connect_max,millis()-started);
+ lastStackError[device]=t.client->getLastError();
+ return connected && t.client->isConnected();
 }
 bool connect(Target& t,const char*&err){
  if(t.client && t.client->isConnected() && t.writer){
   shared[&t==&targets[0]?0:1].connected=true;
   return true;
  }
- t.writer=nullptr;t.manualEntered=false;
+ t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
  if(!locate(t)){err="BLE_DEVICE_NOT_FOUND";return false;}
- if(!t.client)t.client=BLEDevice::createClient();
- if(!t.client){err="BLE_CLIENT_CREATE";return false;}
- // connect(BLEAddress) on Arduino-ESP32 2.x; this may block, isolated from HTTP.
- BLEAddress address(std::string(t.address.c_str()));
- setWorkerPhase(BleWorkerPhase::Connecting,&t==&targets[0]?0:1);
- const uint32_t started=millis();
- bool connected=t.client->connect(address,t.addressType);
- PhaseCounters& metrics=phaseCounters[&t==&targets[0]?0:1];
- metrics.connect_count++;if(!connected)metrics.connect_failed++;
- metricTime(metrics.connect_last,metrics.connect_max,millis()-started);
- if(!connected){
-  err="BLE_CONNECT_FAILED";t.addressKnown=false;return false;
+ if(!openConnection(t)){
+  err="BLE_CONNECT_FAILED";t.addressKnown=false;shared[&t==&targets[0]?0:1].connected=false;return false;
  }
  setWorkerPhase(BleWorkerPhase::Service,&t==&targets[0]?0:1);
- BLERemoteService* service=t.client->getService(BLEUUID(t.service));
+ NimBLERemoteService* service=t.client->getService(NimBLEUUID(t.service));
  if(!service){err="GATT_SERVICE_MISSING";t.client->disconnect();return false;}
  setWorkerPhase(BleWorkerPhase::Characteristic,&t==&targets[0]?0:1);
- t.writer=service->getCharacteristic(BLEUUID(t.writeUuid));
+ t.writer=service->getCharacteristic(NimBLEUUID(t.writeUuid));
  if(!t.writer || !(t.writer->canWrite()||t.writer->canWriteNoResponse())){
   err="GATT_CHARACTERISTIC_MISSING";t.client->disconnect();t.writer=nullptr;return false;
  }
@@ -131,22 +172,30 @@ bool put(Target& t,const uint8_t* data,size_t n,const char*&err){
  // Arduino BLE writeValue returns void: transport accepted != optical ACK!
  setWorkerPhase(BleWorkerPhase::Writing,&t==&targets[0]?0:1);
  const uint32_t writeStarted=millis();
- t.writer->writeValue(const_cast<uint8_t*>(data),n,t.writer->canWrite());
+ const bool accepted=t.writer->writeValue(data,n,t.writer->canWrite());
  PhaseCounters& metrics=phaseCounters[&t==&targets[0]?0:1];metrics.write_count++;
  metricTime(metrics.write_last,metrics.write_max,millis()-writeStarted);
- if(writesInCurrentOperation<255)writesInCurrentOperation++; // GATT write call, not optical acknowledgement
- if(!t.client->isConnected()){metrics.write_failed++;err="BLE_DISCONNECTED_DURING_WRITE";t.writer=nullptr;return false;}
+ if(writesInCurrentOperation<255)writesInCurrentOperation++;
+ if(!accepted||!t.client->isConnected()){
+  metrics.write_failed++;err="GATT_WRITE_FAILED";t.writer=nullptr;
+  t.client->disconnect();return false;
+ }
  vTaskDelay(pdMS_TO_TICKS(30));
  return true;
 }
 bool sendPez(const cielo::ble::Command& c,const char*&err){
  Target&t=targets[0];if(!connect(t,err))return false;
  uint8_t frame[9];
- if(c.brightness==0){codec::pv_power(false,frame);if(!put(t,frame,9,err))return false;t.pvOn=false;return true;}
+ auto sendOff=[&](){codec::pv_power(false,frame);if(!put(t,frame,9,err))return false;
+  t.pvOn=false;offWrittenInCurrentOperation=true;return true;};
+ if(c.brightness==0||pvOffRequired.load())return sendOff();
  if(!t.pvOn){codec::pv_power(true,frame);if(!put(t,frame,9,err))return false;t.pvOn=true;}
+ if(pvOffRequired.load())return sendOff();
  codec::pv_color(c.r,c.g,c.b,frame);if(!put(t,frame,9,err))return false;
+ if(pvOffRequired.load())return sendOff();
  codec::pv_brightness(c.brightness,frame);return put(t,frame,9,err);
 }
+
 bool sendCh(const cielo::ble::Command& c,const char*&err){
  Target&t=targets[1];if(!connect(t,err))return false;
  uint8_t frame[32];size_t size=0;
@@ -173,29 +222,24 @@ bool sendCh(const cielo::ble::Command& c,const char*&err){
 void scanDiscover(){
  BleScanResult r{};
  uint32_t start=millis();
- BLEScan* scan=BLEDevice::getScan();
- // Active scan requests scan-response packets where controllers often advertise their full name.
- // This remains discovery-only: does not connect or write a single GATT byte.
- scan->setActiveScan(true);
- scan->setInterval(160);
- scan->setWindow(80);
  setWorkerPhase(BleWorkerPhase::Discovery);
- BLEScanResults found=scan->start(5,false);
+ NimBLEScan* scan=NimBLEDevice::getScan();
+ NimBLEScanResults found=boundedScan(160,80);
  r.advertised=found.getCount();
  for(int i=0;i<found.getCount();++i){
-  BLEAdvertisedDevice d=found.getDevice(i);
-  const std::string name=d.haveName()?d.getName():std::string();
+  const NimBLEAdvertisedDevice* d=found.getDevice(i);
+  const std::string name=d->haveName()?d->getName():std::string();
   if(name.empty())r.unnamed++;else r.named++;
   if(r.observed_count<8){
    auto& rec=r.observed[r.observed_count++];
    const char* label=name.empty()?"(sin nombre)":name.c_str();
    strncpy(rec.name,label,sizeof(rec.name)-1);rec.name[sizeof(rec.name)-1]='\0';
-   rec.rssi=d.getRSSI();
-   rec.nus=d.isAdvertisingService(BLEUUID(codec::CH_SVC));
+   rec.rssi=d->getRSSI();
+   rec.nus=d->isAdvertisingService(NimBLEUUID(codec::CH_SVC));
   }
   if(name.empty())continue;
-  if(bleNameMatches(name.c_str(),codec::PV_NAME)){r.pez_found=true;r.pez_rssi=d.getRSSI();}
-  if(bleNameMatches(name.c_str(),codec::CH_NAME)){r.chihiros_found=true;r.chihiros_rssi=d.getRSSI();}
+  if(bleNameMatches(name.c_str(),codec::PV_NAME)){r.pez_found=true;r.pez_rssi=d->getRSSI();}
+  if(bleNameMatches(name.c_str(),codec::CH_NAME)){r.chihiros_found=true;r.chihiros_rssi=d->getRSSI();}
  }
  scan->clearResults();
  r.elapsed_ms=millis()-start;
@@ -211,32 +255,18 @@ void probeGATT(uint8_t device){
  // Si CIELO conserva una conexion anterior de prueba manual, soltarla antes
  // de realizar la sonda para no iniciar otra conexion encima.
  if(t.client && t.client->isConnected())t.client->disconnect();
- t.writer=nullptr;t.manualEntered=false;
- if(!locate(t)){
-  reason="BLE_DEVICE_NOT_FOUND";
- }else{
-  if(!t.client)t.client=BLEDevice::createClient();
-  if(!t.client){reason="BLE_CLIENT_CREATE";}
+ t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
+ if(!locate(t))reason="BLE_DEVICE_NOT_FOUND";
+ else if(!openConnection(t)){reason="BLE_CONNECT_FAILED";t.addressKnown=false;}
+ else {
+  setWorkerPhase(BleWorkerPhase::Service,device);
+  NimBLERemoteService* svc=t.client->getService(NimBLEUUID(t.service));
+  if(!svc)reason="GATT_SERVICE_MISSING";
   else {
-   BLEAddress address(std::string(t.address.c_str()));
-   setWorkerPhase(BleWorkerPhase::Connecting,device);
-   if(!t.client->connect(address,t.addressType)){
-    reason="BLE_CONNECT_FAILED";
-   }else{
-    setWorkerPhase(BleWorkerPhase::Service,device);
-    BLERemoteService* svc=t.client->getService(BLEUUID(t.service));
-    if(!svc)reason="GATT_SERVICE_MISSING";
-    else {
-     r.service=true;
-     setWorkerPhase(BleWorkerPhase::Characteristic,device);
-     BLERemoteCharacteristic* characteristic=svc->getCharacteristic(BLEUUID(t.writeUuid));
-     if(!characteristic || !(characteristic->canWrite()||characteristic->canWriteNoResponse())){
-      reason="GATT_CHARACTERISTIC_MISSING";
-     }else{
-      r.characteristic=true;r.success=true;
-     }
-    }
-   }
+   r.service=true;setWorkerPhase(BleWorkerPhase::Characteristic,device);
+   NimBLERemoteCharacteristic* characteristic=svc->getCharacteristic(NimBLEUUID(t.writeUuid));
+   if(!characteristic||!(characteristic->canWrite()||characteristic->canWriteNoResponse()))reason="GATT_CHARACTERISTIC_MISSING";
+   else {r.characteristic=true;r.success=true;}
   }
  }
  // Se suelta siempre la conexion; ni escritura ni suscripcion de notificaciones.
@@ -268,11 +298,11 @@ void resumeCustomCurve(){
 }
 void task(void*){
  setWorkerPhase(BleWorkerPhase::Starting);
- BLEDevice::init("IWAGUMI-CIELO-96");
- lastHeartbeat=millis();
+ NimBLEDevice::init("IWAGUMI-CIELO-96");
+ touchHeartbeat();
  for(;;){
   setWorkerPhase(BleWorkerPhase::Idle);
-  lastHeartbeat=millis();
+  touchHeartbeat();
   uint8_t probeToken=0;
   uint8_t releaseToken=0;
   while(xQueueReceive(releaseRequests,&releaseToken,0)==pdTRUE){
@@ -281,26 +311,26 @@ void task(void*){
   releaseIdleLinks();
   uint8_t customToken=0;
   if(xQueueReceive(customRequests,&customToken,0)==pdTRUE){
-   resumeCustomCurve();lastHeartbeat=millis();
+   resumeCustomCurve();touchHeartbeat();
   }
   if(xQueueReceive(probeRequests,&probeToken,0)==pdTRUE){
-   probeGATT(probeToken);lastHeartbeat=millis();
+   probeGATT(probeToken);touchHeartbeat();
   }
   uint8_t scanToken=0;
   if(xQueueReceive(scanRequests,&scanToken,0)==pdTRUE){
-   scanDiscover();lastHeartbeat=millis();
+   scanDiscover();touchHeartbeat();
   }
   cielo::ble::Command c{};
   // Block without consuming CPU; heartbeat updates every second when idle.
-  if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){lastHeartbeat=millis();continue;}
+  if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){touchHeartbeat();continue;}
   setWorkerPhase(BleWorkerPhase::Sending,static_cast<uint8_t>(c.device));
-  uint32_t started=millis();writesInCurrentOperation=0;const char*err="OK";
+  uint32_t started=millis();writesInCurrentOperation=0;offWrittenInCurrentOperation=false;const char*err="OK";
   bool success=(c.device==cielo::ble::Device::PezVerde)?sendPez(c,err):sendCh(c,err);
   BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);res.action=static_cast<uint8_t>(c.action);
-  res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);
+  res.off_sent=offWrittenInCurrentOperation;res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);
   // Single reader: if response queue is full, drop oldest after noting failure upstream.
   if(xQueueSend(responses,&res,0)!=pdTRUE){BleResult discard;xQueueReceive(responses,&discard,0);xQueueSend(responses,&res,0);}
-  lastHeartbeat=millis();
+  touchHeartbeat();
   linkTouched[static_cast<uint8_t>(c.device)==1?1:0]=millis();
  }
 }
@@ -367,16 +397,18 @@ BleTransportStats ble_transport_stats(uint8_t device){
  r.write_count=m.write_count;r.write_failed=m.write_failed;
  r.write_last_ms=m.write_last;r.write_max_ms=m.write_max;
  r.disconnect_count=m.disconnect_count;r.disconnect_last_ms=m.disconnect_last;
- r.disconnect_max_ms=m.disconnect_max;
+ r.disconnect_max_ms=m.disconnect_max;r.connect_timeouts=connectTimeouts[device];r.last_stack_error=lastStackError[device];
  return r;
 }
 uint32_t ble_request_queue_depth(){return requests?uxQueueMessagesWaiting(requests):0;}
 BleWorkerSnapshot ble_worker_snapshot(){
  BleWorkerSnapshot s{};
+ portENTER_CRITICAL(&snapshotMux);
  const uint32_t now=millis();
  s.phase=workerPhase;s.device=workerDevice;
  s.phase_age_ms=now-phaseEnteredAt;
  s.heartbeat_age_ms=now-lastHeartbeat;
+ portEXIT_CRITICAL(&snapshotMux);
  s.in_operation=s.phase!=static_cast<uint8_t>(BleWorkerPhase::Idle);
  return s;
 }
@@ -396,4 +428,9 @@ const char* ble_worker_phase_name(uint8_t p){
   default:return "DESCONOCIDA";
  }
 }
+}
+
+namespace cielo96 {
+void ble_set_pv_off_required(bool value){pvOffRequired=value;}
+void ble_keep_links(bool pv,bool ch){keepLink[0]=pv;keepLink[1]=ch;}
 }

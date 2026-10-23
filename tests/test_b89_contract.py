@@ -1,6 +1,6 @@
 from pathlib import Path
 import hashlib,json,re
-pins=json.loads(Path('tests/fixtures/rc5_b7_immutable_sha256.json').read_text())
+pins=json.loads(Path('tests/fixtures/rc6_invariants_sha256.json').read_text())
 for name,digest in pins.items():assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==digest,name
 main=Path('src/main.cpp').read_text();svc=Path('src/cielo_monitor_service.cpp').read_text();proxy=Path('src/cielo_https_proxy.cpp').read_text()
 assert 'collectHeaders(keys,sizeof(keys)/sizeof(keys[0]))' in main

@@ -639,9 +639,10 @@ function manualChooser(){
 async function monitorSettings(){
  try{
   const d=await api('/api/monitor/status');
-  sheet('<h2 class="sheet-title">Alertas e historial</h2><p>El observador independiente guarda 7 y 30 días y envía avisos. Las luces funcionan aunque se desconecte.</p><p>Lectura local sin clave: '+(d.enabled?'habilitada':'desactivada')+'. Esto no confirma que el observador esté funcionando.</p><div class="actions"><button class="btn" id="monitorEnable">Habilitar seguimiento</button><button class="btn" id="monitorDisable">Desactivar seguimiento</button></div>');
-  $('monitorEnable').onclick=async()=>{try{await api('/api/monitor/enable',{});toast('Lectura local habilitada')}catch(e){toast(e.message)}};
-  $('monitorDisable').onclick=async()=>{try{await api('/api/monitor/disable',{});toast('Lectura local desactivada')}catch(e){toast(e.message)}};
+  const age=d.last_poll_age_sec;
+  const observed=age===null||age===undefined?'Todavía sin consultas':age<180?'Observador conectado':'Sin consultas recientes';
+  sheet('<h2 class="sheet-title">Alertas e historial</h2><p>'+observed+'</p><p>El iMac guarda el historial y envía Telegram mientras está encendido. Este estado confirma consultas al ATOM; la entrega de avisos se comprueba en Telegram.</p><div class="actions"><button class="btn" id="monitorToggle">'+(d.enabled?'Desactivar seguimiento':'Habilitar seguimiento')+'</button></div>');
+  $('monitorToggle').onclick=async()=>{try{await api('/api/monitor/'+(d.enabled?'disable':'enable'),{});await monitorSettings()}catch(e){toast(e.message)}};
  }catch(e){toast(e.message)}
 }
 async function maintenanceRead(){

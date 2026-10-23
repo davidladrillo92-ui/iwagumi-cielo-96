@@ -29,6 +29,7 @@ void attach(WebServer&s,Preferences&p,bool(*admin)(),bool(*privateRead)(),Snapsh
  s.on("/api/monitor/enable",HTTP_POST,[]{setEnabled(true);});
  s.on("/api/monitor/disable",HTTP_POST,[]{setEnabled(false);});
  s.on("/api/monitor/status",HTTP_GET,[]{if(privateGuard())reply(200,
-  String("{\"enabled\":")+(enabled?"true":"false")+",\"access\":\"LAN_NO_PASSWORD\",\"observer\":\"EXTERNAL_REQUIRED\"}");});
+  String("{\"enabled\":")+(enabled?"true":"false")+",\"access\":\"LAN_NO_PASSWORD\",\"last_poll_age_sec\":"+
+  (served?String((millis()-lastPoll)/1000UL):String("null"))+",\"observer\":\"EXTERNAL_REQUIRED\"}");});
 }
 } }

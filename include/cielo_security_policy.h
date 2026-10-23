@@ -42,4 +42,15 @@ inline bool sameLanOrigin(const char*origin,const char*host){
 inline bool safeFetchSite(const char*site){
  return !site||!*site||strcmp(site,"same-origin")==0||strcmp(site,"none")==0;
 }
+// Restrict the Host as well as Origin; blocks DNS rebinding without passwords
+// or TLS allocations. Only the device's addresses and its mDNS name are served.
+inline bool localHost(const char*host,const char*sta,const char*ap){
+ if(!safeHost(host))return false;
+ char normalized[129]{};size_t n=strlen(host);
+ if(n>3 && strcmp(host+n-3,":80")==0)n-=3;
+ for(size_t i=0;i<n;i++)normalized[i]=(host[i]>='A'&&host[i]<='Z')?host[i]+('a'-'A'):host[i];
+ return strcmp(normalized,"iwagumi-cielo96.local")==0 ||
+        (sta&&*sta&&strcmp(sta,"0.0.0.0")!=0&&strcmp(normalized,sta)==0) ||
+        (ap&&*ap&&strcmp(normalized,ap)==0);
+}
 } }

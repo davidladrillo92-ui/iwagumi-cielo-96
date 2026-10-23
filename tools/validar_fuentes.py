@@ -57,10 +57,10 @@ assert 'Cola BLE abortada: autorizacion caducada' in code
 bleworker=(r/'src/cielo_ble_worker.cpp').read_text()
 assert 'scanDiscover()' in bleworker and 'scan->setActiveScan(true)' in bleworker
 assert 'bleNameMatches' in bleworker and 'cielo_ble_match.h' in bleworker
-assert 'const std::string name=d.haveName()?d.getName():std::string();' in bleworker
-assert 't.addressType=d.getAddressType()' in bleworker
-assert 't.client->connect(address,t.addressType)' in bleworker
-assert 'rec.nus=d.isAdvertisingService(BLEUUID(codec::CH_SVC));' in bleworker
+assert 'const std::string name=d->haveName()?d->getName():std::string();' in bleworker
+assert 't.addressType=d->getAddress().getType()' in bleworker
+assert 't.client->connect(address,true,true,false)' in bleworker and 'connection::await' in bleworker
+assert 'rec.nus=d->isAdvertisingService(NimBLEUUID(codec::CH_SVC));' in bleworker
 assert 'r.observed_count<8' in bleworker
 assert 'lab.lastScan.observed_count' in code and 'nearby' in code
 assert 'res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto)' in code
@@ -79,7 +79,7 @@ assert 'No se envio comando AUTO' not in code
 assert "function labAuto()" not in actual
 assert 'discovery_scan' in code and 'named_advertisements' in code
 assert 'scan_duration_requested_sec' in code
-assert '11.1.0-RC5-B1-B9-SIMPLE1' in code
+assert '11.1.0-RC6-RECOVERY1' in code
 assert 'CH_CONTRASTE_INICIO' in code
 assert 'CH_CONTRASTE_30_GATT_OK' in code
 assert 'CH_CONTRASTE_CADUCADO' in code
@@ -99,7 +99,7 @@ assert 'ble_start_requires_button\\\\":false' in code or 'ble_start_requires_but
 assert 'if(!labTxEnabled())' in code
 assert 'BLEDevice::init(' in bleworker
 assert 'sendPez(c,err):sendCh(c,err)' in bleworker
-assert 'scanDiscover();lastHeartbeat=millis();' in bleworker
+assert 'scanDiscover();touchHeartbeat();' in bleworker
 assert code.index('if(!wifiCoexistReady())WiFi.setSleep(true);') < code.index('bleReady=cielo96::ble_begin();')
 assert 'RTC_NOINIT_ATTR' in code and 'previous_reset_phase_valid' in code
 assert 'phone_sync_this_boot' in code and 'utc_offset' in code
