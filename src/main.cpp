@@ -1794,6 +1794,7 @@ static void lightingTask(){
  if(pvControlDesired && timeOK() && cielo96::profileValid(profile)){
   const bool night=cielo96::safety::offRequired(pvControlDesired,timeOK(),cielo96::profileValid(profile),desiredPv().brightness);
   if(night && !pvOffObligation){
+   pvDayRecoveryPending=false;
    pvOffObligation=true;pvOffNextTry=now;pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_OFF_OBLIGATORIO","Consigna cero: POWER OFF prioritario; RGB anterior cancelado");
