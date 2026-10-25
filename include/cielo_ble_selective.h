@@ -23,7 +23,6 @@ inline bool hold_ch_only(const Input& x) {
         x.ch_pending_age_ms<MAX_PENDING_MS &&
         x.worker_heartbeat_age_ms<15000UL &&
         x.worker_phase_age_ms<15000UL &&
-        x.worker_device!=0 && // do not misclassify PV activity as CH isolation
         !x.pv_off_required && !x.ota_or_rescue;
 }
 }} // namespace cielo96::selective
