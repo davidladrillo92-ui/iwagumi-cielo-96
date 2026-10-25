@@ -22,7 +22,7 @@ struct Target {
 Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
                    {codec::CH_NAME,codec::CH_SVC,codec::CH_TX}};
 QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr,releaseRequests=nullptr,customRequests=nullptr,customResults=nullptr;
-struct SharedLink { volatile bool connected=false;volatile bool released=false;volatile uint32_t releases=0;volatile uint32_t lastDisconnect=0;};
+struct SharedLink { std::atomic<bool> connected{false},released{false};std::atomic<uint32_t> releases{0},lastDisconnect{0};};
 SharedLink shared[2]{};
 std::atomic<int> connectState[2]{};
 std::atomic<bool> pvOffRequired{false};
@@ -34,7 +34,7 @@ struct LinkCallbacks: NimBLEClientCallbacks {
  uint8_t device;explicit LinkCallbacks(uint8_t d):device(d){}
  void onConnect(NimBLEClient*) override {connectState[device]=1;shared[device].connected=true;}
  void onConnectFail(NimBLEClient*,int reason) override {lastStackError[device]=reason;connectState[device]=-1;shared[device].connected=false;}
- void onDisconnect(NimBLEClient*,int reason) override {lastStackError[device]=reason;connectState[device]=-1;shared[device].connected=false;}
+ void onDisconnect(NimBLEClient*,int reason) override {lastStackError[device]=reason;connectState[device]=-1;shared[device].connected=false;shared[device].lastDisconnect=millis();}
 };
 LinkCallbacks linkCallbacks[2]={LinkCallbacks(0),LinkCallbacks(1)};
 
@@ -82,6 +82,19 @@ void releaseTarget(uint8_t device,bool userRequested){
  shared[device].lastDisconnect=millis();
  linkTouched[device]=0;
 }
+// Reconcile in the owning worker, even when there are no new curve commands.
+// HTTP reads only this snapshot; it never calls the Bluetooth stack.
+void reconcileLinks(){
+ for(uint8_t device=0;device<2;device++){
+  Target& t=targets[device];
+  const bool connected=t.client && t.client->isConnected();
+  if(!connected){
+   if(shared[device].connected)shared[device].lastDisconnect=millis();
+   shared[device].connected=false;
+   t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
+  }else shared[device].connected=t.writer!=nullptr;
+ }
+}
 void releaseIdleLinks(){
  uint32_t now=millis();
  for(uint8_t k=0;k<2;k++)
@@ -124,6 +137,7 @@ bool openConnection(Target&t){
   if(!t.client)return false;
   t.client->setClientCallbacks(&linkCallbacks[device],false);
   t.client->setSelfDelete(false,false); // callbacks never invalidate the worker's pointer
+  t.client->setConnectionParams(24,40,0,400); // 30-50 ms interval, 4 s supervision request
   t.client->setConnectTimeout(connection::CONNECT_MS); // milliseconds in NimBLE 2.x
  }
  // A previous asynchronous disconnect must complete before reusing this client.
@@ -169,7 +183,7 @@ bool connect(Target& t,const char*&err){
 }
 bool put(Target& t,const uint8_t* data,size_t n,const char*&err){
  if(!t.client || !t.client->isConnected() || !t.writer){err="GATT_NOT_CONNECTED";return false;}
- // Arduino BLE writeValue returns void: transport accepted != optical ACK!
+ // NimBLE return value confirms transport acceptance, never physical light.
  setWorkerPhase(BleWorkerPhase::Writing,&t==&targets[0]?0:1);
  const uint32_t writeStarted=millis();
  const bool accepted=t.writer->writeValue(data,n,t.writer->canWrite());
@@ -189,7 +203,9 @@ bool sendPez(const cielo::ble::Command& c,const char*&err){
  auto sendOff=[&](){codec::pv_power(false,frame);if(!put(t,frame,9,err))return false;
   t.pvOn=false;offWrittenInCurrentOperation=true;return true;};
  if(c.brightness==0||pvOffRequired.load())return sendOff();
- if(!t.pvOn){codec::pv_power(true,frame);if(!put(t,frame,9,err))return false;t.pvOn=true;}
+ // The controller can be switched off externally while the BLE link survives.
+ // Reassert the verified ON frame instead of trusting a cached power state.
+ codec::pv_power(true,frame);if(!put(t,frame,9,err))return false;t.pvOn=true;
  if(pvOffRequired.load())return sendOff();
  codec::pv_color(c.r,c.g,c.b,frame);if(!put(t,frame,9,err))return false;
  if(pvOffRequired.load())return sendOff();
@@ -308,6 +324,7 @@ void task(void*){
   while(xQueueReceive(releaseRequests,&releaseToken,0)==pdTRUE){
    if(releaseToken<2)releaseTarget(releaseToken,true);
   }
+  reconcileLinks();
   releaseIdleLinks();
   uint8_t customToken=0;
   if(xQueueReceive(customRequests,&customToken,0)==pdTRUE){

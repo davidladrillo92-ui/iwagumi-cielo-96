@@ -19,6 +19,7 @@
 #include "cielo_curve_policy.h"
 #include "cielo_ble_queue.h"
 #include "cielo_ble_worker.h"
+#include "cielo_ble_presence.h"
 #include "cielo_night_safety.h"
 #include "cielo_security_policy.h"
 #include "cielo_diagnostic_policy.h"
@@ -49,7 +50,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC6-RECOVERY1";
+static constexpr const char* VERSION="11.1.0-RC6-RECOVERY2";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -537,6 +538,12 @@ static void cadenceSet(){
  record("CADENCIA_15S","Prueba limitada a 20 minutos, regreso automatico a 30s");
  jsonSend(200,cadenceJson());
 }
+static bool bleCommunicationRecent(uint8_t device){
+ const auto link=cielo96::ble_link_status(device);
+ const uint32_t last=device?cieloLastSuccessfulChAt:cieloLastSuccessfulPvAt;
+ const uint32_t errors=device?cieloChConsecutiveFailures:(cieloPvConsecutiveFailures+pvOffFailures);
+ return cielo96::presence::recent(link.connected,last,millis(),errors);
+}
 static String cieloModeJson(){
  String j="{\"pez_verde_active\":"+String(cieloPvRun?"true":"false");
  j+=",\"chihiros_active\":"+String(cieloChRun?"true":"false");
@@ -568,8 +575,11 @@ static String cieloModeJson(){
  j+=",\"ch_reconnect_attempts\":"+String(chReconnect.attempts);
  j+=",\"ch_reconnect_episodes\":"+String(chReconnect.episodes);
  j+=",\"always_on\":"+String(cieloAlwaysOn?"true":"false");
- j+=",\"pv_online_recent\":"+String(cieloPvRun&&cieloLastSuccessfulPvAt&&millis()-cieloLastSuccessfulPvAt<650000UL?"true":"false");
- j+=",\"ch_online_recent\":"+String(cieloChRun&&cieloLastSuccessfulChAt&&millis()-cieloLastSuccessfulChAt<650000UL?"true":"false");
+ j+=",\"pv_link_connected\":"+String(cielo96::ble_link_status(0).connected?"true":"false");
+ j+=",\"ch_link_connected\":"+String(cielo96::ble_link_status(1).connected?"true":"false");
+ j+=",\"communication_fresh_limit_sec\":90";
+ j+=",\"pv_online_recent\":"+String(cieloPvRun&&bleCommunicationRecent(0)?"true":"false");
+ j+=",\"ch_online_recent\":"+String(cieloChRun&&bleCommunicationRecent(1)?"true":"false");
  j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
  j+=",\"return_stored_after_reboot\":"+String(prefs.getBool("v4_ch_takeover",false)?"true":"false");
  j+=",\"note\":\"La recuperacion 0x03 requiere BLE operativo y energia del ATOM\"}";
@@ -923,9 +933,9 @@ static void diagnosticJson(){
  j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
  const bool bleAlive=bleReady&&!workerUnavailable;
  auto pvLevel=cielo96::diag::link(bleReady,bleAlive,devices[0].completed>0,
-   cieloLastSuccessfulPvAt && millis()-cieloLastSuccessfulPvAt<650000UL,pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk);
+   bleCommunicationRecent(0),pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk);
  auto chLevel=cielo96::diag::link(bleReady,bleAlive,devices[1].completed>0,
-   cieloLastSuccessfulChAt && millis()-cieloLastSuccessfulChAt<650000UL,cieloChReturnPending||cieloChAwaitResponse);
+   bleCommunicationRecent(1),cieloChReturnPending||cieloChAwaitResponse);
  if(pvOffObligation&&pvOffFailures>=3)pvLevel=cielo96::diag::Level::Error;
  if(!pvControlDesired&&!cieloPvRun&&!pvOffObligation)pvLevel=cielo96::diag::Level::NotTested;
  if(!cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse)chLevel=cielo96::diag::Level::NotTested;
@@ -1803,7 +1813,7 @@ static void lightingTask(){
  if(cieloPvRun && !pvOffObligation && !pezManual && !lab.txArmed && !queue.pending(cielo::ble::Device::PezVerde)){
   const auto v=desiredPv();
   const bool changed=!lastPvDesired||memcmp(&v,&prevPv,sizeof(v))!=0;
-  const bool heartbeat=now-lastPvDesiredAt>300000UL; // cada 5min incluso con brillo cero
+  const bool heartbeat=cielo96::presence::refreshDue(now,lastPvDesiredAt); // comprobar BLE aun con RGB estable
   if(changed||heartbeat){
    if(queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,
                    v.r,v.g,v.b,v.brightness,now,90000UL)){
@@ -1816,7 +1826,7 @@ static void lightingTask(){
     !queue.pending(cielo::ble::Device::Chihiros)){
   const auto v=desiredCh();
   const bool changed=!lastChDesired||memcmp(&v,&prevCh,sizeof(v))!=0;
-  const bool heartbeat=now-lastChDesiredAt>300000UL;
+  const bool heartbeat=cielo96::presence::refreshDue(now,lastChDesiredAt);
   if(changed||heartbeat){
    bool markerReady=cieloChWasDriven||prefs.getBool("v4_ch_takeover",false);
    if(!markerReady)markerReady=prefs.putBool("v4_ch_takeover",true)!=0;

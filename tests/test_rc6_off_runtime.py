@@ -32,6 +32,13 @@ int main(){
  }
  offDuringConnect=false;offAfterFrame=0;sent.clear();pvOffRequired=false;targets[0].pvOn=false;
  assert(sendPez(c,err)&&sent.size()==3);
+ // An external OFF must not leave a cached pvOn suppressing the ON command.
+ sent.clear();assert(targets[0].pvOn);
+ assert(sendPez(c,err)&&sent.size()==3);
+ uint8_t on[9];codec::pv_power(true,on);assert(memcmp(sent[0].data(),on,9)==0);
+ // Zero brightness never emits an ON frame, even with cached pvOn=true.
+ sent.clear();c.brightness=0;assert(sendPez(c,err)&&sent.size()==1);
+ assert(memcmp(sent[0].data(),off,9)==0);
 }
 '''
 with tempfile.TemporaryDirectory() as d:
