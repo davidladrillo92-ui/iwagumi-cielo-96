@@ -29,6 +29,7 @@
 #include "cielo_maintenance.h"
 #include "cielo_ble_recovery.h"
 #include "cielo_ble_blockage.h"
+#include "cielo_ble_selective.h"
 #include "cielo_ota_validation.h"
 #include "cielo_autonomy_policy.h"
 #include "cielo_restart_journal.h"
@@ -177,6 +178,8 @@ static bool pezManual=false,chiManual=false,chiCieloNight=false,chiAutoPending=f
 static bool cieloPvRun=false,cieloChRun=false,cieloChWasDriven=false;
 static bool cieloAlwaysOn=false,cieloResumePending=false;
 static cielo96::autonomy::Retry chReconnect;
+static bool chSelectiveHold=false;
+static uint32_t chSelectiveEpisodes=0;
 enum class PvSafetyState:uint8_t {Paused,Active,Degraded,OffPending,OffRetrying,OffGattOk};
 static PvSafetyState pvSafety=PvSafetyState::Paused;
 static bool pvOffObligation=false,pvControlDesired=false;
@@ -947,7 +950,9 @@ static void diagnosticJson(){
  j+=",\"worker_unresponsive\":"+String(blockage.worker_unresponsive?"true":"false");
  j+=",\"actual_worker_heartbeat_age_ms\":"+String(blockageSnapshot.worker.heartbeat_age_ms);
  j+=",\"actual_worker_phase_age_ms\":"+String(blockageSnapshot.worker.phase_age_ms);
- j+=",\"phase_is_inference\":true,\"restart_policy_unchanged\":true}";
+ j+=",\"phase_is_inference\":true,\"selective_ch_hold\":"+String(chSelectiveHold?"true":"false");
+ j+=",\"selective_ch_episodes\":"+String(chSelectiveEpisodes);
+ j+=",\"rescue_fallback_at_ms\":300000,\"policy\":\"SAFE_CH_SDK_PENDING_ONLY\"}";
  const auto workerSnap=cielo96::ble_worker_snapshot();
  j+=",\"worker_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(workerSnap.phase));
  j+=",\"worker_phase_age_ms\":"+String(workerSnap.phase_age_ms);
@@ -1845,7 +1850,7 @@ static void lightingTask(){
    }
   }
  }
- if(cieloChRun && chWindow && !chiManual && !lab.txArmed &&
+ if(cieloChRun && !chSelectiveHold && chWindow && !chiManual && !lab.txArmed &&
     !cieloChReturnPending && !cieloChAwaitResponse && !customResumePending &&
     !queue.pending(cielo::ble::Device::Chihiros)){
   const auto v=desiredCh();
@@ -1932,7 +1937,7 @@ static void bleTick(){
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Operacion supera 3,5s; puede terminar correctamente. No es por si sola un fallo");}
  const bool pvOffFirst=pvOffObligation && pvSafety!=PvSafetyState::OffGattOk &&
    pvOffFailures<3 && queue.pending(cielo::ble::Device::PezVerde);
- if(cieloChReturnPending && !pvOffFirst && !queue.busy() && !customResumePending &&
+ if(cieloChReturnPending && !chSelectiveHold && !pvOffFirst && !queue.busy() && !customResumePending &&
     !lab.scanPending && !lab.probePending &&
     (int32_t)(now-cieloReturnRetryAt)>=0){
    if(cielo96::ble_custom_resume_request()){
@@ -1965,7 +1970,10 @@ static void bleTick(){
   }
   const bool schedulerCH=cieloChRun&&timeOK()&&
     cmd.device==cielo::ble::Device::Chihiros&&cmd.action==cielo::ble::Action::Apply;
-  if(!labTxEnabled()&&!schedulerPV&&!schedulerCH){
+  if(chSelectiveHold && cmd.device==cielo::ble::Device::Chihiros){
+    queue.complete(cmd.sequence,false,now);
+    record("CH_AISLAMIENTO_TX","Orden Chihiros no enviada: limpieza SDK pendiente");
+  }else if(!labTxEnabled()&&!schedulerPV&&!schedulerCH){
     if(cmd.device==cielo::ble::Device::Chihiros && cmd.action==cielo::ble::Action::RestoreAuto){
      chiAutoPending=false;record("CH_AUTO_NO_ENVIADO","AUTO bloqueado; accion fisica pendiente");
     }
@@ -1989,7 +1997,7 @@ static void chReconnectTick(){
   currentBootMarkedHealthy && timeOK() && cielo96::profileValid(profile) &&
   otaBleHealthy() && !otaBusy && otaTxn.phase==OtaPhase::Idle &&
   !labTxEnabled() && !lab.scanPending && !lab.probePending &&
-  !customResumePending && !cieloChReturnPending && !cieloChAwaitResponse &&
+  !chSelectiveHold && !customResumePending && !cieloChReturnPending && !cieloChAwaitResponse &&
   !queue.busy() && !queue.pending(cielo::ble::Device::Chihiros);
  if(!chReconnect.ready(millis(),allowed))return;
  if(prefs.putBool("v4_ch_takeover",true)!=1){chReconnect.defer(millis());return;}
@@ -1999,10 +2007,31 @@ static void chReconnectTick(){
 }
 static void bleRecoveryTick(){
  const auto snapshot=cielo96::ble_recovery_snapshot();
+ const auto actual=cielo96::ble_blockage_snapshot();
  const bool inhibited=otaBusy || rescueOpen || otaTxn.phase==OtaPhase::Preparing ||
   otaTxn.phase==OtaPhase::Ready || otaTxn.phase==OtaPhase::Uploading || otaTxn.phase==OtaPhase::Completed;
- const auto decision=bleSupervisor.tick(millis(),bleReady,snapshot.heartbeat_age_ms,
-  snapshot.phase_age_ms,inhibited,bleRecoveryRtc);
+ const bool selective=cielo96::selective::hold_ch_only({
+  bleReady,actual.pending_ch_age_ms>0,actual.pending_pv_age_ms>0,
+  actual.pending_ch_age_ms,actual.worker.heartbeat_age_ms,
+  actual.worker.phase_age_ms,actual.worker.device,
+  pvOffObligation,inhibited});
+ if(selective!=chSelectiveHold){
+  chSelectiveHold=selective;
+  if(selective){
+   ++chSelectiveEpisodes;
+   queue.cancel_pending(cielo::ble::Device::Chihiros);
+   record("CH_AISLAMIENTO_INICIO","SDK Chihiros pendiente; worker vivo; PV sigue independiente; sin liberar cliente inseguro");
+  }else{
+   lastChDesired=false;
+   record("CH_AISLAMIENTO_FIN","Se reevalua Chihiros; si sigue pendiente o vence plazo, rescate global sigue disponible");
+  }
+ }
+ // Isolated CH cleanup does not imply a dead worker.
+ // PV safety and 300 s global fallback are unchanged.
+ const uint32_t hbAge=selective?actual.worker.heartbeat_age_ms:snapshot.heartbeat_age_ms;
+ const uint32_t phaseAge=selective?actual.worker.phase_age_ms:snapshot.phase_age_ms;
+ const auto decision=bleSupervisor.tick(millis(),bleReady,hbAge,
+  phaseAge,inhibited,bleRecoveryRtc);
  if(decision==cielo96::recovery::Decision::Exhausted){
   if(!bleRecoveryExhausted)record("BLE_RESCATE_AGOTADO","2 reinicios sin 30min estables: acceso web conservado; revisar luces");
   bleRecoveryExhausted=true;return;
