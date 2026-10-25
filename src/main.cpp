@@ -995,6 +995,26 @@ static void diagnosticJson(){
      jsonQuote(cielo96::ble_worker_phase_name(e.phase))+"]";
  }
  j+="]}";
+ j+=",\"previous_recovery_phase_trace\":{\"available\":"+String(priorBleRtcTraceValid?"true":"false");
+ j+=",\"source\":\"RTC_SOFTWARE_RESTART\",\"boot_id\":"+String(priorBleRtcTraceValid?bleRtcPhaseTrace.boot:0);
+ j+=",\"events\":[";
+ if(priorBleRtcTraceValid)for(uint32_t i=0;i<bleRtcPhaseTrace.count;i++){
+  if(i)j+=",";
+  j+="["+String(bleRtcPhaseTrace.ordinal[i])+","+String(bleRtcPhaseTrace.at_ms[i])+","+
+    String(bleRtcPhaseTrace.device[i])+","+
+    jsonQuote(cielo96::ble_worker_phase_name(bleRtcPhaseTrace.phase[i]))+"]";
+ }
+ j+="]}";
+ j+=",\"ble_callbacks\":{";
+ for(uint8_t dev=0;dev<2;dev++){
+  if(dev)j+=",";
+  const auto callbacks=cielo96::ble_callback_stats(dev);
+  j+=jsonQuote(dev?"chihiros":"pez_verde")+":{\"connect\":"+String(callbacks.on_connect);
+  j+=",\"disconnect\":"+String(callbacks.on_disconnect);
+  j+=",\"last_connect_ms\":"+String(callbacks.last_connect_ms);
+  j+=",\"last_disconnect_ms\":"+String(callbacks.last_disconnect_ms)+"}";
+ }
+ j+="}";
  j+=",\"pv_day_recovery\":{\"pending\":"+String(pvDayRecoveryPending?"true":"false");
  j+=",\"attempts\":"+String(pvDayRecoveryAttempts);
  j+=",\"gatt_ok\":"+String(pvDayRecoveryGattOk);
