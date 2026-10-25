@@ -2111,6 +2111,7 @@ static void bleRecoveryTick(){
  record("BLE_REINICIO_CONTROL",String("Fase ")+cielo96::ble_worker_phase_name(snapshot.phase)+
   ", dispositivo "+String(snapshot.device)+", bloqueo "+String(snapshot.phase_age_ms)+"ms");
  // RTC conserva la evidencia aunque la cuota del journal NVS impida escribir ahora.
+ saveBleRtcPhaseTrace(previousBootCount+1);
  delay(50);ESP.restart();
 }
 void setup(){
@@ -2119,6 +2120,8 @@ void setup(){
   bleRecoveryRtc=cielo96::recovery::Retained{};cielo96::recovery::seal(bleRecoveryRtc);
  }
  bleRecoveryBoot=bleRecoveryRtc.pending==1;
+ priorBleRtcTraceValid=bleRecoveryBoot && bleRtcPhaseTrace.magic==CIELO_BLE_RTC_TRACE_MAGIC &&
+  bleRtcPhaseTrace.count<=16 && bleRtcPhaseTrace.check==bleRtcPhaseChecksum(bleRtcPhaseTrace);
  bleRecoveryRtc.pending=0;cielo96::recovery::seal(bleRecoveryRtc);
  uint32_t previousPhaseCode=rtcTrace.phase;
  lastResetTraceValid=(rtcTrace.magic==RTC_TRACE_MAGIC &&
