@@ -1,9 +1,9 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023]
   pull_request:
-    branches: [dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021]
+    branches: [dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,6 +11,23 @@ concurrency:
   group: cielo-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  sierra_python39:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Probar instalador Sierra V3 a V4 con Python 3.9
+        run: python tests/test_sierra_observer.py
+      - name: Empaquetar instalador Sierra
+        run: python tools/package_sierra.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_VIGILANCIA_iMAC_SIERRA_V4
+          path: dist/CIELO_VIGILANCIA_iMAC_SIERRA_V4.zip
+          if-no-files-found: error
   firmware:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -35,11 +52,11 @@ jobs:
           python tools/check_stack_build.py
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
-          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_SIMPLE1.bin
+          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC6_RECOVERY2.bin
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R monitor docs dist/
           mkdir -p dist/tools dist/include
-          cp tools/cielo_flash.py tools/cielo_spiffs.py tools/sign_firmware.py dist/tools/
+          cp tools/cielo_flash.py tools/cielo_spiffs.py tools/sign_firmware.py tools/update_observer.py dist/tools/
           cp include/cielo_ota_signing_public.h dist/include/
           python tools/package_manifest.py .pio/build/atoms3_lite_c124/firmware.bin dist/BUILD_MANIFEST.json
           git archive --format=zip --output=dist/CIELO_11_1_FUENTES_COMPLETAS.zip HEAD
@@ -55,7 +72,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CIELO_SIMPLE1_DEBUG_ELF_MAP
+          name: CIELO_RC6_RECOVERY2_DEBUG_ELF_MAP
           path: |
             .pio/build/atoms3_lite_c124/firmware.elf
             .pio/build/atoms3_lite_c124/firmware.map

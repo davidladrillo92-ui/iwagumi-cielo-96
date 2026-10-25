@@ -25,13 +25,18 @@ const ctx={console,Date,Math,Number,JSON,Blob,URLSearchParams,
 vm.createContext(ctx);vm.runInContext(js,ctx);
 (async()=>{
  vm.runInContext('init()',ctx);await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));
- assert.equal(elements.chiSub.textContent,'Disponible');assert.equal(elements.pezSub.textContent,'Disponible');
+ assert.equal(elements.chiSub.textContent,'BLE reciente');assert.equal(elements.pezSub.textContent,'BLE reciente');
  assert.equal(elements.chiInfo.textContent,'0 / 0 / 0');assert.equal(elements.diagState.textContent,'Todo en orden');
  assert(!requests.some(p=>p.startsWith('/api/lab')||p.startsWith('/api/auth')));
  vm.runInContext('settings()',ctx);assert.equal(typeof elements.chNightOn.onclick,'function');
  assert.equal(typeof elements.chNightOff.onclick,'function');assert.equal(typeof elements.cieloPauseAll.onclick,'function');
  vm.runInContext('state.status.cieloV4.ch_reconnect_pending=true;render()',ctx);
  assert.equal(elements.chiSub.textContent,'Reconectando…');
+ // Never trust a stale recent flag if the link snapshot says disconnected.
+ vm.runInContext('state.status.cieloV4.pv_link_connected=false;render()',ctx);
+ assert.equal(elements.pezSub.textContent,'Sin enlace BLE');assert.equal(elements.pezPct.textContent,'—');
+ vm.runInContext('state.status.cieloV4.pv_link_connected=true;state.status.cieloV4.pv_online_recent=false;render()',ctx);
+ assert.equal(elements.pezSub.textContent,'Sin verificar');
  vm.runInContext('state.connected=false;render()',ctx);assert.equal(elements.chiSub.textContent,'Sin comunicación');
  assert.equal(elements.chiPct.textContent,'—');
  vm.runInContext('state.connected=true;state.updated=Date.now()-21000;render()',ctx);

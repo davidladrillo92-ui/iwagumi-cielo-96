@@ -9,6 +9,9 @@ int main(){
  m.queueDepth=m.workerQueueDepth=m.profileGeneration=UINT32_MAX;m.pvPoints=34;m.chPoints=31;
  m.pv={true,true,UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};m.ch=m.pv;
  m.offFailures=UINT32_MAX;m.offPending=true;
+ m.recentCount=8;m.restartTotal=UINT32_MAX;m.lastStallMs=UINT32_MAX;
+ for(auto&e:m.recent){e.boot=e.previous=e.epoch=e.stallEpoch=e.stallMs=e.recoveredEpoch=UINT32_MAX;
+  e.reset=9;e.device=255;e.phase=11;e.bleRecovery=true;e.outcome=1;}
  char out[cielo96::monitor::JSON_CAPACITY];
  size_t n=cielo96::monitor::encode(m,out,sizeof(out));assert(n>0&&n<sizeof(out));
  assert(strstr(out,"\"optical_feedback\":null"));assert(strstr(out,"\"pv_points\":34"));
