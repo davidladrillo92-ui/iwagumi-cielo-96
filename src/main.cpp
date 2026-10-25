@@ -1948,7 +1948,7 @@ static void bleTick(){
     cieloReturnRetryAt=now+2500UL;
    }
  }
- if((cieloChReturnPending && !pvOffFirst)||cieloChAwaitResponse||customResumePending||
+ if((cieloChReturnPending && !chSelectiveHold && !pvOffFirst)||cieloChAwaitResponse||customResumePending||
     lab.scanPending||lab.probePending)return;
  cielo::ble::Command cmd{};
  if(queue.start_next(now,cmd,pvOffObligation && pvSafety!=PvSafetyState::OffGattOk)){
