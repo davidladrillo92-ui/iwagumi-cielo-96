@@ -6,13 +6,13 @@ namespace cielo96 { namespace pvday {
 // GATT is not optical proof. Unknown time must remain on safe boot OFF path.
 struct Input {
  bool boot_gate,off_gatt,boot_healthy,clock_ok,profile_ok;
- bool ble_ready,off_required,ota_or_rescue,worker_alive;
+ bool ble_ready,ota_or_rescue,worker_alive;
  uint8_t current_brightness;
 };
 inline bool can_resume(const Input& x){
  return x.boot_gate && x.off_gatt && x.boot_healthy &&
   x.clock_ok && x.profile_ok && x.ble_ready &&
-  !x.off_required && !x.ota_or_rescue && x.worker_alive &&
+  !x.ota_or_rescue && x.worker_alive &&
   x.current_brightness>0;
 }
 inline bool defer_ch_return(bool pv_day_pending,uint32_t age_ms){
