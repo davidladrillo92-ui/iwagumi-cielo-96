@@ -1,7 +1,7 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-20261025]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-20261025, dev/cielo-recovery3-1-bloqueos-clasificados-20261025]
   pull_request:
     branches: [dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023]
   workflow_dispatch:
@@ -40,6 +40,10 @@ jobs:
         run: |
           pip install cryptography==46.0.4 paho-mqtt==2.1.0
           python tools/check_b89.py
+      - name: Probar clasificador BLE independiente
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_ble_blockage.cpp -o /tmp/cielo_ble_blockage_test
+          /tmp/cielo_ble_blockage_test
       - name: Instalar PlatformIO
         run: pip install platformio==6.1.18
       - name: Compilar ATOMS3 Lite
