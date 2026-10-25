@@ -53,7 +53,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.1-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -2322,8 +2322,10 @@ void loop(){
  }
  // Fast daytime PV restoration AFTER OFF GATT and valid current curve.
  // CH return is deferred only briefly, and PV is never allowed to bypass night OFF.
+ const bool pvEarlySafe=bleRecoveryBoot && !otaCandidateBoot && millis()-bootMs>=45000UL &&
+    WiFi.status()==WL_CONNECTED && wifiCoexistReady() && !cieloWatchdogTripped && !bleRecoveryExhausted;
  if(pvControlDesired && cielo96::pvday::can_resume({
-    bleRecoveryBootPvSafe,pvOffLastGatt!=0,currentBootMarkedHealthy,
+    bleRecoveryBootPvSafe,pvOffLastGatt!=0,(currentBootMarkedHealthy||pvEarlySafe),
     timeOK(),cielo96::profileValid(profile),bleReady,
     otaBusy||rescueOpen||otaTxn.phase!=OtaPhase::Idle,
     cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
@@ -2336,7 +2338,7 @@ void loop(){
    cieloPvRun=true;lastPvDesired=false;lastScheduleAt=millis()-30000UL;
    pvDayRecoveryPending=true;pvDayRecoveryStarted=millis();pvDayRecoveryAttempts++;
    pvSafety=PvSafetyState::Degraded;
-   record("PV_DIA_RECUPERACION_RAPIDA","OFF GATT previo; programar brillo actual sin esperar retorno CH; no hay verificacion optica");
+   record("PV_DIA_RECUPERACION_RAPIDA",String("OFF GATT previo; recuperacion desde ")+String(millis()-bootMs)+"ms, sin esperar retorno CH; optica no verificada");
  }
  if(pvDayRecoveryPending && !cielo96::pvday::defer_ch_return(true,millis()-pvDayRecoveryStarted)){
   pvDayRecoveryPending=false;
