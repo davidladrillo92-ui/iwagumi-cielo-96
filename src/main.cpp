@@ -960,6 +960,20 @@ static void diagnosticJson(){
  j+=",\"selective_ch_episodes\":"+String(chSelectiveEpisodes);
  j+=",\"rescue_fallback_at_ms\":300000,\"policy\":\"SAFE_CH_SDK_PENDING_ONLY\"}";
  const auto workerSnap=cielo96::ble_worker_snapshot();
+ const auto phaseTrace=cielo96::ble_phase_history();
+ j+=",\"phase_trace\":{\"volatile\":true,\"count\":"+String(phaseTrace.count)+",\"events\":[";
+ for(uint8_t k=0;k<phaseTrace.count;k++){
+  if(k)j+=",";
+  const auto&e=phaseTrace.events[k];
+  j+="["+String(e.ordinal)+","+String(e.at_ms)+","+String(e.device)+","+
+     jsonQuote(cielo96::ble_worker_phase_name(e.phase))+"]";
+ }
+ j+="]}";
+ j+=",\"pv_day_recovery\":{\"pending\":"+String(pvDayRecoveryPending?"true":"false");
+ j+=",\"attempts\":"+String(pvDayRecoveryAttempts);
+ j+=",\"gatt_ok\":"+String(pvDayRecoveryGattOk);
+ j+=",\"started_at_ms\":"+String(pvDayRecoveryStarted);
+ j+=",\"optical_verified\":false}";
  j+=",\"worker_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(workerSnap.phase));
  j+=",\"worker_phase_age_ms\":"+String(workerSnap.phase_age_ms);
  j+=",\"worker_device\":"+String(workerSnap.device);
