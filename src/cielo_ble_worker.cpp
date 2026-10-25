@@ -29,10 +29,13 @@ struct SharedLink { std::atomic<bool> connected{false},released{false},idleRelea
 SharedLink shared[2]{};
 std::atomic<bool> pvOffRequired{false};
 bool offWrittenInCurrentOperation=false;
+struct CallbackCounters {std::atomic<uint32_t> connected{0},disconnected{0},lastConnect{0},lastDisconnect{0};};
+CallbackCounters callbackCounters[2]{};
 struct LinkCallbacks: BLEClientCallbacks {
  uint8_t device;explicit LinkCallbacks(uint8_t d):device(d){}
- void onConnect(BLEClient*) override {shared[device].connected=true;shared[device].idleReleased=false;}
+ void onConnect(BLEClient*) override {callbackCounters[device].connected.fetch_add(1);callbackCounters[device].lastConnect.store(millis());shared[device].connected=true;shared[device].idleReleased=false;}
  void onDisconnect(BLEClient*) override {
+  callbackCounters[device].disconnected.fetch_add(1);callbackCounters[device].lastDisconnect.store(millis());
   shared[device].connected=false;shared[device].lastDisconnect=millis();
   if(!shared[device].expectedRelease.exchange(false))shared[device].idleReleased=false;
  }
@@ -440,6 +443,15 @@ BleWorkerSnapshot ble_worker_snapshot(){
  portEXIT_CRITICAL(&snapshotMux);
  s.in_operation=s.phase!=static_cast<uint8_t>(BleWorkerPhase::Idle);
  return s;
+}
+BleCallbackStats ble_callback_stats(uint8_t device){
+ BleCallbackStats out{};
+ if(device>1)return out;
+ out.on_connect=callbackCounters[device].connected.load();
+ out.on_disconnect=callbackCounters[device].disconnected.load();
+ out.last_connect_ms=callbackCounters[device].lastConnect.load();
+ out.last_disconnect_ms=callbackCounters[device].lastDisconnect.load();
+ return out;
 }
 BlePhaseHistory ble_phase_history(){
  BlePhaseHistory out{};
