@@ -2301,7 +2301,7 @@ void loop(){
  if(bleRecoveryBootPvSafe)lightingTask();
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
  if(bleRecoveryBootPvSafe && pvOffLastGatt && currentBootMarkedHealthy && timeOK() &&
-    cielo96::profileValid(profile) && !cieloWatchdogTripped){
+    cielo96::profileValid(profile) && desiredPv().brightness==0 && !cieloWatchdogTripped){
   bleRecoveryBootPvSafe=false;
   record("BLE_RESCATE_PV_OFF_OK","OFF GATT completado; reanudar consigna actual, optica pendiente");
  }
