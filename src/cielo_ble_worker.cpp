@@ -59,10 +59,20 @@ volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
 volatile uint8_t workerDevice=255;
 volatile uint32_t phaseEnteredAt=0;
 portMUX_TYPE snapshotMux=portMUX_INITIALIZER_UNLOCKED;
+BlePhaseEvent phaseHistory[16]{};
+uint8_t phaseHistoryHead=0,phaseHistoryCount=0;
+uint32_t phaseOrdinal=0;
 void touchHeartbeat(){portENTER_CRITICAL(&snapshotMux);lastHeartbeat=millis();portEXIT_CRITICAL(&snapshotMux);}
 void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
  portENTER_CRITICAL(&snapshotMux);
- workerDevice=dev;phaseEnteredAt=millis();workerPhase=static_cast<uint8_t>(p);
+ const uint32_t now=millis();
+ workerDevice=dev;phaseEnteredAt=now;workerPhase=static_cast<uint8_t>(p);
+ if(!phaseHistoryCount || phaseHistory[(phaseHistoryHead+15)%16].phase!=static_cast<uint8_t>(p) ||
+    phaseHistory[(phaseHistoryHead+15)%16].device!=dev){
+  phaseHistory[phaseHistoryHead]={now,++phaseOrdinal,static_cast<uint8_t>(p),dev};
+  phaseHistoryHead=(phaseHistoryHead+1)%16;
+  if(phaseHistoryCount<16)phaseHistoryCount++;
+ }
  portEXIT_CRITICAL(&snapshotMux);
 }
 void releaseTarget(uint8_t device,bool userRequested){
@@ -430,6 +440,14 @@ BleWorkerSnapshot ble_worker_snapshot(){
  portEXIT_CRITICAL(&snapshotMux);
  s.in_operation=s.phase!=static_cast<uint8_t>(BleWorkerPhase::Idle);
  return s;
+}
+BlePhaseHistory ble_phase_history(){
+ BlePhaseHistory out{};
+ portENTER_CRITICAL(&snapshotMux);
+ out.count=phaseHistoryCount;
+ for(uint8_t i=0;i<out.count;i++)out.events[i]=phaseHistory[(phaseHistoryHead+16-out.count+i)%16];
+ portEXIT_CRITICAL(&snapshotMux);
+ return out;
 }
 BleBlockageSnapshot ble_blockage_snapshot(){
  BleBlockageSnapshot result{};

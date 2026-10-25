@@ -77,5 +77,10 @@ struct BleBlockageSnapshot {
  uint32_t pending_pv_age_ms=0,pending_ch_age_ms=0;
 };
 BleBlockageSnapshot ble_blockage_snapshot();
+// Bounded, passive phase-transition ring (RAM only). No MACs or credentials.
+struct BlePhaseEvent {uint32_t at_ms=0,ordinal=0;uint8_t phase=0,device=255; BlePhaseEvent()=default; BlePhaseEvent(uint32_t a,uint32_t o,uint8_t p,uint8_t d):at_ms(a),ordinal(o),phase(p),device(d){} };
+struct BlePhaseHistory {uint8_t count=0;BlePhaseEvent events[16]{};};
+BlePhaseHistory ble_phase_history();
+
 const char* ble_worker_phase_name(uint8_t phase);
 }

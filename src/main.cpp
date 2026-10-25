@@ -30,6 +30,7 @@
 #include "cielo_ble_recovery.h"
 #include "cielo_ble_blockage.h"
 #include "cielo_ble_selective.h"
+#include "cielo_pv_day_recovery.h"
 #include "cielo_ota_validation.h"
 #include "cielo_autonomy_policy.h"
 #include "cielo_restart_journal.h"
@@ -183,6 +184,8 @@ static uint32_t chSelectiveEpisodes=0;
 enum class PvSafetyState:uint8_t {Paused,Active,Degraded,OffPending,OffRetrying,OffGattOk};
 static PvSafetyState pvSafety=PvSafetyState::Paused;
 static bool pvOffObligation=false,pvControlDesired=false;
+static bool pvDayRecoveryPending=false;
+static uint32_t pvDayRecoveryStarted=0,pvDayRecoveryAttempts=0,pvDayRecoveryGattOk=0;
 static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffScheduled=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
@@ -565,6 +568,9 @@ static String cieloModeJson(){
  j+=",\"pv_off_attempts\":"+String(pvOffAttempts)+",\"pv_off_scheduled\":"+String(pvOffScheduled)+",\"pv_off_failures\":"+String(pvOffFailures);
  j+=",\"pv_off_last_gatt_ms\":"+String(pvOffLastGatt)+",\"pv_off_last_attempt_ms\":"+String(pvOffLastTry);
  j+=",\"pv_optically_confirmed\":false";
+ j+=",\"pv_day_recovery_pending\":"+String(pvDayRecoveryPending?"true":"false");
+ j+=",\"pv_day_recovery_attempts\":"+String(pvDayRecoveryAttempts);
+ j+=",\"pv_day_recovery_gatt_ok\":"+String(pvDayRecoveryGattOk);
  j+=",\"ch_consecutive_errors\":"+String(cieloChConsecutiveFailures);
  j+=",\"ch_safety_state\":"+jsonQuote(chSafetyName());
  j+=",\"started_at_ms\":"+String(cieloStartedAt);
@@ -954,6 +960,20 @@ static void diagnosticJson(){
  j+=",\"selective_ch_episodes\":"+String(chSelectiveEpisodes);
  j+=",\"rescue_fallback_at_ms\":300000,\"policy\":\"SAFE_CH_SDK_PENDING_ONLY\"}";
  const auto workerSnap=cielo96::ble_worker_snapshot();
+ const auto phaseTrace=cielo96::ble_phase_history();
+ j+=",\"phase_trace\":{\"volatile\":true,\"count\":"+String(phaseTrace.count)+",\"events\":[";
+ for(uint8_t k=0;k<phaseTrace.count;k++){
+  if(k)j+=",";
+  const auto&e=phaseTrace.events[k];
+  j+="["+String(e.ordinal)+","+String(e.at_ms)+","+String(e.device)+","+
+     jsonQuote(cielo96::ble_worker_phase_name(e.phase))+"]";
+ }
+ j+="]}";
+ j+=",\"pv_day_recovery\":{\"pending\":"+String(pvDayRecoveryPending?"true":"false");
+ j+=",\"attempts\":"+String(pvDayRecoveryAttempts);
+ j+=",\"gatt_ok\":"+String(pvDayRecoveryGattOk);
+ j+=",\"started_at_ms\":"+String(pvDayRecoveryStarted);
+ j+=",\"optical_verified\":false}";
  j+=",\"worker_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(workerSnap.phase));
  j+=",\"worker_phase_age_ms\":"+String(workerSnap.phase_age_ms);
  j+=",\"worker_device\":"+String(workerSnap.device);
@@ -1774,6 +1794,7 @@ static void lightingTask(){
  if(pvControlDesired && timeOK() && cielo96::profileValid(profile)){
   const bool night=cielo96::safety::offRequired(pvControlDesired,timeOK(),cielo96::profileValid(profile),desiredPv().brightness);
   if(night && !pvOffObligation){
+   pvDayRecoveryPending=false;
    pvOffObligation=true;pvOffNextTry=now;pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_OFF_OBLIGATORIO","Consigna cero: POWER OFF prioritario; RGB anterior cancelado");
@@ -1892,7 +1913,13 @@ static void bleTick(){
       pvOffLastGatt=now;pvOffFailures=0;pvSafety=PvSafetyState::OffGattOk;
       pvOffNextTry=now+60000UL;
       record("PV_POWER_OFF_GATT_OK","POWER OFF GATT OK; sin verificacion optica");
-     }else pvSafety=PvSafetyState::Active;
+     }else {
+      pvSafety=PvSafetyState::Active;
+      if(pvDayRecoveryPending){
+       pvDayRecoveryPending=false;pvDayRecoveryGattOk++;
+       record("PV_DIA_RECUPERACION_GATT_OK","Consigna actual aceptada por GATT; luminosidad real no verificada");
+      }
+     }
     }else if(wasOffCommand){
      ++pvOffFailures;
      const uint32_t backoff=cielo96::safety::offRetryDelayMs(pvOffFailures);
@@ -1935,9 +1962,10 @@ static void bleTick(){
  queue.tick(now);
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Operacion supera 3,5s; puede terminar correctamente. No es por si sola un fallo");}
+ const bool pvDayFirst=pvDayRecoveryPending && cielo96::pvday::defer_ch_return(true,now-pvDayRecoveryStarted);
  const bool pvOffFirst=pvOffObligation && pvSafety!=PvSafetyState::OffGattOk &&
    pvOffFailures<3 && queue.pending(cielo::ble::Device::PezVerde);
- if(cieloChReturnPending && !chSelectiveHold && !pvOffFirst && !queue.busy() && !customResumePending &&
+ if(cieloChReturnPending && !chSelectiveHold && !pvOffFirst && !pvDayFirst && !queue.busy() && !customResumePending &&
     !lab.scanPending && !lab.probePending &&
     (int32_t)(now-cieloReturnRetryAt)>=0){
    if(cielo96::ble_custom_resume_request()){
@@ -1948,12 +1976,12 @@ static void bleTick(){
     cieloReturnRetryAt=now+2500UL;
    }
  }
- if((cieloChReturnPending && !chSelectiveHold && !pvOffFirst)||cieloChAwaitResponse||customResumePending||
+ if((cieloChReturnPending && !chSelectiveHold && !pvOffFirst && !pvDayFirst)||cieloChAwaitResponse||customResumePending||
     lab.scanPending||lab.probePending)return;
  cielo::ble::Command cmd{};
- if(queue.start_next(now,cmd,pvOffObligation && pvSafety!=PvSafetyState::OffGattOk)){
+ if(queue.start_next(now,cmd,(pvOffObligation && pvSafety!=PvSafetyState::OffGattOk)||pvDayFirst)){
   const bool schedulerPV=(cieloPvRun||pvOffObligation)&&cmd.device==cielo::ble::Device::PezVerde&&cmd.action==cielo::ble::Action::Apply;
-  if(cieloChReturnPending && pvOffFirst && cmd.device!=cielo::ble::Device::PezVerde){
+  if(cieloChReturnPending && (pvOffFirst||pvDayFirst) && cmd.device!=cielo::ble::Device::PezVerde){
    queue.complete(cmd.sequence,false,now);
    record("PV_OFF_PRIORIDAD","La orden POWER OFF de Pez Verde precede al retorno My Chihiros");
    return;
@@ -2288,9 +2316,31 @@ void loop(){
  if(bleRecoveryBootPvSafe)lightingTask();
  if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
  if(bleRecoveryBootPvSafe && pvOffLastGatt && currentBootMarkedHealthy && timeOK() &&
-    cielo96::profileValid(profile) && !cieloWatchdogTripped){
+    cielo96::profileValid(profile) && desiredPv().brightness==0 && !cieloWatchdogTripped){
   bleRecoveryBootPvSafe=false;
   record("BLE_RESCATE_PV_OFF_OK","OFF GATT completado; reanudar consigna actual, optica pendiente");
+ }
+ // Fast daytime PV restoration AFTER OFF GATT and valid current curve.
+ // CH return is deferred only briefly, and PV is never allowed to bypass night OFF.
+ if(pvControlDesired && cielo96::pvday::can_resume({
+    bleRecoveryBootPvSafe,pvOffLastGatt!=0,currentBootMarkedHealthy,
+    timeOK(),cielo96::profileValid(profile),bleReady,
+    otaBusy||rescueOpen||otaTxn.phase!=OtaPhase::Idle,
+    cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
+    uint8_t(timeOK()&&cielo96::profileValid(profile)?desiredPv().brightness:0)})){
+   bleRecoveryBootPvSafe=false;
+   pvOffObligation=false;pvOffNextTry=0;pvOffInFlightSeq=0;
+   cielo96::ble_set_pv_off_required(false);
+   queue.cancel_pending(cielo::ble::Device::PezVerde);
+   queue.cancel_pending(cielo::ble::Device::Chihiros);
+   cieloPvRun=true;lastPvDesired=false;lastScheduleAt=millis()-30000UL;
+   pvDayRecoveryPending=true;pvDayRecoveryStarted=millis();pvDayRecoveryAttempts++;
+   pvSafety=PvSafetyState::Degraded;
+   record("PV_DIA_RECUPERACION_RAPIDA","OFF GATT previo; programar brillo actual sin esperar retorno CH; no hay verificacion optica");
+ }
+ if(pvDayRecoveryPending && !cielo96::pvday::defer_ch_return(true,millis()-pvDayRecoveryStarted)){
+  pvDayRecoveryPending=false;
+  record("PV_DIA_RECUPERACION_LIMITE","20s sin GATT confirmado; liberar retorno CH y mantener reintentos PV");
  }
  if(cieloResumePending && cieloAlwaysOn && !bleRecoveryBootPvSafe && currentBootMarkedHealthy &&
     bleReady && timeOK() && wifiCoexistReady() && !rescueOpen &&
