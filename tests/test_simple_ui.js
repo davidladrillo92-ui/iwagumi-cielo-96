@@ -11,7 +11,7 @@ function element(id){return {id,value:'',textContent:'',disabled:false,dataset:{
  set innerHTML(s){this._html=s;for(const m of s.matchAll(/\bid="([^"]+)"/g))elements[m[1]]=element(m[1])},
  get innerHTML(){return this._html||''}}}
 for(const id of ids)elements[id]=element(id);
-const sample={uptime_sec:723,lighting:{natural_v4:{}},professional:{pez_verde:'CORRECTO',chihiros:'CORRECTO'},
+const sample={uptime_sec:723,lighting:{natural_v4:{pv_online_recent:true,ch_online_recent:true,pv_link_idle_released:true,ch_link_idle_released:true}},professional:{pez_verde:'CORRECTO',chihiros:'CORRECTO'},
  network:{home_wifi_connected:true},bluetooth:{per_device:{pez_verde:{gatt_ok:2},chihiros:{gatt_ok:2}}}};
 const status={rgb:[0,0,0],ble:true,clockValid:true,cieloV4:{always_on:true,chihiros_active:true,pez_verde_active:true,
  ch_online_recent:true,pv_online_recent:true,ch_last_requested:[0,0,0],pv_last_requested:[0,0,0,0]},firmware:'MOCK'};
@@ -25,8 +25,9 @@ const ctx={console,Date,Math,Number,JSON,Blob,URLSearchParams,
 vm.createContext(ctx);vm.runInContext(js,ctx);
 (async()=>{
  vm.runInContext('init()',ctx);await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));
- assert.equal(elements.chiSub.textContent,'Último envío BLE');assert.equal(elements.pezSub.textContent,'Último envío BLE');
+ assert.equal(elements.chiSub.textContent,'Conectado');assert.equal(elements.pezSub.textContent,'Conectado');
  assert.equal(elements.chiInfo.textContent,'0 / 0 / 0');assert.equal(elements.diagState.textContent,'Todo en orden');
+ assert.equal(elements.diagPvStatus.textContent,'Conectado');assert.equal(elements.diagChStatus.textContent,'Conectado');
  assert(!requests.some(p=>p.startsWith('/api/lab')||p.startsWith('/api/auth')));
  vm.runInContext('settings()',ctx);assert.equal(typeof elements.chNightOn.onclick,'function');
  assert.equal(typeof elements.chNightOff.onclick,'function');assert.equal(typeof elements.cieloPauseAll.onclick,'function');
@@ -36,7 +37,7 @@ vm.createContext(ctx);vm.runInContext(js,ctx);
  vm.runInContext('state.status.cieloV4.pv_link_connected=false;render()',ctx);
  assert.equal(elements.pezSub.textContent,'Sin enlace BLE');assert.equal(elements.pezPct.textContent,'—');
  vm.runInContext('state.status.cieloV4.pv_link_idle_released=true;render()',ctx);
- assert.equal(elements.pezSub.textContent,'Último envío BLE');
+ assert.equal(elements.pezSub.textContent,'Conectado');
  vm.runInContext('state.status.cieloV4.pv_link_idle_released=false;state.status.cieloV4.pv_link_connected=true;state.status.cieloV4.pv_online_recent=false;render()',ctx);
  assert.equal(elements.pezSub.textContent,'Sin verificar');
  vm.runInContext('state.connected=false;render()',ctx);assert.equal(elements.chiSub.textContent,'Sin comunicación');
@@ -46,6 +47,8 @@ vm.createContext(ctx);vm.runInContext(js,ctx);
  // Recovered historical failures must not be displayed as an active alarm.
  sample.status='avisos_historicos';sample.alerts={current_critical:false,historical_soft_timeouts:4};
  ctx.sample=sample;vm.runInContext('diagRender(sample)',ctx);assert.equal(elements.diagState.textContent,'Todo en orden');
+ sample.lighting.natural_v4.pv_online_recent=false;vm.runInContext('diagRender(sample)',ctx);
+ assert.equal(elements.diagPvStatus.textContent,'Sin comunicación reciente');
  sample.bluetooth.worker_unresponsive=true;vm.runInContext('diagRender(sample)',ctx);assert.equal(elements.diagState.textContent,'Revisar conexión');
  for(const id of ['authBadge','accessAction','cadenceTrial','cadenceNormal','chLivePanel','lastConfirmedPv','lastConfirmedChi','diagView','diagShare','diagCopy','labGuided'])assert(!ids.includes(id),id);
  assert(ids.includes('loadProfile')&&ids.includes('saveCurve')&&ids.includes('exportProfile'));
