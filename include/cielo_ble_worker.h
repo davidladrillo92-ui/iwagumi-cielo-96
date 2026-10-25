@@ -70,5 +70,22 @@ struct BleWorkerSnapshot {
 };
 BleWorkerSnapshot ble_worker_snapshot();
 BleWorkerSnapshot ble_recovery_snapshot();
+// Independent passive ages; unlike ble_recovery_snapshot() does not mask
+// worker heartbeat with an expired SDK connection's cleanup age.
+struct BleBlockageSnapshot {
+ BleWorkerSnapshot worker{};
+ uint32_t pending_pv_age_ms=0,pending_ch_age_ms=0;
+};
+BleBlockageSnapshot ble_blockage_snapshot();
+// Bounded, passive phase-transition ring (RAM only). No MACs or credentials.
+struct BlePhaseEvent {uint32_t at_ms=0,ordinal=0;uint8_t phase=0,device=255; BlePhaseEvent()=default; BlePhaseEvent(uint32_t a,uint32_t o,uint8_t p,uint8_t d):at_ms(a),ordinal(o),phase(p),device(d){} };
+struct BlePhaseHistory {uint8_t count=0;BlePhaseEvent events[16]{};};
+BlePhaseHistory ble_phase_history();
+// Callbacks reales del cliente BLE; no equivalen a encendido optico.
+struct BleCallbackStats {
+ uint32_t on_connect=0,on_disconnect=0,last_connect_ms=0,last_disconnect_ms=0;
+};
+BleCallbackStats ble_callback_stats(uint8_t device);
+
 const char* ble_worker_phase_name(uint8_t phase);
 }

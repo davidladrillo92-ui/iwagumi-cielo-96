@@ -246,13 +246,13 @@ function render(){
  $('pezInfo').textContent=pvIsKnown?pvRgb.join(' / '):'—';
  const lampState=(active,recent,errors,reconnecting=false,linked)=>preview?'Simulación':
   !fresh?'Sin comunicación':linked===false&&active?'Sin enlace BLE':reconnecting||errors>0?'Reconectando…':
-  recent?'Último envío BLE':active?'Sin verificar':v4.always_on?'Preparando…':'En pausa';
+  recent?'Conectado':active?'Sin verificar':v4.always_on?'Preparando…':'En pausa';
  $('chiSub').textContent=lampState(v4.chihiros_active,chiRecent,v4.ch_consecutive_errors||0,v4.ch_reconnect_pending,v4.ch_link_idle_released?undefined:v4.ch_link_connected);
  $('pezSub').textContent=lampState(v4.pez_verde_active,pvRecent,Math.max(v4.pv_consecutive_errors||0,v4.pv_off_failures||0),false,v4.pv_link_idle_released?undefined:v4.pv_link_connected);
  for(const [id,up] of [['chiLed',chiRecent&&!v4.ch_reconnect_pending&&!(v4.ch_consecutive_errors>0)],['pezLed',pvRecent&&!(v4.pv_consecutive_errors>0)&&!(v4.pv_off_failures>0)]]){
   const el=$(id);el.className='conn-tick'+(state.connected&&up&&!preview?' ok':' wait');
   el.textContent=state.connected&&up&&!preview?'✓':'·';
-  el.title=up?'Envío BLE reciente; luz sin verificar':'Esperando comunicación Bluetooth';
+  el.title=up?'Conectado: comunicación GATT reciente; enlace BLE liberado entre envíos. Luz real no verificada.':'Esperando comunicación Bluetooth';
  }
  $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+' · no cambia las luces.':'Vista del momento actual.';
  const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
@@ -803,7 +803,13 @@ function diagRender(d){
  $('diagState').textContent=level==='error'?'Revisar conexión':paused?'Control pausado':retrying?'Reconectando…':level==='warning'?'Preparando las pantallas':'Todo en orden';
  for(const [id,key,retrying] of [['diagPvStatus','pez_verde',v.pv_consecutive_errors>0||v.pv_off_failures>0],['diagChStatus','chihiros',v.ch_reconnect_pending||v.ch_consecutive_errors>0]]){
   const level=d.professional?.[key];
-  $(id).textContent=paused?'En pausa':retrying?'Reconectando…':level==='CORRECTO'?'Último envío BLE':level==='FALLO'?'Sin respuesta':'Sin verificar';
+  const recent=key==='pez_verde'?v.pv_online_recent===true:v.ch_online_recent===true;
+   const released=key==='pez_verde'?v.pv_link_idle_released===true:v.ch_link_idle_released===true;
+   const linked=key==='pez_verde'?v.pv_link_connected===true:v.ch_link_connected===true;
+   $(id).textContent=paused?'En pausa':retrying?'Reconectando…':
+    level==='CORRECTO'&&recent&&(linked||released)?'Conectado':
+    level==='FALLO'?'Sin respuesta':level==='CORRECTO'?'Sin comunicación reciente':'Sin verificar';
+   $(id).title='Conectado significa comunicación BLE/GATT reciente, no enlace permanente ni confirmación óptica.';
  }
 }
 async function diagLoad(){

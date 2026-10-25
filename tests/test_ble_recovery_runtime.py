@@ -4,6 +4,8 @@ import subprocess,tempfile
 s=Path('src/main.cpp').read_text();function=s[s.index('static void bleRecoveryTick(){'):s.index('void setup(){')]
 fixture=r'''
 #include "cielo_ble_recovery.h"
+#include "cielo_ble_blockage.h"
+#include "cielo_ble_selective.h"
 #include <cassert>
 #include <string>
 using std::string;
@@ -16,6 +18,8 @@ struct Esp {unsigned calls=0;void restart(){calls++;}} ESP;
 namespace cielo96 {
 struct Snapshot{unsigned heartbeat_age_ms=1359609,phase_age_ms=1358846;unsigned char phase=4,device=0;} sample;
 Snapshot ble_recovery_snapshot(){return sample;}
+struct BleBlockageSnapshot {Snapshot worker;unsigned pending_pv_age_ms=0,pending_ch_age_ms=0;};
+BleBlockageSnapshot ble_blockage_snapshot(){return {sample,0,0};}
 const char* ble_worker_phase_name(unsigned char){return "CONEXION";}
 }
 enum class OtaPhase {Idle,Preparing,Ready,Uploading,Completed,Failed};
@@ -24,6 +28,11 @@ bool timeOK(){return true;}
 unsigned long time(void*){return 1792750000;}
 unsigned previousBootCount=111;
 bool otaBusy=false,rescueOpen=false,bleReady=true,bleRecoveryExhausted=false;
+bool pvOffObligation=false,chSelectiveHold=false,lastChDesired=false;
+unsigned chSelectiveEpisodes=0;
+namespace cielo {namespace ble {enum class Device {Chihiros};}}
+struct QueueStub {void cancel_pending(cielo::ble::Device){}} queue;
+void saveBleRtcPhaseTrace(unsigned){}
 cielo96::recovery::Retained bleRecoveryRtc{};
 cielo96::recovery::Supervisor bleSupervisor;
 '''
