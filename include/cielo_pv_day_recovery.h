@@ -15,6 +15,13 @@ inline bool can_resume(const Input& x){
   !x.ota_or_rescue && x.worker_alive &&
   x.current_brightness>0;
 }
+// Do not wait for the 180s global health mark on a known BLE rescue boot.
+// The regular OTA candidate must keep its complete post-boot validation.
+inline bool early_boot_ready(bool rescue_boot,bool ota_candidate,uint32_t elapsed_ms,
+ bool wifi,bool coexistence,bool watchdog,bool rescue_exhausted){
+ return rescue_boot && !ota_candidate && elapsed_ms>=45000UL &&
+   wifi && coexistence && !watchdog && !rescue_exhausted;
+}
 inline bool defer_ch_return(bool pv_day_pending,uint32_t age_ms){
  return pv_day_pending && age_ms<20000UL;
 }
