@@ -16,6 +16,11 @@ struct Input {
   uint32_t worker_phase_age_ms=0;
   uint32_t pending_pv_age_ms=0;
   uint32_t pending_ch_age_ms=0;
+  Input(uint8_t phase,uint8_t device,uint32_t heartbeat,uint32_t phase_age,
+        uint32_t pv_pending,uint32_t ch_pending):
+    worker_phase(phase),worker_device(device),
+    worker_heartbeat_age_ms(heartbeat),worker_phase_age_ms(phase_age),
+    pending_pv_age_ms(pv_pending),pending_ch_age_ms(ch_pending){}
 };
 struct Result {
   Kind primary=Kind::None;
