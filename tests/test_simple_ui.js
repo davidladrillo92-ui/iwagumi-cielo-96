@@ -51,6 +51,13 @@ vm.createContext(ctx);vm.runInContext(js,ctx);
  assert.equal(elements.pezInfo.textContent,'Apagado pendiente');
  vm.runInContext("state.status.cieloV4.pv_off_obligation=false;state.status.cieloV4.pv_safety_state='ACTIVA';render()",ctx);
  assert.equal(elements.pezPct.textContent,'6%');
+ assert.equal(vm.runInContext("scene(1410)[0]",ctx),'Luz de luna');
+ assert.equal(vm.runInContext("scene(20)[0]",ctx),'Descanso nocturno');
+ vm.runInContext("state.status.clockValid=false;render()",ctx);
+ assert(elements.statusText.textContent.includes('hora pendiente'));
+ assert(elements.momentSub.textContent.includes('Hora del móvil'));
+ vm.runInContext("state.status.clockValid=true;render()",ctx);
+
  vm.runInContext('state.connected=false;render()',ctx);assert.equal(elements.chiSub.textContent,'Sin comunicación');
  assert.equal(elements.chiPct.textContent,'—');
  vm.runInContext('state.connected=true;state.updated=Date.now()-21000;render()',ctx);
