@@ -7,6 +7,8 @@
 #include <Update.h>
 #include <time.h>
 #include <sys/time.h>
+#include <atomic>
+#include <esp_sntp.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_wifi.h>
@@ -35,6 +37,7 @@
 #include "cielo_autonomy_policy.h"
 #include "cielo_restart_journal.h"
 #include "cielo_cadence_diagnostics.h"
+#include "cielo_clock_evidence.h"
 
 // TLS is not started in this LAN edition. Keep an explicit stack margin for HTTP/OTA.
 static constexpr size_t CIELO_LOOP_STACK_BYTES=16384;
@@ -53,7 +56,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.1-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.2-APP-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -130,6 +133,8 @@ static bool bleReady=false, profileRecovery=false, wifiApOn=false;
 static bool mdnsReady=false;
 static uint32_t mdnsLastAttempt=0;
 static bool phoneSyncedThisBoot=false;
+static std::atomic<bool> ntpSyncedThisBoot{false};
+static void cieloNtpSynced(struct timeval*){ntpSyncedThisBoot.store(true);}
 static bool wifiCoexistReady(){
  wifi_ps_type_t ps=WIFI_PS_NONE;
  return esp_wifi_get_ps(&ps)==ESP_OK && ps!=WIFI_PS_NONE;
@@ -363,7 +368,7 @@ static void persistCritical(const char* name,const String& detail){
  }else{
   JournalEntry& e=journal.entries[journal.head];e=JournalEntry{};
   e.boot_id=previousBootCount+1;
-  time_t t=time(nullptr);e.utc_epoch=t>1700000000L?(uint32_t)t:0;
+  time_t t=time(nullptr);e.utc_epoch=clockEvidenceTrusted()?(uint32_t)t:0;
   snprintf(e.code,sizeof(e.code),"%s",name);e.repeats=1;
   journal.head=(journal.head+1)%8;
   if(journal.count<8)journal.count++;
@@ -388,8 +393,10 @@ static void jsonSend(int code,const String& s){++httpCount;srv.sendHeader("Cache
 static void fail(int code,const char*msg){jsonSend(code,String("{\"ok\":false,\"error\":")+jsonQuote(msg)+"}");}
 static void ok(){jsonSend(200,"{\"ok\":true}");}
 static bool timeOK(){return time(nullptr)>1700000000L;}
+static bool clockEvidenceTrusted(){return cielo96::clock_evidence::trusted_this_boot(
+ ntpSyncedThisBoot.load(),phoneSyncedThisBoot,uint32_t(time(nullptr)));}
 static void cieloTrendTick(){
- if(!cieloAlwaysOn || !timeOK())return;
+ if(!cieloAlwaysOn || !clockEvidenceTrusted())return;
  uint32_t now=millis();
  if(cieloTrendLast && now-cieloTrendLast<900000UL)return;
  cieloTrendLast=now;
@@ -2274,6 +2281,7 @@ void setup(){
   if(coex!=ESP_OK)record("COEX_PENDIENTE","Se verificara de nuevo al conectar STA");
  }
  tracePhase(TracePhase::Clock);
+ sntp_set_time_sync_notification_cb(cieloNtpSynced);
  configTzTime(CIELO_TZ,"pool.ntp.org","time.google.com");
  bleReady=false; // Do not start BLE until explicit physical authorization.
  record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" ("+resetReasonName(esp_reset_reason())+") BLE="+String(bleReady));
@@ -2416,10 +2424,16 @@ void loop(){
  chReconnectTick();
  otaPreparationTick();
  bleRecoveryTick();
- if(!bootEpoch&&timeOK()&&restartJournal.count){
+ if(clockEvidenceTrusted()&&restartJournal.count){
+  const uint32_t trustedNow=uint32_t(time(nullptr));
+  const uint32_t upSeconds=(millis()-bootMs)/1000UL;
+  const auto&last=cielo96::restarts::at(restartJournal,restartJournal.count-1);
+  const bool needsRepair=!bootEpoch || cielo96::clock_evidence::implausible_boot_epoch(last.epoch,trustedNow,upSeconds);
+  if(needsRepair){
   bootEpoch=uint32_t(time(nullptr))-(millis()-bootMs)/1000UL;
   auto&e=restartJournal.entries[(restartJournal.head+7)%8];e.epoch=bootEpoch;
   cielo96::restarts::seal(restartJournal);restartJournalDirty=true;
+  }
  }
  if(currentBootMarkedHealthy&&bleReady&&!cieloWatchdogTripped&&
     (!pvControlDesired||cieloLastSuccessfulPvAt>0)&&(!cieloAlwaysOn||cieloLastSuccessfulChAt>0)){
