@@ -17,6 +17,13 @@ int main(){
  d.off_gatt=true;assert(cielo96::pvday::can_resume(d));
  d.current_brightness=0;assert(!cielo96::pvday::can_resume(d));
  d.current_brightness=45;d.clock_ok=false;assert(!cielo96::pvday::can_resume(d));
+ // Chihiros must not seize BLE after the first PV OFF GATT at ~37s.
+ assert(cielo96::pvday::prioritize_boot_day(true,true,true,true,false,37000));
+ assert(cielo96::pvday::prioritize_boot_day(true,true,true,true,false,44999));
+ assert(!cielo96::pvday::prioritize_boot_day(true,true,true,true,false,65000));
+ assert(!cielo96::pvday::prioritize_boot_day(true,true,true,false,false,37000));
+ assert(!cielo96::pvday::prioritize_boot_day(true,true,false,true,false,37000));
+ assert(!cielo96::pvday::prioritize_boot_day(true,true,true,true,true,37000));
  assert(cielo96::pvday::defer_ch_return(true,19999));
  assert(!cielo96::pvday::defer_ch_return(true,20000));
  cielo96::selective::Input s{true,true,false,120000,1000,1000,255,false,false};
