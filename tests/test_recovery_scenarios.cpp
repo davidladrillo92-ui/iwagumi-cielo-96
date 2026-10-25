@@ -3,6 +3,15 @@
 #include "cielo_ble_blockage.h"
 #include <cassert>
 int main(){
+ // Early daytime recovery: never during OTA or without Wi-Fi/coexistence.
+ assert(!cielo96::pvday::early_boot_ready(true,false,44999,true,true,false,false));
+ assert(cielo96::pvday::early_boot_ready(true,false,45000,true,true,false,false));
+ assert(!cielo96::pvday::early_boot_ready(true,true,180000,true,true,false,false));
+ assert(!cielo96::pvday::early_boot_ready(true,false,60000,false,true,false,false));
+ assert(!cielo96::pvday::early_boot_ready(true,false,60000,true,false,false,false));
+ assert(!cielo96::pvday::early_boot_ready(true,false,60000,true,true,true,false));
+ assert(!cielo96::pvday::early_boot_ready(true,false,60000,true,true,false,true));
+ assert(!cielo96::pvday::early_boot_ready(false,false,60000,true,true,false,false));
  cielo96::pvday::Input d{true,false,true,true,true,true,false,true,45};
  assert(!cielo96::pvday::can_resume(d));
  d.off_gatt=true;assert(cielo96::pvday::can_resume(d));
