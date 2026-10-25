@@ -646,8 +646,8 @@ static String cieloTrendJson(){
 static void statusJson(){
  auto p=desiredPv();auto c=desiredCh();bool w=WiFi.status()==WL_CONNECTED;
  String j;j.reserve(4500);
- j="{\"firmware\":\""+String(VERSION)+"\",\"ble\":"+String(bleReady?"true":"false")+",\"clockValid\":"+String(timeOK()?"true":"false");
- j+=",\"clock\":"+jsonQuote(dateTime())+",\"wifi\":"+(w?String("true"):String("false"));
+ j="{\"firmware\":\""+String(VERSION)+"\",\"ble\":"+String(bleReady?"true":"false")+",\"clockValid\":"+String(clockEvidenceTrusted()?"true":"false");
+ j+=",\"clock\":"+jsonQuote(clockEvidenceTrusted()?dateTime():String("Hora pendiente de sincronizacion"))+",\"wifi\":"+(w?String("true"):String("false"));
  j+=",\"ip\":\"192.168.4.1\",\"homeIp\":"+jsonQuote(w?WiFi.localIP().toString():String(""));
  j+=",\"homeSsid\":"+jsonQuote(w?WiFi.SSID():storedSSID);
  j+=",\"wifiRssi\":"+String(w?WiFi.RSSI():0);
@@ -1079,10 +1079,12 @@ static void diagnosticJson(){
  j+=",\"recent_restarts\":"+restartHistoryJson();
  j+=",\"daily_monitoring\":"+cieloTrendJson();
  j+=",\"clock_diagnostics\":{\"epoch\":"+String((uint32_t)currentEpoch);
- j+=",\"valid\":"+String(timeOK()?"true":"false");
+ j+=",\"valid\":"+String(clockEvidenceTrusted()?"true":"false");
  j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
  j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
- j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false")+"}";
+ j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false");
+ j+=",\"ntp_sync_this_boot\":"+String(ntpSyncedThisBoot.load()?"true":"false");
+ j+=",\"trusted_this_boot\":"+String(clockEvidenceTrusted()?"true":"false")+"}";
  j+=",\"lab\":"+(srv.hasArg("share")?String("null"):labJson());
  j+=",\"persistent_diagnostics\":{\"boot_history\":[";
  for(uint8_t i=0;i<bootHistoryCount;i++){
