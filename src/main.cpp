@@ -651,7 +651,7 @@ static void statusJson(){
  j+=",\"ip\":\"192.168.4.1\",\"homeIp\":"+jsonQuote(w?WiFi.localIP().toString():String(""));
  j+=",\"homeSsid\":"+jsonQuote(w?WiFi.SSID():storedSSID);
  j+=",\"wifiRssi\":"+String(w?WiFi.RSSI():0);
- j+=",\"deviceClockEpoch\":"+String(uint32_t(time(nullptr)));
+ j+=",\"deviceClockEpoch\":"+(clockEvidenceTrusted()?String(uint32_t(time(nullptr))):String("null"));
  j+=",\"wifiStatus\":"+jsonQuote(w?"Router conectado":"No conectado")+",\"wifiConnecting\":false,\"wifiStage\":"+jsonQuote(w?"CONECTADA":"SIN_RED");
  j+=",\"manual\":"+String(pezManual?"true":"false")+",\"power\":"+String(p.brightness>0?"true":"false");
  j+=",\"rgb\":["+String(p.r)+","+String(p.g)+","+String(p.b)+"],\"brightness\":"+String(p.brightness);
@@ -906,9 +906,9 @@ static void diagnosticJson(){
   (pvOffObligation&&pvOffFailures>=3); // Los errores BLE ya recuperados son historicos.
  bool historical=badReset||m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
  String j;j.reserve(22000);
- j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
+ j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(clockEvidenceTrusted()?dateTime():String("Hora pendiente de sincronizacion"));
  j+=",\"boot_id\":"+String(previousBootCount+1);
- j+=",\"generated_epoch\":"+(timeOK()?String((uint32_t)time(nullptr)):String("null"));
+ j+=",\"generated_epoch\":"+(clockEvidenceTrusted()?String((uint32_t)time(nullptr)):String("null"));
  j+=",\"share_safe\":"+String(srv.hasArg("share")?"true":"false");
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+
   jsonQuote(critical?"incidencia_actual":historical?"avisos_historicos":"sin_avisos_actuales");
@@ -1043,7 +1043,7 @@ static void diagnosticJson(){
  if(!cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse)chLevel=cielo96::diag::Level::NotTested;
  j+=",\"professional\":{\"levels\":{\"correct\":\"CORRECTO\",\"failed\":\"FALLO\",\"warning\":\"ADVERTENCIA\",\"not_tested\":\"NO_PROBADO\",\"no_data\":\"SIN_DATOS\"}";
  j+=",\"wifi\":"+jsonQuote(wifi?"CORRECTO":"FALLO");
- j+=",\"clock\":"+jsonQuote(timeOK()?"CORRECTO":"SIN_DATOS");
+ j+=",\"clock\":"+jsonQuote(clockEvidenceTrusted()?"CORRECTO":"SIN_DATOS");
  j+=",\"pez_verde\":"+jsonQuote(cielo96::diag::name(pvLevel));
  j+=",\"chihiros\":"+jsonQuote(cielo96::diag::name(chLevel));
  j+=",\"optical_feedback\":\"NO_PROBADO\"";
@@ -1072,13 +1072,13 @@ static void diagnosticJson(){
  time_t currentEpoch=time(nullptr);
  struct tm clockLocal{};
  char clockOffset[8]="";
- if(timeOK()){
+ if(clockEvidenceTrusted()){
   localtime_r(&currentEpoch,&clockLocal);
   strftime(clockOffset,sizeof(clockOffset),"%z",&clockLocal);
  }
  j+=",\"recent_restarts\":"+restartHistoryJson();
  j+=",\"daily_monitoring\":"+cieloTrendJson();
- j+=",\"clock_diagnostics\":{\"epoch\":"+String((uint32_t)currentEpoch);
+ j+=",\"clock_diagnostics\":{\"epoch\":"+(clockEvidenceTrusted()?String((uint32_t)currentEpoch):String("null"));
  j+=",\"valid\":"+String(clockEvidenceTrusted()?"true":"false");
  j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
  j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
@@ -2440,7 +2440,7 @@ void loop(){
  }
  if(currentBootMarkedHealthy&&bleReady&&!cieloWatchdogTripped&&
     (!pvControlDesired||cieloLastSuccessfulPvAt>0)&&(!cieloAlwaysOn||cieloLastSuccessfulChAt>0)){
-  if(cielo96::restarts::recovered(restartJournal,previousBootCount+1,timeOK()?uint32_t(time(nullptr)):0))restartJournalDirty=true;
+  if(cielo96::restarts::recovered(restartJournal,previousBootCount+1,clockEvidenceTrusted()?uint32_t(time(nullptr)):0))restartJournalDirty=true;
  }
  flushRestartJournal();
  flushJournal(); // nunca escribir en flash por polling de diagnóstico
