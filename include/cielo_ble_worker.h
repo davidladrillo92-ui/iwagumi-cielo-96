@@ -70,5 +70,12 @@ struct BleWorkerSnapshot {
 };
 BleWorkerSnapshot ble_worker_snapshot();
 BleWorkerSnapshot ble_recovery_snapshot();
+// Independent passive ages; unlike ble_recovery_snapshot() does not mask
+// worker heartbeat with an expired SDK connection's cleanup age.
+struct BleBlockageSnapshot {
+ BleWorkerSnapshot worker{};
+ uint32_t pending_pv_age_ms=0,pending_ch_age_ms=0;
+};
+BleBlockageSnapshot ble_blockage_snapshot();
 const char* ble_worker_phase_name(uint8_t phase);
 }
