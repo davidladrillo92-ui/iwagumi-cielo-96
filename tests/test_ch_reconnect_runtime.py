@@ -11,7 +11,7 @@ unsigned records=0;void record(const char*,const char*){records++;}
 cielo96::autonomy::Retry chReconnect;
 bool cieloAlwaysOn=true,bleReady=true,rescueOpen=false,bleRecoveryBootPvSafe=false;
 bool currentBootMarkedHealthy=true,otaBusy=false,customResumePending=false;
-bool cieloChReturnPending=false,cieloChAwaitResponse=false,healthy=true,clockOk=true,labArmed=false;
+bool cieloChReturnPending=false,cieloChAwaitResponse=false,chSelectiveHold=false,healthy=true,clockOk=true,labArmed=false;
 bool timeOK(){return clockOk;}bool otaBleHealthy(){return healthy;}bool labTxEnabled(){return labArmed;}
 struct {bool scanPending=false,probePending=false;} lab;
 struct {bool valid=true;} profile;
@@ -31,7 +31,7 @@ int main(){
  }
  otaTxn.phase=OtaPhase::Idle;
  for(bool*guard:{&rescueOpen,&bleRecoveryBootPvSafe,&otaBusy,&lab.scanPending,&lab.probePending,
-  &customResumePending,&cieloChReturnPending,&cieloChAwaitResponse,&queue.active,&queue.pendingCh,&labArmed}){
+  &customResumePending,&cieloChReturnPending,&cieloChAwaitResponse,&chSelectiveHold,&queue.active,&queue.pendingCh,&labArmed}){
   *guard=true;chReconnectTick();assert(records==0);*guard=false;
  }
  for(bool*guard:{&bleReady,&currentBootMarkedHealthy,&healthy,&clockOk,&profile.valid}){
