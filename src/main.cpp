@@ -135,6 +135,7 @@ static uint32_t mdnsLastAttempt=0;
 static bool phoneSyncedThisBoot=false;
 static std::atomic<bool> ntpSyncedThisBoot{false};
 static void cieloNtpSynced(struct timeval*){ntpSyncedThisBoot.store(true);}
+static bool clockEvidenceTrusted();
 static bool wifiCoexistReady(){
  wifi_ps_type_t ps=WIFI_PS_NONE;
  return esp_wifi_get_ps(&ps)==ESP_OK && ps!=WIFI_PS_NONE;
