@@ -1,0 +1,78 @@
+IWAGUMI CIELO · VIGILANTE 4.0.1-SIERRA
+Adaptación del instalador Sierra V3 que ya utilizas
+================================================
+
+Para tu iMac con macOS Sierra 10.12.6 y Python 3.9.
+No necesita Homebrew, pip, entorno virtual ni un macOS más reciente.
+No instala firmware ni cambia las luces o sus curvas.
+
+ACTUALIZAR TU V3
+1. Descomprime CIELO_VIGILANCIA_iMAC_SIERRA_V4.zip en Descargas del iMac.
+2. Abre Terminal y ejecuta:
+   bash "$HOME/Downloads/CIELO_VIGILANCIA_iMAC_SIERRA_V4/ACTUALIZAR.command"
+3. No debes volver a introducir token ni emparejar el bot.
+4. Espera un minuto y ejecuta:
+   bash "$HOME/Downloads/CIELO_VIGILANCIA_iMAC_SIERRA_V4/CONSULTAR_ESTADO.command"
+   Debe mostrar «Versión del último proceso: 4.0.1-SIERRA» y una muestra reciente.
+
+La actualización identifica la instalación V3, comprueba certificados y formato
+del historial, prepara los archivos, detiene el servicio anterior y espera a que
+libere su bloqueo. Crea copia de código, configuración, LaunchAgent y SQLite.
+Sustituye el código y reactiva el mismo servicio. No cambia el config.json ni
+las tablas del historial. Ante un fallo de carga restaura el código anterior.
+
+DATOS CONSERVADOS
+- Mismo token y chat de Telegram, sin mostrarlos ni solicitarlos otra vez.
+- Misma IP/dirección del ATOM.
+- Mismo historial.sqlite, meta de seguimiento y avisos pendientes del V3.
+- Mismo LaunchAgent es.iwagumi.cielo.vigilancia y carpeta de Application Support.
+- Copias privadas en IWAGUMI CIELO Vigilancia/backups.
+
+NOVEDADES
+Aviso desde el primer reinicio, incluso si el ATOM ya se recuperó entre consultas.
+Reconstrucción de hasta ocho arranques si el firmware ofrece ese historial;
+con SIMPLE1 también detecta cada cambio observado de boot_id, sin exigir tres.
+Detección de retroceso de uptime, deduplicación persistente, mensajes distintos
+de recuperación y resumen con reinicios, recuperaciones y períodos SIN DATOS.
+Madrid y cambios de hora gestionados sin instalar zoneinfo/tzdata.
+Se elimina el registro duplicado y se mantiene cadencia monotónica de 60 s.
+
+SIERRA Y HTTPS
+Se busca específicamente Python 3.9, incluida su instalación Framework habitual.
+No se utiliza el Python 2.7 del sistema. Los certificados Mozilla son exactamente
+los del V3 que ya funcionaba: se verifica su SHA-256 antes de usarlos.
+Telegram usa TLS 1.2 o posterior y validación de certificado/nombre del servidor.
+No se desactiva SSL ni se depende de los certificados antiguos del sistema.
+Puedes usar PROBAR_TELEGRAM.command: comprueba HTTPS sin token y sin enviar avisos.
+
+VOLVER ATRÁS
+VOLVER_A_VERSION_ANTERIOR.command restaura el código y el servicio de la última
+copia válida. Conserva la configuración actual y no rebobina el histórico.
+DETENER_VIGILANCIA.command detiene el servicio sin borrar nada.
+INSTALAR.command actualiza si detecta una configuración existente; solo realiza
+emparejamiento de Telegram cuando es una instalación nueva.
+
+REQUIERE EL IMAC ENCENDIDO, CON SESIÓN INICIADA E INTERNET
+Se arranca al iniciar sesión y caffeinate evita el reposo por inactividad mientras
+se ejecuta. No anula una suspensión manual, apagado o pérdida de Internet.
+GATT no mide la luz física. El iMac no puede enviar avisos mientras está apagado.
+
+VALIDACIÓN
+Probado sobre instalación V3 simulada con su mismo formato SQLite: conservación
+de configuración e histórico, copia consistente, rollback, bloqueo, certificados,
+primer reinicio y deduplicación, resumen sin datos y día de 25 horas de Madrid.
+Código y pruebas ejecutables con Python 3.9; comandos limitados a Bash 3.2 y
+launchctl load/unload disponibles en Sierra. No se ha ejecutado todavía en tu
+Mac real; CONSULTAR_ESTADO permite verificar la puesta en marcha al instalar.
+
+Origen de la base: CIELO_VIGILANCIA_iMAC_SIERRA_V3.zip, proporcionado anteriormente.
+Certificados: mismo telegram_ca.pem, SHA-256
+7cef540c6af3bf0a3c7d0070bd3fd7aae34f8aa805b408d1c27a01c8aeb305df
+Licencia del bundle: LICENSE_CERTIFICADOS.txt.
+
+V4.0.1: respeta el límite de comunicación reciente publicado por RECOVERY3
+(90 s); en firmware anterior mantiene 650 s. La recuperación informa de
+envíos BLE registrados, sin asegurar que la luz haya respondido.
+ENVIAR_PRUEBA_TELEGRAM.command envía un mensaje real PRUEBA REAL al bot
+con la configuración instalada. PROBAR_TELEGRAM.command sigue comprobando
+solo HTTPS. La actualización no envía ninguna prueba automáticamente.

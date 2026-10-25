@@ -27,3 +27,6 @@ monitor/config.json
 tests/test_ble_match
 dist/
 build-src/
+
+# Private build copy of the pinned Arduino BLE transport.
+.cielo-generated/

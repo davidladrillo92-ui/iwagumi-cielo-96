@@ -1,0 +1,8 @@
+{
+  "RTOS.h": "7c9dd6640be90f906cbcebf9db3a86fd9a189b49c83b57c053eee80a42f19f64",
+  "BLERemoteCharacteristic.h": "4ca27004ebea644cd5e2331f67b3ab095cb69d0f880e2e1dc2dac2051d76ef66",
+  "BLEClient.cpp": "b03c1b9f94c3da6282d116eff77ed8d2e3f3c732e84501c6512533e2858b3a37",
+  "BLEClient.h": "ed365fcd616b66ffc8490b3cdee23caea00fec020b82c4f77e799689a26a5002",
+  "FreeRTOS.cpp": "76a9589ad41b6087e2792fb9c30f15885a82297d94370054ea3948e67971384d",
+  "BLERemoteCharacteristic.cpp": "6f821c19190c0085fe952991f52a31c77d26b2b2ce250d1b8414a0aaec20ef42"
+}

@@ -15,11 +15,14 @@ void record(const char*,const string&){}
 struct Esp {unsigned calls=0;void restart(){calls++;}} ESP;
 namespace cielo96 {
 struct Snapshot{unsigned heartbeat_age_ms=1359609,phase_age_ms=1358846;unsigned char phase=4,device=0;} sample;
-Snapshot ble_worker_snapshot(){return sample;}
+Snapshot ble_recovery_snapshot(){return sample;}
 const char* ble_worker_phase_name(unsigned char){return "CONEXION";}
 }
 enum class OtaPhase {Idle,Preparing,Ready,Uploading,Completed,Failed};
 struct {OtaPhase phase=OtaPhase::Idle;} otaTxn;
+bool timeOK(){return true;}
+unsigned long time(void*){return 1792750000;}
+unsigned previousBootCount=111;
 bool otaBusy=false,rescueOpen=false,bleReady=true,bleRecoveryExhausted=false;
 cielo96::recovery::Retained bleRecoveryRtc{};
 cielo96::recovery::Supervisor bleSupervisor;

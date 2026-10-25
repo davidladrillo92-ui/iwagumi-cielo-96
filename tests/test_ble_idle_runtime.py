@@ -6,6 +6,8 @@ constant=re.search(r'static constexpr uint32_t BLE_IDLE_RELEASE_MS=\d+UL;',s).gr
 a=s.index('void releaseIdleLinks(){');f=s[a:s.index('uint16_t chMessageId=',a)]
 source=r'''
 #include <stdint.h>
+#include <atomic>
+std::atomic<bool> keepLink[2]{};
 #include <cassert>
 uint32_t clockNow=0;uint32_t millis(){return clockNow;}
 uint32_t linkTouched[2]{};unsigned releases[2]{};

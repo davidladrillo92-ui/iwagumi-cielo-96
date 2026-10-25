@@ -1,3 +1,10 @@
+# iMac de David · macOS Sierra 10.12.6
+
+Usar el paquete específico [macos_sierra](macos_sierra/LEEME.txt), versión
+4.0.0-SIERRA. Se ha recuperado la base V3 real y se conserva su configuración,
+SQLite, token/chat y LaunchAgent. Ejecutar ACTUALIZAR.command; no usar el
+actualizador genérico de paquete sobre la instalación V3.
+
 # LAN1: configuración actual
 
 La configuración de ejemplo usa HTTP local (`local_lan: true`), sin clave de lectura ni certificado. El panel local abre sin contraseña; las instrucciones TLS siguientes describen el modo anterior opcional. Consulte [LAN1](../docs/LAN1_ACCESO_SIMPLE.md) antes de instalar o desplegar.
@@ -11,7 +18,7 @@ No hay servicio remoto contratado/activado ni mensajes enviados por esta entrega
 
 ## Preparación
 
-Requisitos: Python 3.11+, Linux/macOS moderno, acceso HTTPS al ATOM candidato.
+Requisitos del paquete genérico: Python 3.9+, Linux/macOS, acceso HTTPS al ATOM candidato.
 Instalar el observador no instala firmware. RC3 no tiene `/api/monitor`:
 primero debe validarse la candidata en banco; no configurar tokens administradores
 como sustituto del token de lectura.

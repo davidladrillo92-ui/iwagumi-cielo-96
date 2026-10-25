@@ -7,6 +7,7 @@
 #include <BLEClient.h>
 #include <BLERemoteCharacteristic.h>
 #include <string.h>
+#include <atomic>
 
 namespace cielo96 {
 namespace {
@@ -24,11 +25,23 @@ struct Target {
 Target targets[2]={{codec::PV_NAME,codec::PV_SVC,codec::PV_TX},
                    {codec::CH_NAME,codec::CH_SVC,codec::CH_TX}};
 QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanResponses=nullptr,probeRequests=nullptr,probeResponses=nullptr,releaseRequests=nullptr,customRequests=nullptr,customResults=nullptr;
-struct SharedLink { volatile bool connected=false;volatile bool released=false;volatile uint32_t releases=0;volatile uint32_t lastDisconnect=0;};
+struct SharedLink { std::atomic<bool> connected{false},released{false},idleReleased{false},expectedRelease{false};std::atomic<uint32_t> releases{0},lastDisconnect{0},pendingSince{0};};
 SharedLink shared[2]{};
+std::atomic<bool> pvOffRequired{false};
+bool offWrittenInCurrentOperation=false;
+struct LinkCallbacks: BLEClientCallbacks {
+ uint8_t device;explicit LinkCallbacks(uint8_t d):device(d){}
+ void onConnect(BLEClient*) override {shared[device].connected=true;shared[device].idleReleased=false;}
+ void onDisconnect(BLEClient*) override {
+  shared[device].connected=false;shared[device].lastDisconnect=millis();
+  if(!shared[device].expectedRelease.exchange(false))shared[device].idleReleased=false;
+ }
+};
+LinkCallbacks linkCallbacks[2]={LinkCallbacks(0),LinkCallbacks(1)};
+
 // Escritos solo desde la tarea BLE; enteros de 32 bits leídos pasivamente desde HTTP.
 struct PhaseCounters {
- volatile uint32_t connect_count=0,connect_failed=0,connect_last=0,connect_max=0;
+ volatile uint32_t connect_count=0,connect_failed=0,connect_last=0,connect_max=0,connect_timeouts=0;
  volatile uint32_t write_count=0,write_failed=0,write_last=0,write_max=0;
  volatile uint32_t disconnect_count=0,disconnect_last=0,disconnect_max=0;
 };
@@ -45,12 +58,17 @@ volatile uint32_t lastHeartbeat=0;
 volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
 volatile uint8_t workerDevice=255;
 volatile uint32_t phaseEnteredAt=0;
+portMUX_TYPE snapshotMux=portMUX_INITIALIZER_UNLOCKED;
+void touchHeartbeat(){portENTER_CRITICAL(&snapshotMux);lastHeartbeat=millis();portEXIT_CRITICAL(&snapshotMux);}
 void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
+ portENTER_CRITICAL(&snapshotMux);
  workerDevice=dev;phaseEnteredAt=millis();workerPhase=static_cast<uint8_t>(p);
+ portEXIT_CRITICAL(&snapshotMux);
 }
 void releaseTarget(uint8_t device,bool userRequested){
  setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  Target& t=targets[device];
+ shared[device].expectedRelease=true;shared[device].idleReleased=!userRequested;
  if(t.client && t.client->isConnected()){
   const uint32_t started=millis();
   t.client->disconnect();
@@ -65,6 +83,19 @@ void releaseTarget(uint8_t device,bool userRequested){
  shared[device].releases++;
  shared[device].lastDisconnect=millis();
  linkTouched[device]=0;
+}
+void reconcileLinks(){
+ for(uint8_t device=0;device<2;device++){
+  Target& t=targets[device];
+  const bool connected=t.client&&t.client->isConnected();
+  if(!connected){
+   if(shared[device].connected){shared[device].lastDisconnect=millis();shared[device].idleReleased=false;}
+   shared[device].connected=false;t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
+  }else shared[device].connected=t.writer!=nullptr;
+  if(t.client&&t.client->cieloConnectPending()){
+   if(!shared[device].pendingSince)shared[device].pendingSince=millis();
+  }else shared[device].pendingSince=0;
+ }
 }
 void releaseIdleLinks(){
  uint32_t now=millis();
@@ -99,9 +130,10 @@ bool connect(Target& t,const char*&err){
   shared[&t==&targets[0]?0:1].connected=true;
   return true;
  }
- t.writer=nullptr;t.manualEntered=false;
+ t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
+ if(t.client&&t.client->cieloConnectPending()){err="BLE_CONNECT_CLEANUP_PENDING";return false;}
  if(!locate(t)){err="BLE_DEVICE_NOT_FOUND";return false;}
- if(!t.client)t.client=BLEDevice::createClient();
+ if(!t.client){t.client=BLEDevice::createClient();if(t.client)t.client->setClientCallbacks(&linkCallbacks[&t==&targets[0]?0:1]);}
  if(!t.client){err="BLE_CLIENT_CREATE";return false;}
  // connect(BLEAddress) on Arduino-ESP32 2.x; this may block, isolated from HTTP.
  BLEAddress address(std::string(t.address.c_str()));
@@ -109,10 +141,11 @@ bool connect(Target& t,const char*&err){
  const uint32_t started=millis();
  bool connected=t.client->connect(address,t.addressType);
  PhaseCounters& metrics=phaseCounters[&t==&targets[0]?0:1];
- metrics.connect_count++;if(!connected)metrics.connect_failed++;
+ metrics.connect_count++;if(!connected){metrics.connect_failed++;if(t.client->cieloConnectExpired())metrics.connect_timeouts++;}
  metricTime(metrics.connect_last,metrics.connect_max,millis()-started);
  if(!connected){
-  err="BLE_CONNECT_FAILED";t.addressKnown=false;return false;
+  err=t.client->cieloConnectExpired()?"BLE_CONNECT_TIMEOUT":"BLE_CONNECT_FAILED";
+  t.addressKnown=false;shared[&t==&targets[0]?0:1].connected=false;return false;
  }
  setWorkerPhase(BleWorkerPhase::Service,&t==&targets[0]?0:1);
  BLERemoteService* service=t.client->getService(BLEUUID(t.service));
@@ -131,22 +164,29 @@ bool put(Target& t,const uint8_t* data,size_t n,const char*&err){
  // Arduino BLE writeValue returns void: transport accepted != optical ACK!
  setWorkerPhase(BleWorkerPhase::Writing,&t==&targets[0]?0:1);
  const uint32_t writeStarted=millis();
- t.writer->writeValue(const_cast<uint8_t*>(data),n,t.writer->canWrite());
+ const bool accepted=t.writer->cieloWriteValue(const_cast<uint8_t*>(data),n,t.writer->canWrite());
  PhaseCounters& metrics=phaseCounters[&t==&targets[0]?0:1];metrics.write_count++;
  metricTime(metrics.write_last,metrics.write_max,millis()-writeStarted);
  if(writesInCurrentOperation<255)writesInCurrentOperation++; // GATT write call, not optical acknowledgement
- if(!t.client->isConnected()){metrics.write_failed++;err="BLE_DISCONNECTED_DURING_WRITE";t.writer=nullptr;return false;}
+ if(!accepted||!t.client->isConnected()){metrics.write_failed++;err="GATT_WRITE_FAILED";t.writer=nullptr;t.client->disconnect();return false;}
  vTaskDelay(pdMS_TO_TICKS(30));
  return true;
 }
 bool sendPez(const cielo::ble::Command& c,const char*&err){
  Target&t=targets[0];if(!connect(t,err))return false;
  uint8_t frame[9];
- if(c.brightness==0){codec::pv_power(false,frame);if(!put(t,frame,9,err))return false;t.pvOn=false;return true;}
- if(!t.pvOn){codec::pv_power(true,frame);if(!put(t,frame,9,err))return false;t.pvOn=true;}
+ auto sendOff=[&](){codec::pv_power(false,frame);if(!put(t,frame,9,err))return false;
+  t.pvOn=false;offWrittenInCurrentOperation=true;return true;};
+ if(c.brightness==0||pvOffRequired.load())return sendOff();
+ // The controller can be switched off externally while the BLE link survives.
+ // Reassert the verified ON frame instead of trusting a cached power state.
+ codec::pv_power(true,frame);if(!put(t,frame,9,err))return false;t.pvOn=true;
+ if(pvOffRequired.load())return sendOff();
  codec::pv_color(c.r,c.g,c.b,frame);if(!put(t,frame,9,err))return false;
+ if(pvOffRequired.load())return sendOff();
  codec::pv_brightness(c.brightness,frame);return put(t,frame,9,err);
 }
+
 bool sendCh(const cielo::ble::Command& c,const char*&err){
  Target&t=targets[1];if(!connect(t,err))return false;
  uint8_t frame[32];size_t size=0;
@@ -215,7 +255,7 @@ void probeGATT(uint8_t device){
  if(!locate(t)){
   reason="BLE_DEVICE_NOT_FOUND";
  }else{
-  if(!t.client)t.client=BLEDevice::createClient();
+  if(!t.client){t.client=BLEDevice::createClient();if(t.client)t.client->setClientCallbacks(&linkCallbacks[&t==&targets[0]?0:1]);}
   if(!t.client){reason="BLE_CLIENT_CREATE";}
   else {
    BLEAddress address(std::string(t.address.c_str()));
@@ -269,39 +309,43 @@ void resumeCustomCurve(){
 void task(void*){
  setWorkerPhase(BleWorkerPhase::Starting);
  BLEDevice::init("IWAGUMI-CIELO-96");
- lastHeartbeat=millis();
+ touchHeartbeat();
  for(;;){
   setWorkerPhase(BleWorkerPhase::Idle);
-  lastHeartbeat=millis();
+  touchHeartbeat();
   uint8_t probeToken=0;
   uint8_t releaseToken=0;
   while(xQueueReceive(releaseRequests,&releaseToken,0)==pdTRUE){
    if(releaseToken<2)releaseTarget(releaseToken,true);
   }
+  reconcileLinks();
   releaseIdleLinks();
   uint8_t customToken=0;
   if(xQueueReceive(customRequests,&customToken,0)==pdTRUE){
-   resumeCustomCurve();lastHeartbeat=millis();
+   resumeCustomCurve();touchHeartbeat();
   }
   if(xQueueReceive(probeRequests,&probeToken,0)==pdTRUE){
-   probeGATT(probeToken);lastHeartbeat=millis();
+   probeGATT(probeToken);touchHeartbeat();
   }
   uint8_t scanToken=0;
   if(xQueueReceive(scanRequests,&scanToken,0)==pdTRUE){
-   scanDiscover();lastHeartbeat=millis();
+   scanDiscover();touchHeartbeat();
   }
   cielo::ble::Command c{};
   // Block without consuming CPU; heartbeat updates every second when idle.
-  if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){lastHeartbeat=millis();continue;}
+  if(xQueueReceive(requests,&c,pdMS_TO_TICKS(1000))!=pdTRUE){touchHeartbeat();continue;}
   setWorkerPhase(BleWorkerPhase::Sending,static_cast<uint8_t>(c.device));
-  uint32_t started=millis();writesInCurrentOperation=0;const char*err="OK";
+  uint32_t started=millis();writesInCurrentOperation=0;offWrittenInCurrentOperation=false;const char*err="OK";
   bool success=(c.device==cielo::ble::Device::PezVerde)?sendPez(c,err):sendCh(c,err);
   BleResult res{};res.sequence=c.sequence;res.device=static_cast<uint8_t>(c.device);res.action=static_cast<uint8_t>(c.action);
-  res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);
+  res.off_sent=offWrittenInCurrentOperation;res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);
   // Single reader: if response queue is full, drop oldest after noting failure upstream.
   if(xQueueSend(responses,&res,0)!=pdTRUE){BleResult discard;xQueueReceive(responses,&discard,0);xQueueSend(responses,&res,0);}
-  lastHeartbeat=millis();
-  linkTouched[static_cast<uint8_t>(c.device)==1?1:0]=millis();
+  touchHeartbeat();
+  const uint8_t device=static_cast<uint8_t>(c.device)==1?1:0;
+  linkTouched[device]=millis();
+  // Bounded transactions: always leave the controller free after the full batch.
+  if(!targets[device].client || !targets[device].client->cieloConnectPending())releaseTarget(device,false);
  }
 }
 }
@@ -343,6 +387,9 @@ BleLinkStatus ble_link_status(uint8_t device){
  BleLinkStatus r{};
  if(device>1)return r;
  r.connected=shared[device].connected;
+ r.idle_released=shared[device].idleReleased;
+ const uint32_t pending=shared[device].pendingSince;
+ r.connection_pending=pending!=0;r.pending_age_ms=pending?uint32_t(millis()-pending):0;
  r.released_to_app=shared[device].released;
  r.release_count=shared[device].releases;
  r.last_disconnect_ms=shared[device].lastDisconnect;
@@ -356,13 +403,15 @@ bool ble_probe_result(BleProbeResult& out){
 }
 bool ble_scan_request(){uint8_t token=1;return scanRequests && xQueueSend(scanRequests,&token,0)==pdTRUE;}
 bool ble_scan_result(BleScanResult& out){return scanResponses && xQueueReceive(scanResponses,&out,0)==pdTRUE;}
+void ble_set_pv_off_required(bool value){pvOffRequired.store(value);}
+void ble_keep_links(bool,bool){} // Transactions are released after every batch.
 bool ble_dispatch(const cielo::ble::Command& c){return requests && xQueueSend(requests,&c,0)==pdTRUE;}
 bool ble_result(BleResult& r){return responses && xQueueReceive(responses,&r,0)==pdTRUE;}
 uint32_t ble_last_heartbeat(){return lastHeartbeat;}
 BleTransportStats ble_transport_stats(uint8_t device){
  BleTransportStats r{};if(device>1)return r;
  const PhaseCounters& m=phaseCounters[device];
- r.connect_count=m.connect_count;r.connect_failed=m.connect_failed;
+ r.connect_count=m.connect_count;r.connect_failed=m.connect_failed;r.connect_timeouts=m.connect_timeouts;
  r.connect_last_ms=m.connect_last;r.connect_max_ms=m.connect_max;
  r.write_count=m.write_count;r.write_failed=m.write_failed;
  r.write_last_ms=m.write_last;r.write_max_ms=m.write_max;
@@ -373,11 +422,24 @@ BleTransportStats ble_transport_stats(uint8_t device){
 uint32_t ble_request_queue_depth(){return requests?uxQueueMessagesWaiting(requests):0;}
 BleWorkerSnapshot ble_worker_snapshot(){
  BleWorkerSnapshot s{};
+ portENTER_CRITICAL(&snapshotMux);
  const uint32_t now=millis();
  s.phase=workerPhase;s.device=workerDevice;
  s.phase_age_ms=now-phaseEnteredAt;
  s.heartbeat_age_ms=now-lastHeartbeat;
+ portEXIT_CRITICAL(&snapshotMux);
  s.in_operation=s.phase!=static_cast<uint8_t>(BleWorkerPhase::Idle);
+ return s;
+}
+// A pending expired SDK request is separate from a hung worker. The recovery
+// supervisor alone uses its age; normal HTTP telemetry keeps the real heartbeat.
+BleWorkerSnapshot ble_recovery_snapshot(){
+ auto s=ble_worker_snapshot();
+ for(uint8_t device=0;device<2;device++){
+  const uint32_t started=shared[device].pendingSince;
+  const uint32_t age=started?uint32_t(millis()-started):0;
+  if(age>s.phase_age_ms){s.phase=static_cast<uint8_t>(BleWorkerPhase::Connecting);s.device=device;s.phase_age_ms=age;s.heartbeat_age_ms=age;}
+ }
  return s;
 }
 const char* ble_worker_phase_name(uint8_t p){

@@ -3,7 +3,7 @@
 #include "cielo_ble_queue.h"
 namespace cielo96 {
 // Una sola tarea BLE propietaria del stack, aislada del servidor web.
-struct BleResult {uint32_t sequence; bool success;uint32_t duration_ms;uint8_t device;uint8_t action;uint8_t write_calls;char reason[50];};
+struct BleResult {uint32_t sequence; bool success;bool off_sent;uint32_t duration_ms;uint8_t device;uint8_t action;uint8_t write_calls;char reason[50];};
 // Descubrimiento BLE activo (scan responses), sin conexiones ni escrituras GATT.
 struct BleScanResult {
  uint32_t elapsed_ms=0; uint32_t completed_at_ms=0;
@@ -25,7 +25,8 @@ struct BleProbeResult {
 // Ceder el control al telefono sin modificar RGB ni horarios.
 // La desconexion es propiedad exclusiva del worker BLE.
 struct BleLinkStatus {
- bool connected=false;
+ bool connected=false,idle_released=false,connection_pending=false;
+ uint32_t pending_age_ms=0;
  bool released_to_app=false;
  uint32_t release_count=0;
  uint32_t last_disconnect_ms=0;
@@ -41,6 +42,8 @@ bool ble_probe_result(BleProbeResult& result);
 bool ble_scan_request();
 bool ble_scan_result(BleScanResult& out);
 bool ble_begin();
+void ble_set_pv_off_required(bool value);
+void ble_keep_links(bool pv,bool ch);
 bool ble_dispatch(const cielo::ble::Command& c);
 bool ble_result(BleResult& out);
 uint32_t ble_last_heartbeat();
@@ -55,6 +58,7 @@ struct BleTransportStats {
  uint32_t connect_count=0,connect_failed=0,connect_last_ms=0,connect_max_ms=0;
  uint32_t write_count=0,write_failed=0,write_last_ms=0,write_max_ms=0;
  uint32_t disconnect_count=0,disconnect_last_ms=0,disconnect_max_ms=0;
+ uint32_t connect_timeouts=0;int last_stack_error=0;
 };
 BleTransportStats ble_transport_stats(uint8_t device);
 uint32_t ble_request_queue_depth();
@@ -65,5 +69,6 @@ struct BleWorkerSnapshot {
  bool in_operation=false;
 };
 BleWorkerSnapshot ble_worker_snapshot();
+BleWorkerSnapshot ble_recovery_snapshot();
 const char* ble_worker_phase_name(uint8_t phase);
 }
