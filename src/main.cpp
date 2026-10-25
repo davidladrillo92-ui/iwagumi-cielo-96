@@ -2371,8 +2371,9 @@ void loop(){
  }
  // Fast daytime PV restoration AFTER OFF GATT and valid current curve.
  // CH return is deferred only briefly, and PV is never allowed to bypass night OFF.
- const bool pvEarlySafe=bleRecoveryBoot && !otaCandidateBoot && millis()-bootMs>=45000UL &&
-    WiFi.status()==WL_CONNECTED && wifiCoexistReady() && !cieloWatchdogTripped && !bleRecoveryExhausted;
+ const bool pvEarlySafe=cielo96::pvday::early_boot_ready(bleRecoveryBoot,otaCandidateBoot,
+    millis()-bootMs,WiFi.status()==WL_CONNECTED,wifiCoexistReady(),
+    cieloWatchdogTripped,bleRecoveryExhausted);
  if(pvControlDesired && cielo96::pvday::can_resume({
     bleRecoveryBootPvSafe,pvOffLastGatt!=0,(currentBootMarkedHealthy||pvEarlySafe),
     timeOK(),cielo96::profileValid(profile),bleReady,
