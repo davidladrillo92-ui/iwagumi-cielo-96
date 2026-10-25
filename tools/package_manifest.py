@@ -13,7 +13,7 @@ if not raw or len(raw)>0x330000 or raw[0]!=0xe9:raise ValueError('Imagen de apli
 # esp_image_header_t.chip_id a offset 12 (ESP32-S3=9).
 if int.from_bytes(raw[12:14],'little')!=9:raise ValueError('El BIN no identifica ESP32-S3')
 source=Path('src/main.cpp').read_text()
-match=re.search(r'\\bVERSION="([^"]+)"',source)
+match=re.search(r'\bVERSION="([^"]+)"',source)
 if not match:raise ValueError('Versión del firmware no identificada')
 m={'schema':'cielo-build-v1','commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
    'source_branch':os.environ.get('GITHUB_HEAD_REF') or os.environ.get('GITHUB_REF_NAME') or 'local',
