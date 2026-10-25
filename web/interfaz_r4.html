@@ -213,7 +213,10 @@ function render(){
  const chiRecent=fresh&&!preview&&(v4.ch_link_connected!==false||v4.ch_link_idle_released===true)&&v4.chihiros_active&&v4.ch_online_recent&&Array.isArray(v4.ch_last_requested);
  const pvRecent=fresh&&!preview&&(v4.pv_link_connected!==false||v4.pv_link_idle_released===true)&&v4.pez_verde_active&&v4.pv_online_recent&&Array.isArray(v4.pv_last_requested);
  const chi=chiRecent?v4.ch_last_requested:chiPlan;
- const pez=pvRecent?v4.pv_last_requested:pvPlan;
+ // POWER OFF is independent from RGB. Do not present the last RGB as live brightness.
+ const pvOffConfirmed=!preview&&v4.pv_off_obligation===true&&v4.pv_safety_state==='APAGADO_GATT_OK';
+ const pvOffPending=!preview&&v4.pv_off_obligation===true&&!pvOffConfirmed;
+ const pez=pvOffConfirmed?[0,0,0,0]:pvOffPending?[0,0,0,0]:pvRecent?v4.pv_last_requested:pvPlan;
  const moment=scene(when);
  $('status').classList.toggle('offline',!fresh);
  $('statusText').textContent=!fresh?'Sin conexión':preview?'Simulación':'ATOM conectado';
@@ -221,7 +224,7 @@ function render(){
  $('momentSub').textContent=preview?'Vista previa · '+hourLabel(when):'';
  $('heroTime').textContent=hourLabel(when);
  const chiIsKnown=preview||!!(state.connected&&chiRecent);
- const pvIsKnown=preview||!!(state.connected&&pvRecent);
+ const pvIsKnown=preview||!!(state.connected&&(pvRecent||pvOffConfirmed));
  const chiRgb=(chiIsKnown?chi:[0,0,0]).map(v=>Math.round(v*2.55));
  const pvRgb=pvIsKnown?pez.slice(0,3):[0,0,0];
  const dimmedPv=pvRgb.map(v=>Math.round(v*(pez[3]||0)/100));
@@ -237,11 +240,12 @@ function render(){
  $('heroTint').style.setProperty('--ambient',ambient);
  $('heroTint').style.opacity=String(strength<5?.04:Math.min(.56,.12+strength/400));
  $('chiPct').textContent=chiIsKnown?Math.max(...chi)+'%':'—';
- $('pezPct').textContent=pvIsKnown?pez[3]+'%':'—';
+ $('pezPct').textContent=pvOffPending?'—':pvIsKnown?pez[3]+'%':'—';
+ $('pezPct').title=pvOffConfirmed?'Apagado aceptado por GATT; sin sensor óptico':pvOffPending?'Orden de apagado pendiente o sin confirmar':'Última consigna; luz física no medida';
  $('chiColor').style.background=rgb(...chiRgb);
  $('pezColor').style.background=rgb(...pvRgb);
  $('chiInfo').textContent=chiIsKnown?chi.join(' / '):'—';
- $('pezInfo').textContent=pvIsKnown?pvRgb.join(' / '):'—';
+ $('pezInfo').textContent=pvOffPending?'Apagado pendiente':pvIsKnown?pvRgb.join(' / '):'—';
  const lampState=(active,recent,errors,reconnecting=false,linked)=>preview?'Simulación':
   !fresh?'Sin comunicación':linked===false&&active?'Sin enlace BLE':reconnecting||errors>0?'Reconectando…':
   recent?'Conectado':active?'Sin verificar':v4.always_on?'Preparando…':'En pausa';
