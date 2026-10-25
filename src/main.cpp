@@ -94,6 +94,32 @@ static void tracePhase(TracePhase p){
 
 // Conservado solo entre reinicios de software; nunca borrar NVS para recuperar BLE.
 RTC_NOINIT_ATTR static cielo96::recovery::Retained bleRecoveryRtc;
+static constexpr uint32_t CIELO_BLE_RTC_TRACE_MAGIC=0xC1E10971UL;
+struct BleRtcPhaseTrace {
+ uint32_t magic,boot,count,check;
+ uint32_t at_ms[16],ordinal[16];
+ uint8_t phase[16],device[16];
+};
+RTC_NOINIT_ATTR static BleRtcPhaseTrace bleRtcPhaseTrace;
+static bool priorBleRtcTraceValid=false;
+static uint32_t bleRtcPhaseChecksum(const BleRtcPhaseTrace& t){
+ uint32_t check=CIELO_BLE_RTC_TRACE_MAGIC^t.boot^t.count^0x7A9207F3UL;
+ for(uint32_t i=0;i<t.count&&i<16;i++)
+  check^=t.at_ms[i]^t.ordinal[i]^(uint32_t(t.phase[i])<<8)^t.device[i];
+ return check;
+}
+static void saveBleRtcPhaseTrace(uint32_t boot){
+ const auto history=cielo96::ble_phase_history();
+ bleRtcPhaseTrace.magic=0;bleRtcPhaseTrace.boot=boot;bleRtcPhaseTrace.count=history.count;
+ for(uint32_t i=0;i<history.count&&i<16;i++){
+  const auto&e=history.events[i];
+  bleRtcPhaseTrace.at_ms[i]=e.at_ms;bleRtcPhaseTrace.ordinal[i]=e.ordinal;
+  bleRtcPhaseTrace.phase[i]=e.phase;bleRtcPhaseTrace.device[i]=e.device;
+ }
+ bleRtcPhaseTrace.check=bleRtcPhaseChecksum(bleRtcPhaseTrace);
+ bleRtcPhaseTrace.magic=CIELO_BLE_RTC_TRACE_MAGIC;
+}
+
 static cielo96::recovery::Supervisor bleSupervisor;
 static bool bleRecoveryBoot=false,bleRecoveryBootPvSafe=false,bleRecoveryExhausted=false;
 static WebServer srv(80);
