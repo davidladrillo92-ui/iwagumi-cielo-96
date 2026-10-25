@@ -431,6 +431,16 @@ BleWorkerSnapshot ble_worker_snapshot(){
  s.in_operation=s.phase!=static_cast<uint8_t>(BleWorkerPhase::Idle);
  return s;
 }
+BleBlockageSnapshot ble_blockage_snapshot(){
+ BleBlockageSnapshot result{};
+ result.worker=ble_worker_snapshot();
+ const uint32_t now=millis();
+ const uint32_t pv=shared[0].pendingSince.load();
+ const uint32_t ch=shared[1].pendingSince.load();
+ result.pending_pv_age_ms=pv?uint32_t(now-pv):0;
+ result.pending_ch_age_ms=ch?uint32_t(now-ch):0;
+ return result;
+}
 // A pending expired SDK request is separate from a hung worker. The recovery
 // supervisor alone uses its age; normal HTTP telemetry keeps the real heartbeat.
 BleWorkerSnapshot ble_recovery_snapshot(){
