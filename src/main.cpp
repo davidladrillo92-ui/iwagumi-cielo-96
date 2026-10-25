@@ -7,6 +7,8 @@
 #include <Update.h>
 #include <time.h>
 #include <sys/time.h>
+#include <atomic>
+#include <esp_sntp.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_wifi.h>
@@ -35,6 +37,7 @@
 #include "cielo_autonomy_policy.h"
 #include "cielo_restart_journal.h"
 #include "cielo_cadence_diagnostics.h"
+#include "cielo_clock_evidence.h"
 
 // TLS is not started in this LAN edition. Keep an explicit stack margin for HTTP/OTA.
 static constexpr size_t CIELO_LOOP_STACK_BYTES=16384;
@@ -53,7 +56,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.1-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.2-APP-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -130,6 +133,9 @@ static bool bleReady=false, profileRecovery=false, wifiApOn=false;
 static bool mdnsReady=false;
 static uint32_t mdnsLastAttempt=0;
 static bool phoneSyncedThisBoot=false;
+static std::atomic<bool> ntpSyncedThisBoot{false};
+static void cieloNtpSynced(struct timeval*){ntpSyncedThisBoot.store(true);}
+static bool clockEvidenceTrusted();
 static bool wifiCoexistReady(){
  wifi_ps_type_t ps=WIFI_PS_NONE;
  return esp_wifi_get_ps(&ps)==ESP_OK && ps!=WIFI_PS_NONE;
@@ -363,7 +369,7 @@ static void persistCritical(const char* name,const String& detail){
  }else{
   JournalEntry& e=journal.entries[journal.head];e=JournalEntry{};
   e.boot_id=previousBootCount+1;
-  time_t t=time(nullptr);e.utc_epoch=t>1700000000L?(uint32_t)t:0;
+  time_t t=time(nullptr);e.utc_epoch=clockEvidenceTrusted()?(uint32_t)t:0;
   snprintf(e.code,sizeof(e.code),"%s",name);e.repeats=1;
   journal.head=(journal.head+1)%8;
   if(journal.count<8)journal.count++;
@@ -388,8 +394,10 @@ static void jsonSend(int code,const String& s){++httpCount;srv.sendHeader("Cache
 static void fail(int code,const char*msg){jsonSend(code,String("{\"ok\":false,\"error\":")+jsonQuote(msg)+"}");}
 static void ok(){jsonSend(200,"{\"ok\":true}");}
 static bool timeOK(){return time(nullptr)>1700000000L;}
+static bool clockEvidenceTrusted(){return cielo96::clock_evidence::trusted_this_boot(
+ ntpSyncedThisBoot.load(),phoneSyncedThisBoot,uint32_t(time(nullptr)));}
 static void cieloTrendTick(){
- if(!cieloAlwaysOn || !timeOK())return;
+ if(!cieloAlwaysOn || !clockEvidenceTrusted())return;
  uint32_t now=millis();
  if(cieloTrendLast && now-cieloTrendLast<900000UL)return;
  cieloTrendLast=now;
@@ -638,12 +646,12 @@ static String cieloTrendJson(){
 static void statusJson(){
  auto p=desiredPv();auto c=desiredCh();bool w=WiFi.status()==WL_CONNECTED;
  String j;j.reserve(4500);
- j="{\"firmware\":\""+String(VERSION)+"\",\"ble\":"+String(bleReady?"true":"false")+",\"clockValid\":"+String(timeOK()?"true":"false");
- j+=",\"clock\":"+jsonQuote(dateTime())+",\"wifi\":"+(w?String("true"):String("false"));
+ j="{\"firmware\":\""+String(VERSION)+"\",\"ble\":"+String(bleReady?"true":"false")+",\"clockValid\":"+String(clockEvidenceTrusted()?"true":"false");
+ j+=",\"clock\":"+jsonQuote(clockEvidenceTrusted()?dateTime():String("Hora pendiente de sincronizacion"))+",\"wifi\":"+(w?String("true"):String("false"));
  j+=",\"ip\":\"192.168.4.1\",\"homeIp\":"+jsonQuote(w?WiFi.localIP().toString():String(""));
  j+=",\"homeSsid\":"+jsonQuote(w?WiFi.SSID():storedSSID);
  j+=",\"wifiRssi\":"+String(w?WiFi.RSSI():0);
- j+=",\"deviceClockEpoch\":"+String(uint32_t(time(nullptr)));
+ j+=",\"deviceClockEpoch\":"+(clockEvidenceTrusted()?String(uint32_t(time(nullptr))):String("null"));
  j+=",\"wifiStatus\":"+jsonQuote(w?"Router conectado":"No conectado")+",\"wifiConnecting\":false,\"wifiStage\":"+jsonQuote(w?"CONECTADA":"SIN_RED");
  j+=",\"manual\":"+String(pezManual?"true":"false")+",\"power\":"+String(p.brightness>0?"true":"false");
  j+=",\"rgb\":["+String(p.r)+","+String(p.g)+","+String(p.b)+"],\"brightness\":"+String(p.brightness);
@@ -898,9 +906,9 @@ static void diagnosticJson(){
   (pvOffObligation&&pvOffFailures>=3); // Los errores BLE ya recuperados son historicos.
  bool historical=badReset||m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
  String j;j.reserve(22000);
- j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(dateTime());
+ j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(clockEvidenceTrusted()?dateTime():String("Hora pendiente de sincronizacion"));
  j+=",\"boot_id\":"+String(previousBootCount+1);
- j+=",\"generated_epoch\":"+(timeOK()?String((uint32_t)time(nullptr)):String("null"));
+ j+=",\"generated_epoch\":"+(clockEvidenceTrusted()?String((uint32_t)time(nullptr)):String("null"));
  j+=",\"share_safe\":"+String(srv.hasArg("share")?"true":"false");
  j+=",\"uptime_sec\":"+String((millis()-bootMs)/1000UL)+",\"status\":"+
   jsonQuote(critical?"incidencia_actual":historical?"avisos_historicos":"sin_avisos_actuales");
@@ -1035,7 +1043,7 @@ static void diagnosticJson(){
  if(!cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse)chLevel=cielo96::diag::Level::NotTested;
  j+=",\"professional\":{\"levels\":{\"correct\":\"CORRECTO\",\"failed\":\"FALLO\",\"warning\":\"ADVERTENCIA\",\"not_tested\":\"NO_PROBADO\",\"no_data\":\"SIN_DATOS\"}";
  j+=",\"wifi\":"+jsonQuote(wifi?"CORRECTO":"FALLO");
- j+=",\"clock\":"+jsonQuote(timeOK()?"CORRECTO":"SIN_DATOS");
+ j+=",\"clock\":"+jsonQuote(clockEvidenceTrusted()?"CORRECTO":"SIN_DATOS");
  j+=",\"pez_verde\":"+jsonQuote(cielo96::diag::name(pvLevel));
  j+=",\"chihiros\":"+jsonQuote(cielo96::diag::name(chLevel));
  j+=",\"optical_feedback\":\"NO_PROBADO\"";
@@ -1064,17 +1072,19 @@ static void diagnosticJson(){
  time_t currentEpoch=time(nullptr);
  struct tm clockLocal{};
  char clockOffset[8]="";
- if(timeOK()){
+ if(clockEvidenceTrusted()){
   localtime_r(&currentEpoch,&clockLocal);
   strftime(clockOffset,sizeof(clockOffset),"%z",&clockLocal);
  }
  j+=",\"recent_restarts\":"+restartHistoryJson();
  j+=",\"daily_monitoring\":"+cieloTrendJson();
- j+=",\"clock_diagnostics\":{\"epoch\":"+String((uint32_t)currentEpoch);
- j+=",\"valid\":"+String(timeOK()?"true":"false");
+ j+=",\"clock_diagnostics\":{\"epoch\":"+(clockEvidenceTrusted()?String((uint32_t)currentEpoch):String("null"));
+ j+=",\"valid\":"+String(clockEvidenceTrusted()?"true":"false");
  j+=",\"timezone\":\"Europe/Madrid\",\"utc_offset\":"+jsonQuote(clockOffset);
  j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
- j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false")+"}";
+ j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false");
+ j+=",\"ntp_sync_this_boot\":"+String(ntpSyncedThisBoot.load()?"true":"false");
+ j+=",\"trusted_this_boot\":"+String(clockEvidenceTrusted()?"true":"false")+"}";
  j+=",\"lab\":"+(srv.hasArg("share")?String("null"):labJson());
  j+=",\"persistent_diagnostics\":{\"boot_history\":[";
  for(uint8_t i=0;i<bootHistoryCount;i++){
@@ -2274,6 +2284,7 @@ void setup(){
   if(coex!=ESP_OK)record("COEX_PENDIENTE","Se verificara de nuevo al conectar STA");
  }
  tracePhase(TracePhase::Clock);
+ sntp_set_time_sync_notification_cb(cieloNtpSynced);
  configTzTime(CIELO_TZ,"pool.ntp.org","time.google.com");
  bleReady=false; // Do not start BLE until explicit physical authorization.
  record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" ("+resetReasonName(esp_reset_reason())+") BLE="+String(bleReady));
@@ -2416,14 +2427,20 @@ void loop(){
  chReconnectTick();
  otaPreparationTick();
  bleRecoveryTick();
- if(!bootEpoch&&timeOK()&&restartJournal.count){
+ if(clockEvidenceTrusted()&&restartJournal.count){
+  const uint32_t trustedNow=uint32_t(time(nullptr));
+  const uint32_t upSeconds=(millis()-bootMs)/1000UL;
+  const auto&last=cielo96::restarts::at(restartJournal,restartJournal.count-1);
+  const bool needsRepair=!bootEpoch || cielo96::clock_evidence::implausible_boot_epoch(last.epoch,trustedNow,upSeconds);
+  if(needsRepair){
   bootEpoch=uint32_t(time(nullptr))-(millis()-bootMs)/1000UL;
   auto&e=restartJournal.entries[(restartJournal.head+7)%8];e.epoch=bootEpoch;
   cielo96::restarts::seal(restartJournal);restartJournalDirty=true;
+  }
  }
  if(currentBootMarkedHealthy&&bleReady&&!cieloWatchdogTripped&&
     (!pvControlDesired||cieloLastSuccessfulPvAt>0)&&(!cieloAlwaysOn||cieloLastSuccessfulChAt>0)){
-  if(cielo96::restarts::recovered(restartJournal,previousBootCount+1,timeOK()?uint32_t(time(nullptr)):0))restartJournalDirty=true;
+  if(cielo96::restarts::recovered(restartJournal,previousBootCount+1,clockEvidenceTrusted()?uint32_t(time(nullptr)):0))restartJournalDirty=true;
  }
  flushRestartJournal();
  flushJournal(); // nunca escribir en flash por polling de diagnóstico

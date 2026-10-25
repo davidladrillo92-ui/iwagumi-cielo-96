@@ -40,6 +40,24 @@ vm.createContext(ctx);vm.runInContext(js,ctx);
  assert.equal(elements.pezSub.textContent,'Conectado');
  vm.runInContext('state.status.cieloV4.pv_link_idle_released=false;state.status.cieloV4.pv_link_connected=true;state.status.cieloV4.pv_online_recent=false;render()',ctx);
  assert.equal(elements.pezSub.textContent,'Sin verificar');
+ // Regression 00:20: POWER OFF GATT wins over stale RGB 58/78/132 at 6%.
+ vm.runInContext("Object.assign(state.status.cieloV4,{pv_link_idle_released:true,pv_link_connected:false,pv_online_recent:true,pv_last_requested:[58,78,132,6],pv_off_obligation:true,pv_safety_state:'APAGADO_GATT_OK'});render()",ctx);
+ assert.equal(elements.pezPct.textContent,'0%');
+ assert.equal(elements.pezInfo.textContent,'0 / 0 / 0');
+ assert.equal(elements.pezSub.textContent,'Conectado');
+ assert(elements.pezPct.title.includes('GATT'));
+ vm.runInContext("state.status.cieloV4.pv_safety_state='APAGADO_PENDIENTE';render()",ctx);
+ assert.equal(elements.pezPct.textContent,'—');
+ assert.equal(elements.pezInfo.textContent,'Apagado pendiente');
+ vm.runInContext("state.status.cieloV4.pv_off_obligation=false;state.status.cieloV4.pv_safety_state='ACTIVA';render()",ctx);
+ assert.equal(elements.pezPct.textContent,'6%');
+ assert.equal(vm.runInContext("scene(1410)[0]",ctx),'Luz de luna');
+ assert.equal(vm.runInContext("scene(20)[0]",ctx),'Descanso nocturno');
+ vm.runInContext("state.status.clockValid=false;render()",ctx);
+ assert(elements.statusText.textContent.includes('hora pendiente'));
+ assert(elements.momentSub.textContent.includes('Hora del móvil'));
+ vm.runInContext("state.status.clockValid=true;render()",ctx);
+
  vm.runInContext('state.connected=false;render()',ctx);assert.equal(elements.chiSub.textContent,'Sin comunicación');
  assert.equal(elements.chiPct.textContent,'—');
  vm.runInContext('state.connected=true;state.updated=Date.now()-21000;render()',ctx);

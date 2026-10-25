@@ -180,7 +180,7 @@ const state={chi:CHI.map(p=>p.slice()),pez:PEZ.map(p=>p.slice()),connected:false
 let toastTimer;
 function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3600)}
 function vAt(points,t){if(t<points[0][0]||t>=1440)return points[0].slice(1).map(()=>0);for(let i=0;i<points.length-1;i++){let a=points[i],b=points[i+1];if(t>b[0])continue;let f=(t-a[0])/(b[0]-a[0]);return a.slice(1).map((v,j)=>Math.round(v+(b[j+1]-v)*f))}return points.at(-1).slice(1)}
-function scene(t){if(t<870)return ['Descanso nocturno','Luces en reposo'];if(t<935)return ['Amanecer','La luz despierta'];if(t<1270)return ['Luz natural','Pleno día'];if(t<1320)return ['Luz dorada','Tarde'];if(t<1380)return ['Atardecer','Última luz'];if(t<1440)return ['Descanso nocturno','Luces en reposo'];return ['Descanso nocturno','Luces en reposo']}
+function scene(t){if(t<870)return ['Descanso nocturno','Luces en reposo'];if(t<935)return ['Amanecer','La luz despierta'];if(t<1270)return ['Luz natural','Pleno día'];if(t<1320)return ['Luz dorada','Tarde'];if(t<1380)return ['Atardecer','Última luz'];if(t<1440)return vAt(state.pez,t)[3]>0?['Luz de luna','Iluminación tenue']:['Descanso nocturno','Luces en reposo'];return ['Descanso nocturno','Luces en reposo']}
 function rgb(r,g,b){return '#'+[r,g,b].map(x=>clamp(x,0,255).toString(16).padStart(2,'0')).join('')}
 function nowMin(){let date=new Date();return date.getHours()*60+date.getMinutes()}
 function currentClock(){
@@ -215,15 +215,18 @@ function render(){
  const chiRecent=fresh&&!preview&&(v4.ch_link_connected!==false||v4.ch_link_idle_released===true)&&v4.chihiros_active&&v4.ch_online_recent&&Array.isArray(v4.ch_last_requested);
  const pvRecent=fresh&&!preview&&(v4.pv_link_connected!==false||v4.pv_link_idle_released===true)&&v4.pez_verde_active&&v4.pv_online_recent&&Array.isArray(v4.pv_last_requested);
  const chi=chiRecent?v4.ch_last_requested:chiPlan;
- const pez=pvRecent?v4.pv_last_requested:pvPlan;
+ // POWER OFF is independent from RGB. Do not present the last RGB as live brightness.
+ const pvOffConfirmed=!preview&&v4.pv_off_obligation===true&&v4.pv_safety_state==='APAGADO_GATT_OK';
+ const pvOffPending=!preview&&v4.pv_off_obligation===true&&!pvOffConfirmed;
+ const pez=pvOffConfirmed?[0,0,0,0]:pvOffPending?[0,0,0,0]:pvRecent?v4.pv_last_requested:pvPlan;
  const moment=scene(when);
  $('status').classList.toggle('offline',!fresh);
- $('statusText').textContent=!fresh?'Sin conexión':preview?'Simulación':'ATOM conectado';
+ $('statusText').textContent=!fresh?'Sin conexión':preview?'Simulación':d?.clockValid===false?'ATOM conectado · hora pendiente':'ATOM conectado';
  $('moment').textContent=moment[0];
- $('momentSub').textContent=preview?'Vista previa · '+hourLabel(when):'';
+ $('momentSub').textContent=preview?'Vista previa · '+hourLabel(when):d?.clockValid===false?'Hora del móvil · esperando sincronización':'';
  $('heroTime').textContent=hourLabel(when);
  const chiIsKnown=preview||!!(state.connected&&chiRecent);
- const pvIsKnown=preview||!!(state.connected&&pvRecent);
+ const pvIsKnown=preview||!!(state.connected&&(pvRecent||pvOffConfirmed));
  const chiRgb=(chiIsKnown?chi:[0,0,0]).map(v=>Math.round(v*2.55));
  const pvRgb=pvIsKnown?pez.slice(0,3):[0,0,0];
  const dimmedPv=pvRgb.map(v=>Math.round(v*(pez[3]||0)/100));
@@ -239,11 +242,12 @@ function render(){
  $('heroTint').style.setProperty('--ambient',ambient);
  $('heroTint').style.opacity=String(strength<5?.04:Math.min(.56,.12+strength/400));
  $('chiPct').textContent=chiIsKnown?Math.max(...chi)+'%':'—';
- $('pezPct').textContent=pvIsKnown?pez[3]+'%':'—';
+ $('pezPct').textContent=pvOffPending?'—':pvIsKnown?pez[3]+'%':'—';
+ $('pezPct').title=pvOffConfirmed?'Apagado aceptado por GATT; sin sensor óptico':pvOffPending?'Orden de apagado pendiente o sin confirmar':'Última consigna; luz física no medida';
  $('chiColor').style.background=rgb(...chiRgb);
  $('pezColor').style.background=rgb(...pvRgb);
  $('chiInfo').textContent=chiIsKnown?chi.join(' / '):'—';
- $('pezInfo').textContent=pvIsKnown?pvRgb.join(' / '):'—';
+ $('pezInfo').textContent=pvOffPending?'Apagado pendiente':pvIsKnown?pvRgb.join(' / '):'—';
  const lampState=(active,recent,errors,reconnecting=false,linked)=>preview?'Simulación':
   !fresh?'Sin comunicación':linked===false&&active?'Sin enlace BLE':reconnecting||errors>0?'Reconectando…':
   recent?'Conectado':active?'Sin verificar':v4.always_on?'Preparando…':'En pausa';
