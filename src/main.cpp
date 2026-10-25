@@ -28,6 +28,7 @@
 #include "cielo_monitor_service.h"
 #include "cielo_maintenance.h"
 #include "cielo_ble_recovery.h"
+#include "cielo_ble_blockage.h"
 #include "cielo_ota_validation.h"
 #include "cielo_autonomy_policy.h"
 #include "cielo_restart_journal.h"
@@ -933,6 +934,20 @@ static void diagnosticJson(){
   j+=",\"write\":{\"count\":"+String(x.write_count)+",\"failed\":"+String(x.write_failed)+",\"last_ms\":"+String(x.write_last_ms)+",\"max_ms\":"+String(x.write_max_ms)+"}";
   j+=",\"disconnect\":{\"count\":"+String(x.disconnect_count)+",\"last_ms\":"+String(x.disconnect_last_ms)+",\"max_ms\":"+String(x.disconnect_max_ms)+"}}";
  }j+="}";
+ const auto blockageSnapshot=cielo96::ble_blockage_snapshot();
+ const auto blockage=cielo96::blockage::classify({
+  blockageSnapshot.worker.phase,blockageSnapshot.worker.device,
+  blockageSnapshot.worker.heartbeat_age_ms,blockageSnapshot.worker.phase_age_ms,
+  blockageSnapshot.pending_pv_age_ms,blockageSnapshot.pending_ch_age_ms});
+ j+=",\"blockage_diagnostic\":{\"kind\":"+jsonQuote(cielo96::blockage::name(blockage.primary));
+ j+=",\"sdk_connect_pending\":"+String(blockage.sdk_pending?"true":"false");
+ j+=",\"pending_device\":"+String(blockage.pending_device);
+ j+=",\"pending_age_ms\":"+String(blockage.pending_age_ms);
+ j+=",\"gatt_discovery_wait\":"+String(blockage.discovery_wait?"true":"false");
+ j+=",\"worker_unresponsive\":"+String(blockage.worker_unresponsive?"true":"false");
+ j+=",\"actual_worker_heartbeat_age_ms\":"+String(blockageSnapshot.worker.heartbeat_age_ms);
+ j+=",\"actual_worker_phase_age_ms\":"+String(blockageSnapshot.worker.phase_age_ms);
+ j+=",\"phase_is_inference\":true,\"restart_policy_unchanged\":true}";
  const auto workerSnap=cielo96::ble_worker_snapshot();
  j+=",\"worker_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(workerSnap.phase));
  j+=",\"worker_phase_age_ms\":"+String(workerSnap.phase_age_ms);
@@ -1999,6 +2014,17 @@ static void bleRecoveryTick(){
  cielo96::recovery::armRestart(bleRecoveryRtc,snapshot.phase,snapshot.device,snapshot.phase_age_ms);
  bleRecoveryRtc.epoch=timeOK()?uint32_t(time(nullptr)):0;
  bleRecoveryRtc.originBoot=previousBootCount+1;cielo96::recovery::seal(bleRecoveryRtc);
+ const auto diagnosticSnapshot=cielo96::ble_blockage_snapshot();
+ const auto diagnosis=cielo96::blockage::classify({
+  diagnosticSnapshot.worker.phase,diagnosticSnapshot.worker.device,
+  diagnosticSnapshot.worker.heartbeat_age_ms,diagnosticSnapshot.worker.phase_age_ms,
+  diagnosticSnapshot.pending_pv_age_ms,diagnosticSnapshot.pending_ch_age_ms});
+ record("BLE_REINICIO_DIAGNOSTICO",String(cielo96::blockage::name(diagnosis.primary))+
+  ", sdk_pending="+String(diagnosis.sdk_pending?"si":"no")+
+  ", pending_device="+String(diagnosis.pending_device)+
+  ", pending_age_ms="+String(diagnosis.pending_age_ms)+
+  ", worker_heartbeat_ms="+String(diagnosticSnapshot.worker.heartbeat_age_ms)+
+  ", worker_phase="+String(cielo96::ble_worker_phase_name(diagnosticSnapshot.worker.phase)));
  record("BLE_REINICIO_CONTROL",String("Fase ")+cielo96::ble_worker_phase_name(snapshot.phase)+
   ", dispositivo "+String(snapshot.device)+", bloqueo "+String(snapshot.phase_age_ms)+"ms");
  // RTC conserva la evidencia aunque la cuota del journal NVS impida escribir ahora.
