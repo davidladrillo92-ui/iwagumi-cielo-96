@@ -1,4 +1,4 @@
-IWAGUMI CIELO · VIGILANTE 4.0.0-SIERRA
+IWAGUMI CIELO · VIGILANTE 4.0.1-SIERRA
 Adaptación del instalador Sierra V3 que ya utilizas
 ================================================
 
@@ -13,7 +13,7 @@ ACTUALIZAR TU V3
 3. No debes volver a introducir token ni emparejar el bot.
 4. Espera un minuto y ejecuta:
    bash "$HOME/Downloads/CIELO_VIGILANCIA_iMAC_SIERRA_V4/CONSULTAR_ESTADO.command"
-   Debe mostrar «Versión del último proceso: 4.0.0-SIERRA» y una muestra reciente.
+   Debe mostrar «Versión del último proceso: 4.0.1-SIERRA» y una muestra reciente.
 
 La actualización identifica la instalación V3, comprueba certificados y formato
 del historial, prepara los archivos, detiene el servicio anterior y espera a que
@@ -69,3 +69,10 @@ Origen de la base: CIELO_VIGILANCIA_iMAC_SIERRA_V3.zip, proporcionado anteriorme
 Certificados: mismo telegram_ca.pem, SHA-256
 7cef540c6af3bf0a3c7d0070bd3fd7aae34f8aa805b408d1c27a01c8aeb305df
 Licencia del bundle: LICENSE_CERTIFICADOS.txt.
+
+V4.0.1: respeta el límite de comunicación reciente publicado por RECOVERY3
+(90 s); en firmware anterior mantiene 650 s. La recuperación informa de
+envíos BLE registrados, sin asegurar que la luz haya respondido.
+ENVIAR_PRUEBA_TELEGRAM.command envía un mensaje real PRUEBA REAL al bot
+con la configuración instalada. PROBAR_TELEGRAM.command sigue comprobando
+solo HTTPS. La actualización no envía ninguna prueba automáticamente.

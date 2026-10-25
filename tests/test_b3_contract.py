@@ -1,7 +1,7 @@
 """LAN1 explicitly replaces the earlier password/TLS requirement at owner's request."""
 from pathlib import Path
 src=Path('src/main.cpp').read_text();ui=Path('web/interfaz_r4.html').read_text()
-assert '11.1.0-RC6-RECOVERY2' in src
+assert '11.1.0-RC5-RECOVERY3' in src
 for old in ('authSessionOpen','verifyFirmwareSignature','https_begin(prefs)','sessionValid()'):
  assert old not in src,old
 for old in ('id="otaSecret"','id="otaSignatureFile"','cieloEnsureSession','X-Cielo-Session','X-Cielo-Key'):

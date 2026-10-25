@@ -25,7 +25,8 @@ struct BleProbeResult {
 // Ceder el control al telefono sin modificar RGB ni horarios.
 // La desconexion es propiedad exclusiva del worker BLE.
 struct BleLinkStatus {
- bool connected=false;
+ bool connected=false,idle_released=false,connection_pending=false;
+ uint32_t pending_age_ms=0;
  bool released_to_app=false;
  uint32_t release_count=0;
  uint32_t last_disconnect_ms=0;
@@ -68,5 +69,6 @@ struct BleWorkerSnapshot {
  bool in_operation=false;
 };
 BleWorkerSnapshot ble_worker_snapshot();
+BleWorkerSnapshot ble_recovery_snapshot();
 const char* ble_worker_phase_name(uint8_t phase);
 }

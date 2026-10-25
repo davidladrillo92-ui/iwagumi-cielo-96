@@ -20,7 +20,6 @@ int main(){
  linkTouched[0]=60001;clockNow=90100;releaseIdleLinks();assert(!releases[0]&&releases[1]==1);
  clockNow=150001;releaseIdleLinks();assert(releases[0]==1&&releases[1]==1);
  releaseIdleLinks();assert(releases[0]==1&&releases[1]==1);
- keepLink[0]=true;linkTouched[0]=1;clockNow=900001;releaseIdleLinks();assert(releases[0]==1);keepLink[0]=false;
  linkTouched[0]=0xfffffff0UL;clockNow=89984;releaseIdleLinks();assert(releases[0]==2);
 }
 '''

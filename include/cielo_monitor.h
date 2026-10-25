@@ -13,6 +13,7 @@ struct Snapshot {
  uint32_t bootId=0,uptime=0,epoch=0,heap=0,heapMin=0,largestBlock=0;
  bool chReturnFailed=false;
  bool clockValid=false,bleReady=false,workerStalled=false,ota=false,offPending=false;
+ uint32_t communicationFreshSeconds=650;
  uint32_t offFailures=0,queueDepth=0,workerQueueDepth=0,stackFreeBytes=0;
  uint32_t profileGeneration=0,pvPoints=0,chPoints=0;
  Lamp pv,ch;

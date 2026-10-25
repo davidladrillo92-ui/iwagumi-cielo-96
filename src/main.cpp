@@ -50,7 +50,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC6-RECOVERY2";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -542,7 +542,7 @@ static bool bleCommunicationRecent(uint8_t device){
  const auto link=cielo96::ble_link_status(device);
  const uint32_t last=device?cieloLastSuccessfulChAt:cieloLastSuccessfulPvAt;
  const uint32_t errors=device?cieloChConsecutiveFailures:(cieloPvConsecutiveFailures+pvOffFailures);
- return cielo96::presence::recent(link.connected,last,millis(),errors);
+ return cielo96::presence::recent(link.connected||link.idle_released,last,millis(),errors);
 }
 static String cieloModeJson(){
  String j="{\"pez_verde_active\":"+String(cieloPvRun?"true":"false");
@@ -575,6 +575,8 @@ static String cieloModeJson(){
  j+=",\"ch_reconnect_attempts\":"+String(chReconnect.attempts);
  j+=",\"ch_reconnect_episodes\":"+String(chReconnect.episodes);
  j+=",\"always_on\":"+String(cieloAlwaysOn?"true":"false");
+ j+=",\"pv_link_idle_released\":"+String(cielo96::ble_link_status(0).idle_released?"true":"false");
+ j+=",\"ch_link_idle_released\":"+String(cielo96::ble_link_status(1).idle_released?"true":"false");
  j+=",\"pv_link_connected\":"+String(cielo96::ble_link_status(0).connected?"true":"false");
  j+=",\"ch_link_connected\":"+String(cielo96::ble_link_status(1).connected?"true":"false");
  j+=",\"communication_fresh_limit_sec\":90";
@@ -689,6 +691,9 @@ static String labJson(){
   const auto link=cielo96::ble_link_status(linkIndex);
   if(linkIndex)j+=",\"chihiros\":{";
   j+="\"connected\":"+String(link.connected?"true":"false");
+  j+=",\"idle_released\":"+String(link.idle_released?"true":"false");
+  j+=",\"connection_pending\":"+String(link.connection_pending?"true":"false");
+  j+=",\"pending_age_ms\":"+String(link.pending_age_ms);
   j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
   j+=",\"release_count\":"+String(link.release_count);
   j+=",\"last_disconnect_ms\":"+String(link.last_disconnect_ms)+"}";
@@ -874,7 +879,7 @@ static void diagnosticJson(){
  j+=",\"attempts\":"+String(bleRecoveryRtc.attempts)+",\"exhausted\":"+String(bleRecoveryExhausted?"true":"false");
  j+=",\"recovered_boot\":"+String(bleRecoveryBoot?"true":"false")+",\"pv_off_interlock\":"+String(bleRecoveryBootPvSafe?"true":"false");
  j+=",\"last_phase\":"+jsonQuote(cielo96::ble_worker_phase_name(bleRecoveryRtc.phase))+",\"last_device\":"+String(bleRecoveryRtc.device);
- j+=",\"transport\":\"NIMBLE_2_3_6\",\"connection_timeout_ms\":8000";
+ j+=",\"transport\":\"BLUEDROID_2_0_17_BOUNDED\",\"connection_timeout_ms\":8000";
  j+=",\"last_stall_epoch\":"+String(bleRecoveryRtc.epoch);
  j+=",\"last_stall_ms\":"+String(bleRecoveryRtc.age_ms)+",\"optical_confirmation\":false}";
  j+=",\"loop_stack_bytes\":"+String(CIELO_LOOP_STACK_BYTES);
@@ -903,6 +908,9 @@ static void diagnosticJson(){
   j+=",\"link_";
   j+=linkIndex?"chihiros":"pez_verde";
   j+="\":{\"connected\":"+String(link.connected?"true":"false");
+  j+=",\"idle_released\":"+String(link.idle_released?"true":"false");
+  j+=",\"connection_pending\":"+String(link.connection_pending?"true":"false");
+  j+=",\"pending_age_ms\":"+String(link.pending_age_ms);
   j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
   j+=",\"release_count\":"+String(link.release_count)+"}";
  }
@@ -1067,6 +1075,7 @@ static cielo96::monitor::Snapshot monitorSnapshot(){
  m.bleReady=bleReady;m.workerStalled=bleReady&&cielo96::ble_worker_snapshot().heartbeat_age_ms>45000UL;
  m.ota=otaBusy||otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready;
  m.offPending=pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk;m.offFailures=pvOffFailures;
+ m.communicationFreshSeconds=90;
  m.pv.expected=pvControlDesired||cieloPvRun||pvOffObligation;
  m.ch.expected=chReconnect.recovering||cieloChRun||cieloChReturnPending||cieloChAwaitResponse||cieloChWasDriven;
  m.chReturnFailed=cieloChWasDriven&&!cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse&&cieloReturnTries>=2;
@@ -1861,7 +1870,7 @@ static void bleTick(){
      cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;
      if(wasOffCommand){
       pvOffLastGatt=now;pvOffFailures=0;pvSafety=PvSafetyState::OffGattOk;
-      pvOffNextTry=now+300000UL;
+      pvOffNextTry=now+60000UL;
       record("PV_POWER_OFF_GATT_OK","POWER OFF GATT OK; sin verificacion optica");
      }else pvSafety=PvSafetyState::Active;
     }else if(wasOffCommand){
@@ -1974,7 +1983,7 @@ static void chReconnectTick(){
  record("CH_RECONEXION_AUTO","Recuperar consigna actual; sin reproducir colores anteriores");
 }
 static void bleRecoveryTick(){
- const auto snapshot=cielo96::ble_worker_snapshot();
+ const auto snapshot=cielo96::ble_recovery_snapshot();
  const bool inhibited=otaBusy || rescueOpen || otaTxn.phase==OtaPhase::Preparing ||
   otaTxn.phase==OtaPhase::Ready || otaTxn.phase==OtaPhase::Uploading || otaTxn.phase==OtaPhase::Completed;
  const auto decision=bleSupervisor.tick(millis(),bleReady,snapshot.heartbeat_age_ms,

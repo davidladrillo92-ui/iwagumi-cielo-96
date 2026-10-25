@@ -53,7 +53,7 @@ class SierraTests(unittest.TestCase):
             self.assertEqual(sierra.setup(),0) # existing config follows update, not pairing
         self.assertEqual(sierra.CONFIG.read_bytes(),self.original[str(sierra.CONFIG)])
         self.assertEqual(sierra.DB_FILE.read_bytes(),self.original[str(sierra.DB_FILE)])
-        self.assertIn('4.0.0-SIERRA',sierra.PY_SCRIPT.read_text())
+        self.assertIn('4.0.1-SIERRA',sierra.PY_SCRIPT.read_text())
         with sqlite3.connect(str(sierra.DB_FILE)) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM samples').fetchone()[0],1)
             self.assertEqual(db.execute('SELECT msg FROM outbox WHERE key="previous"').fetchone()[0],'Aviso previo que debe conservarse')
@@ -121,6 +121,22 @@ class SierraTests(unittest.TestCase):
             if prior is None:os.environ.pop('TZ',None)
             else:os.environ['TZ']=prior
             sierra.time.tzset()
+    def test_real_test_command_calls_send_without_exposing_config(self):
+        with patch.object(sierra,'send_message') as send,patch('sys.stdout',new=io.StringIO()) as out:
+            self.assertEqual(sierra.test_telegram_message(),0)
+            self.assertIn('PRUEBA REAL',send.call_args[0][1])
+            self.assertNotIn('telegram_token',out.getvalue())
+    def test_new_firmware_freshness_and_recovery_wording(self):
+        d=extended(111);d['communication_fresh_limit_sec']=90
+        d['pv']['ok_age_sec']=120
+        with sqlite3.connect(str(sierra.DB_FILE)) as db:
+            st={}
+            for now in (1000,1060,1120):sierra.evaluate(db,st,d,now)
+            self.assertGreater(db.execute("SELECT COUNT(*) FROM outbox WHERE msg LIKE '%sin confirmación BLE reciente%'").fetchone()[0],0)
+            d['pv']['ok_age_sec']=1;st['_restart_pending']=d['boot_id'];sierra.check_restart_recovery(db,st,d,1180)
+            text=db.execute("SELECT message FROM events WHERE key=?",('restart-recovered:'+str(d['boot_id']),)).fetchone()[0]
+            self.assertIn('envíos BLE recientes registrados',text)
+            self.assertNotIn('pantallas restablecida',text)
     def test_shells_python39_and_launchagent_contract(self):
         ast.parse((SOURCE/'cielo_observer.py').read_text(),feature_version=(3,9))
         for path in list(SOURCE.glob('*.command'))+list(SOURCE.glob('*.sh')):

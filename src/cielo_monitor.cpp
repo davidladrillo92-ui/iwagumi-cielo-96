@@ -13,7 +13,7 @@ size_t encode(const Snapshot&s,char*out,size_t cap){
  "\"pv\":{\"expected\":%s,\"ever_ok\":%s,\"ok_age_sec\":%lu,\"consecutive_errors\":%lu,\"operations\":%lu,\"errors\":%lu},"
  "\"ch\":{\"expected\":%s,\"ever_ok\":%s,\"ok_age_sec\":%lu,\"consecutive_errors\":%lu,\"operations\":%lu,\"errors\":%lu},"
  "\"ch_return_failed\":%s,\"off_pending\":%s,\"off_failures\":%lu,\"optical_feedback\":null,"
- "\"recovery_schema\":1,\"boot_marked_healthy\":%s,\"reset_reason\":%u,\"recovered_boot\":%s,"
+ "\"communication_fresh_limit_sec\":%lu,\"recovery_schema\":1,\"boot_marked_healthy\":%s,\"reset_reason\":%u,\"recovered_boot\":%s,"
  "\"restart_total\":%lu,\"last_stall_phase\":%lu,\"last_stall_device\":%lu,\"last_stall_ms\":%lu,\"recent_boots\":[",
  s.firmware,(unsigned long)s.bootId,(unsigned long)s.uptime,(unsigned long)s.epoch,
  b(s.clockValid),b(s.bleReady),b(s.workerStalled),b(s.ota),
@@ -23,7 +23,7 @@ size_t encode(const Snapshot&s,char*out,size_t cap){
  b(s.pv.expected),b(s.pv.everOk),(unsigned long)s.pv.okAgeSeconds,(unsigned long)s.pv.consecutiveErrors,(unsigned long)s.pv.operations,(unsigned long)s.pv.errors,
  b(s.ch.expected),b(s.ch.everOk),(unsigned long)s.ch.okAgeSeconds,(unsigned long)s.ch.consecutiveErrors,(unsigned long)s.ch.operations,(unsigned long)s.ch.errors,
  b(s.chReturnFailed),b(s.offPending),(unsigned long)s.offFailures,
- b(s.bootMarkedHealthy),s.resetReason,b(s.recoveredBoot),(unsigned long)s.restartTotal,
+ (unsigned long)s.communicationFreshSeconds,b(s.bootMarkedHealthy),s.resetReason,b(s.recoveredBoot),(unsigned long)s.restartTotal,
  (unsigned long)s.lastStallPhase,(unsigned long)s.lastStallDevice,(unsigned long)s.lastStallMs);
  if(n<0||static_cast<size_t>(n)>=cap){if(cap)out[0]=0;return 0;}
  size_t used=static_cast<size_t>(n);

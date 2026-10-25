@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# IWAGUMI CIELO 4.0.0-SIERRA -- Python 3.9, macOS Sierra 10.12.6
+# IWAGUMI CIELO 4.0.1-SIERRA -- Python 3.9, macOS Sierra 10.12.6
 # Solo consulta /api/monitor por HTTP en la LAN y envia mensajes por HTTPS a Telegram.
 # No tiene endpoints de escritura del ATOM. No instala ni actualiza firmware.
 import datetime
@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-VERSION = '4.0.0-SIERRA'
+VERSION = '4.0.1-SIERRA'
 LABEL = 'es.iwagumi.cielo.vigilancia'
 APP_DIR = pathlib.Path.home() / 'Library' / 'Application Support' / 'IWAGUMI CIELO Vigilancia'
 CONFIG = APP_DIR / 'config.json'
@@ -357,9 +357,9 @@ def check_restart_recovery(db,st,data,now):
         and data['clock_valid'] and not data.get('off_pending') and not data.get('ch_return_failed') and not data['ota'])
     for lamp in ('pv','ch'):
         v=data[lamp]
-        healthy=healthy and (not v['expected'] or (v['ever_ok'] and v['ok_age_sec']<=650 and not v['consecutive_errors']))
+        healthy=healthy and (not v['expected'] or (v['ever_ok'] and v['ok_age_sec']<=data.get('communication_fresh_limit_sec',650) and not v['consecutive_errors']))
     if healthy:
-        record_event(db,'restart-recovered:'+str(data['boot_id']),'recuperacion','Arranque {}: ATOM accesible y comunicación de las pantallas restablecida.'.format(data['boot_id']),now)
+        record_event(db,'restart-recovered:'+str(data['boot_id']),'recuperacion','Arranque {}: ATOM accesible y envíos BLE recientes registrados; comprueba visualmente las luces.'.format(data['boot_id']),now)
         st.pop('_restart_pending',None)
 
 
@@ -516,7 +516,7 @@ def evaluate(db, st, data, now):
             issue(db,st,key,None,now,'')
             issue(db,st,key+'_err',None,now,'')
         else:
-            bad=(not lamp['ever_ok']) or lamp['ok_age_sec']>650
+            bad=(not lamp['ever_ok']) or lamp['ok_age_sec']>data.get('communication_fresh_limit_sec',650)
             issue(db,st,key,bad,now,label+' sin confirmación BLE reciente (tres comprobaciones).')
             issue(db,st,key+'_err',lamp['consecutive_errors']>=3,now,label+' acumula tres o más errores BLE consecutivos.')
     issue(db,st,'off',bool(data.get('off_pending')) and int(data.get('off_failures',0))>=3,now,'POWER OFF Pez Verde pendiente con al menos tres fallos de envío.',urgent=True)
@@ -769,6 +769,13 @@ def setup():
     return 0
 
 
+def test_telegram_message():
+    cfg=json.loads(CONFIG.read_text(encoding='utf-8'))
+    send_message(cfg,'CIELO · PRUEBA REAL\nVigilante '+VERSION+' en el iMac. Este mensaje confirma el envío al bot; no comprueba las luces.')
+    print('Telegram ha aceptado el envío. Comprueba que recibes PRUEBA REAL en el chat del bot.')
+    return 0
+
+
 def status():
     print('IWAGUMI CIELO - ESTADO DEL SUPERVISOR '+VERSION)
     print('Configuración:', 'presente' if CONFIG.exists() else 'no instalada')
@@ -813,6 +820,7 @@ if __name__=='__main__':
         if operation=='status': sys.exit(status())
         if operation=='stop': sys.exit(stop_service())
         if operation=='diagnose': sys.exit(diagnosis())
+        if operation=='test-message': sys.exit(test_telegram_message())
         print('Uso: python3 cielo_observer.py setup|run|status|stop|diagnose')
         sys.exit(2)
     except Exception as exc:

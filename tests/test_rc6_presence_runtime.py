@@ -9,28 +9,29 @@ prefix=r'''
 #include <cstdint>
 #include <cassert>
 uint32_t millis(){return 12345;}
-struct NimBLEClient {bool live=false;bool isConnected(){return live;}};
-struct NimBLEClientCallbacks {
- virtual void onConnect(NimBLEClient*){};virtual void onConnectFail(NimBLEClient*,int){};virtual void onDisconnect(NimBLEClient*,int){};
+struct BLEClient {bool live=false;bool isConnected(){return live;}bool pending=false;bool cieloConnectPending(){return pending;}};
+struct BLEClientCallbacks {
+ virtual void onConnect(BLEClient*){};virtual void onDisconnect(BLEClient*){};
 };
-struct {bool connected=false;uint32_t lastDisconnect=0;} shared[2];
+struct {bool connected=false,idleReleased=false;std::atomic<bool>expectedRelease{false};uint32_t lastDisconnect=0,pendingSince=0;} shared[2];
 std::atomic<int> connectState[2]{};int lastStackError[2]{};
-struct Target {NimBLEClient*client=nullptr;void*writer=nullptr;bool manualEntered=false,pvOn=false;} targets[2];
+struct Target {BLEClient*client=nullptr;void*writer=nullptr;bool manualEntered=false,pvOn=false;} targets[2];
 '''
 main=r'''
 int main(){
- NimBLEClient pv,ch;ch.live=true;int writer=0;
+ BLEClient pv,ch;ch.live=true;int writer=0;
  targets[0]={&pv,&writer,true,true};targets[1]={&ch,&writer,true,true};
  shared[0].connected=shared[1].connected=true;
  reconcileLinks();
  assert(!shared[0].connected&&shared[0].lastDisconnect==12345);
  assert(!targets[0].writer&&!targets[0].manualEntered&&!targets[0].pvOn);
  assert(shared[1].connected&&targets[1].writer&&targets[1].pvOn);
- LinkCallbacks cb(1);cb.onDisconnect(&ch,8);
- assert(!shared[1].connected&&lastStackError[1]==8&&connectState[1]==-1);
+ LinkCallbacks cb(1);cb.onDisconnect(&ch);
+ assert(!shared[1].connected);
  assert(shared[1].lastDisconnect==12345);
- cb.onConnectFail(&ch,13);assert(!shared[1].connected&&lastStackError[1]==13);
- cb.onConnect(&ch);assert(shared[1].connected&&connectState[1]==1);
+ shared[1].expectedRelease=true;shared[1].idleReleased=true;cb.onDisconnect(&ch);assert(shared[1].idleReleased);
+ cb.onConnect(&ch);assert(shared[1].connected&&!shared[1].idleReleased);
+ pv.pending=true;reconcileLinks();assert(shared[0].pendingSince==12345);pv.pending=false;reconcileLinks();assert(!shared[0].pendingSince);
 }
 '''
 with tempfile.TemporaryDirectory() as d:
@@ -42,5 +43,6 @@ assert 'presence::refreshDue(now,lastPvDesiredAt)' in main
 assert 'presence::refreshDue(now,lastChDesiredAt)' in main
 assert 'bleCommunicationRecent(0)' in main and 'bleCommunicationRecent(1)' in main
 assert s.index('reconcileLinks();') < s.index('xQueueReceive(requests,&c,')
-assert 'setConnectionParams(24,40,0,400)' in s
-print('PASS unplugged worker reconciliation, disconnect callbacks and 30 s refresh wiring')
+assert 'cieloConnectPending()' in s
+assert 'releaseTarget(device,false)' in s
+print('PASS unplugged worker reconciliation, disconnect callbacks and 60 s refresh, idle release and pending SDK request wiring')

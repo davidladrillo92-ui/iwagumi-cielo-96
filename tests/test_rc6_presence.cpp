@@ -10,6 +10,6 @@ int main(){
  // Report 62: snapshot still connected, but last success is 247 seconds old.
  assert(!recent(true,1000,248000,0));
  assert(recent(true,0xfffffff0U,0x20U,0));
- assert(!refreshDue(29999,0));assert(refreshDue(30000,0));
- assert(refreshDue(29984,0xfffffff0U));
+ assert(!refreshDue(59999,0));assert(refreshDue(60000,0));
+ assert(refreshDue(59984,0xfffffff0U));
 }

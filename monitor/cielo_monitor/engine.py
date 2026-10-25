@@ -110,10 +110,10 @@ class Engine:
                    and not data["ch_return_failed"] and data["clock_valid"])
         for lamp in ("pv", "ch"):
             v = data[lamp]
-            healthy = healthy and (not v["expected"] or (v["ever_ok"] and v["ok_age_sec"] <= 650 and not v["consecutive_errors"]))
+            healthy = healthy and (not v["expected"] or (v["ever_ok"] and v["ok_age_sec"] <= data.get("communication_fresh_limit_sec",650) and not v["consecutive_errors"]))
         if healthy:
             boot = data["boot_id"]
-            self._event(c, now, "restart", "recovery", f"Arranque {boot}: ATOM accesible y comunicación de las pantallas restablecida",
+            self._event(c, now, "restart", "recovery", f"Arranque {boot}: ATOM accesible y envíos BLE recientes registrados; comprueba visualmente las luces",
                         delivery_key="restart-recovered:"+str(boot))
             state.pop("restart_pending", None)
 
@@ -155,7 +155,7 @@ class Engine:
                 for index, lamp in enumerate(("pv", "ch")):
                     v = data[lamp]
                     active = v["expected"] and not data["ota"] and data["uptime_sec"] >= 180 and not stale
-                    conditions[lamp] = ((not v["ever_ok"] or v["ok_age_sec"] > 650) if active else None)
+                    conditions[lamp] = ((not v["ever_ok"] or v["ok_age_sec"] > data.get("communication_fresh_limit_sec",650)) if active else None)
                     delta = max(0, v["errors"] - old[index+2]) if old else 0
                     conditions[lamp+"_errors"] = (v["consecutive_errors"] >= 3 or delta >= 3) if active else None
                 conditions["off"] = (data["off_pending"] and data["off_failures"] >= 3) if not stale else None
