@@ -67,9 +67,12 @@ void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
  portENTER_CRITICAL(&snapshotMux);
  const uint32_t now=millis();
  workerDevice=dev;phaseEnteredAt=now;workerPhase=static_cast<uint8_t>(p);
- phaseHistory[phaseHistoryHead]={now,++phaseOrdinal,static_cast<uint8_t>(p),dev};
- phaseHistoryHead=(phaseHistoryHead+1)%16;
- if(phaseHistoryCount<16)phaseHistoryCount++;
+ if(!phaseHistoryCount || phaseHistory[(phaseHistoryHead+15)%16].phase!=static_cast<uint8_t>(p) ||
+    phaseHistory[(phaseHistoryHead+15)%16].device!=dev){
+  phaseHistory[phaseHistoryHead]={now,++phaseOrdinal,static_cast<uint8_t>(p),dev};
+  phaseHistoryHead=(phaseHistoryHead+1)%16;
+  if(phaseHistoryCount<16)phaseHistoryCount++;
+ }
  portEXIT_CRITICAL(&snapshotMux);
 }
 void releaseTarget(uint8_t device,bool userRequested){
