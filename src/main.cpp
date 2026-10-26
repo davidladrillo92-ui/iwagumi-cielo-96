@@ -14,6 +14,9 @@
 #include <esp_wifi.h>
 #include <esp_attr.h>
 #include <esp_ota_ops.h>
+#include <nvs.h>
+#include <esp_err.h>
+#include "cielo_nvs_safe.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
 #include "profiles_generated.h"
@@ -56,7 +59,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.3-BLE-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.4-NVS-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -221,6 +224,7 @@ static uint32_t pvDayRecoveryStarted=0,pvDayRecoveryAttempts=0,pvDayRecoveryGatt
 static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffScheduled=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
 static bool pvDisconnectInterlock=false; // OFF must be accepted before any daytime RGB after unexpected link loss.
 static uint32_t observedUnexpectedDisconnect[2]={0,0};
+static uint32_t isolatedChDisconnects=0,pvDisconnectOffSafetyEpisodes=0;
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
 static uint32_t cieloDaySamples=0,cieloNightSamples=0;
@@ -229,6 +233,8 @@ struct CieloTrendSample {uint32_t epoch=0,pv=0,ch=0,pvErrors=0,chErrors=0,heap=0
 static CieloTrendSample cieloTrend[96]{};
 static uint8_t cieloTrendCount=0,cieloTrendHead=0;
 static uint32_t cieloTrendLast=0;
+static uint32_t largestHeapBlockMin15m=UINT32_MAX;
+static uint32_t largestHeapBlockSamples15m=0;
 static void cieloTrendTick();
 static bool cieloChReturnPending=false,cieloChAwaitResponse=false;
 static bool cieloWatchdogTripped=false;
@@ -282,6 +288,23 @@ static mbedtls_sha256_context otaDigest;
 static bool otaDigestStarted=false;
 static uint8_t otaDigestOut[32]{};
 static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin actualizaciones";
+// Observabilidad NVS: diagnostico en RAM; nunca borra claves ni modifica particiones.
+static size_t lastCurveNvsRequested=0,lastCurveNvsWritten=0;
+static const char* lastCurveNvsSlot="sin_intento";
+static uint32_t curveNvsFailedAttempts=0;
+static cielo96::nvssafe::Failure lastCurveNvsFailure=cielo96::nvssafe::Failure::None;
+static esp_err_t lastCurveNvsErr=ESP_OK;
+static esp_err_t lastCurveNvsStatsErr=ESP_OK;
+static const char* lastCurveNvsStage="sin_intento";
+static size_t lastCurveNvsFreeBefore=0,lastCurveNvsMinRequired=0;
+static bool curveSaveInProgress=false;
+static uint32_t diagWritesSkippedForSpace=0,restartWritesSkippedForSpace=0;
+static bool nvsPreserveCurveHeadroom(){
+ nvs_stats_t stats{};
+ if(nvs_get_stats("nvs",&stats)!=ESP_OK)return true; // Fail closed for noncritical writes.
+ const size_t reserve=cielo96::nvssafe::minimumFreeEntries(sizeof(cielo96::ProfileImage))+8u;
+ return stats.free_entries<reserve;
+}
 static String storedSSID,storedPass,apPassword;
 static uint32_t bootMs=0;
 static constexpr int ATOMS3_BUTTON_GPIO=41;
@@ -315,6 +338,9 @@ static uint32_t restartJournalSavedAt=0;
 static uint32_t bootEpoch=0;
 static void flushRestartJournal(){
  if(!restartJournalDirty||uint32_t(millis()-restartJournalSavedAt)<300000UL)return;
+ if(curveSaveInProgress){restartWritesSkippedForSpace++;return;}
+ // Restart evidence has higher priority than ordinary diagnostics; do not
+ // discard a pending restart journal merely because NVS is nearly full.
  restartJournalSavedAt=millis();
  cielo96::restarts::seal(restartJournal);
  if(prefs.putBytes("restart_v2",&restartJournal,sizeof(restartJournal))==sizeof(restartJournal))restartJournalDirty=false;
@@ -331,6 +357,10 @@ static bool journalDirty=false,journalHasFlushed=false;
 static uint32_t journalLastFlush=0;
 static void flushJournal(){
  if(!journalDirty || !cielo96::diag::shouldFlush(millis(),journalLastFlush,journalHasFlushed))return;
+ if(curveSaveInProgress||nvsPreserveCurveHeadroom()){
+  diagWritesSkippedForSpace++;
+  return; // RAM journal stays dirty; preserve NVS space for curves.
+ }
  journalHasFlushed=true;journalLastFlush=millis(); // Respetar límite incluso si NVS falla.
  if(prefs.putBytes("diag_journal",&journal,sizeof(journal))==sizeof(journal)){
   prefs.putUInt("fault_count",savedFailures);
@@ -407,6 +437,9 @@ static void cieloTrendTick(){
  t.pv=cieloPvConfirmed;t.ch=cieloChConfirmed;
  t.pvErrors=devices[0].errors;t.chErrors=devices[1].errors;
  t.heap=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+ const uint32_t largestNow=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+ if(largestNow<largestHeapBlockMin15m)largestHeapBlockMin15m=largestNow;
+ largestHeapBlockSamples15m++;
  cieloTrendHead=(cieloTrendHead+1)%96;
  if(cieloTrendCount<96)cieloTrendCount++;
  time_t ep=time(nullptr);struct tm local{};localtime_r(&ep,&local);
@@ -457,17 +490,81 @@ static void loadProfile(){
  }
 }
 static bool saveProfile(const cielo96::ProfileImage& candidate){
- if(!cielo96::curves::curveValid(candidate))return false;
- const char*key=(candidate.generation&1)?"curvesA":"curvesB";
- if(prefs.putBytes(key,&candidate,sizeof(candidate))!=sizeof(candidate)){
-  lastBackupError="NVS escritura incompleta";record("CURVA_ERROR",lastBackupError);return false;
- }
- cielo96::ProfileImage readback{};
- if(prefs.getBytes(key,&readback,sizeof(readback))!=sizeof(readback)||!cielo96::profileValid(readback)
-    ||memcmp(&candidate,&readback,sizeof(readback))!=0){
-  lastBackupError="NVS verificacion posterior fallo";record("CURVA_ERROR",lastBackupError);return false;
- }
- profile=candidate;profileRecovery=false;record("CURVA_GUARDADA",String("generacion=")+String(profile.generation));return true;
+ using cielo96::nvssafe::Failure;
+ curveSaveInProgress=true;
+ lastCurveNvsFailure=Failure::None;lastCurveNvsErr=ESP_OK;
+ lastCurveNvsStage="validacion";
+ lastCurveNvsWritten=0;lastCurveNvsRequested=sizeof(candidate);
+ lastCurveNvsMinRequired=cielo96::nvssafe::minimumFreeEntries(sizeof(candidate));
+ lastCurveNvsFreeBefore=0;
+ auto failure=[&](Failure reason,const char*stage,esp_err_t err)->bool{
+  lastCurveNvsFailure=reason;lastCurveNvsStage=stage;lastCurveNvsErr=err;
+  curveNvsFailedAttempts++;
+  lastBackupError=cielo96::nvssafe::message(reason);
+  // El fallo se conserva en RAM, sin escribir un journal NVS durante
+  // la misma transaccion que acaba de fallar.
+  record("CURVA_ERROR",lastBackupError);
+  curveSaveInProgress=false;
+  return false;
+ };
+ if(!cielo96::curves::curveValid(candidate))
+  return failure(Failure::InvalidProfile,"validacion",ESP_ERR_INVALID_ARG);
+ // Leer ambos slots antes de elegir. Nunca sobrescribir la unica copia valida.
+ // Reutilizar un unico buffer estatico: no apilar tres perfiles de ~1 KB
+ // sobre la pila de 16 KB del servidor HTTP/loop.
+ static cielo96::ProfileImage scratch{};
+ scratch=cielo96::ProfileImage{};
+ const bool va=prefs.getBytesLength("curvesA")==sizeof(scratch)&&
+  prefs.getBytes("curvesA",&scratch,sizeof(scratch))==sizeof(scratch)&&cielo96::curves::curveValid(scratch);
+ const uint32_t genA=va?scratch.generation:0;
+ scratch=cielo96::ProfileImage{};
+ const bool vb=prefs.getBytesLength("curvesB")==sizeof(scratch)&&
+  prefs.getBytes("curvesB",&scratch,sizeof(scratch))==sizeof(scratch)&&cielo96::curves::curveValid(scratch);
+ const uint32_t genB=vb?scratch.generation:0;
+ const char*key=cielo96::nvssafe::target(va,genA,vb,genB);
+ lastCurveNvsSlot=key;
+ if(!cielo96::nvssafe::targetPreservesOnlyCopy(va,vb,key))
+  return failure(Failure::InvalidProfile,"seleccion_slot",ESP_ERR_INVALID_STATE);
+ nvs_stats_t stats{};
+ lastCurveNvsStage="preflight";
+ lastCurveNvsStatsErr=nvs_get_stats("nvs",&stats);
+ if(lastCurveNvsStatsErr!=ESP_OK)
+  return failure(Failure::StatsUnavailable,"preflight",lastCurveNvsStatsErr);
+ lastCurveNvsFreeBefore=stats.free_entries;
+ if(cielo96::nvssafe::definitelyTooLittleSpace(stats.free_entries,sizeof(candidate)))
+  return failure(Failure::InsufficientEntries,"preflight",ESP_ERR_NVS_NOT_ENOUGH_SPACE);
+ // Direct NVS API gives precise esp_err_t for open, set_blob and commit.
+ // Commit only to the inactive/older slot, then verify by independent read.
+ nvs_handle_t handle=0;
+ lastCurveNvsStage="abrir";
+ esp_err_t err=nvs_open("cielo96",NVS_READWRITE,&handle);
+ if(err!=ESP_OK)return failure(Failure::OpenFailed,"abrir",err);
+ lastCurveNvsStage="escribir";
+ err=nvs_set_blob(handle,key,&candidate,sizeof(candidate));
+ if(err!=ESP_OK){nvs_close(handle);return failure(Failure::WriteFailed,"escribir",err);}
+ lastCurveNvsStage="confirmar";
+ err=nvs_commit(handle);
+ nvs_close(handle);
+ if(err!=ESP_OK)return failure(Failure::CommitFailed,"confirmar",err);
+ lastCurveNvsWritten=sizeof(candidate);
+ nvs_handle_t verify=0;
+ lastCurveNvsStage="releer";
+ err=nvs_open("cielo96",NVS_READONLY,&verify);
+ if(err!=ESP_OK)return failure(Failure::ReadFailed,"releer_abrir",err);
+ scratch=cielo96::ProfileImage{};
+ size_t bytes=sizeof(scratch);
+ err=nvs_get_blob(verify,key,&scratch,&bytes);
+ nvs_close(verify);
+ if(err!=ESP_OK||bytes!=sizeof(scratch))
+  return failure(Failure::ReadFailed,"releer",err==ESP_OK?ESP_ERR_INVALID_SIZE:err);
+ if(!cielo96::curves::curveValid(scratch)||memcmp(&candidate,&scratch,sizeof(scratch))!=0)
+  return failure(Failure::VerificationFailed,"verificar",ESP_ERR_INVALID_CRC);
+ // RAM only changes after successful commit + byte-for-byte validation.
+ profile=candidate;profileRecovery=false;
+ lastBackupError="ninguno";lastCurveNvsStage="correcto";lastCurveNvsErr=ESP_OK;
+ curveSaveInProgress=false;
+ record("CURVA_GUARDADA",String("generacion=")+String(profile.generation));
+ return true;
 }
 static bool positiveInt(const String&s,unsigned& n){
  if(!s.length())return false;uint32_t x=0;
@@ -538,7 +635,16 @@ static void saveBothCurves(){
  candidate.generation=profile.generation+1;
  cielo96::profileSeal(candidate);
  if(!cielo96::curves::curveValid(candidate))return fail(400,"Perfil completo no valido");
- if(!saveProfile(candidate))return fail(507,"No se pudo comprobar la escritura NVS. Perfil previo conservado");
+ if(!saveProfile(candidate)){
+  const bool space=lastCurveNvsFailure==cielo96::nvssafe::Failure::InsufficientEntries||
+   lastCurveNvsErr==ESP_ERR_NVS_NOT_ENOUGH_SPACE;
+  String response="{\"ok\":false,\"error\":"+jsonQuote(lastBackupError);
+  response+=",\"nvs_error_code\":"+String((int)lastCurveNvsErr);
+  response+=",\"nvs_error_name\":"+jsonQuote(esp_err_to_name(lastCurveNvsErr));
+  response+=",\"nvs_stage\":"+jsonQuote(lastCurveNvsStage);
+  response+=",\"previous_profile_preserved\":true}";
+  return jsonSend(space?507:500,response);
+ }
  lastPvDesired=false;lastChDesired=false;
  record("PERFIL_ATOMICO_GUARDADO",String("PV=")+String(profile.pvCount)+" CH="+String(profile.chCount)+" gen="+String(profile.generation));
  jsonSend(200,String("{\"ok\":true,\"generation\":")+String(profile.generation)+",\"pv\":"+String(profile.pvCount)+",\"chi\":"+String(profile.chCount)+"}");
@@ -605,6 +711,8 @@ static String cieloModeJson(){
  j+=",\"pv_off_last_gatt_ms\":"+String(pvOffLastGatt)+",\"pv_off_last_attempt_ms\":"+String(pvOffLastTry);
  j+=",\"pv_optically_confirmed\":false";
  j+=",\"pv_day_recovery_pending\":"+String(pvDayRecoveryPending?"true":"false");
+ j+=",\"pv_disconnect_off_safety_episodes\":"+String(pvDisconnectOffSafetyEpisodes);
+ j+=",\"isolated_ch_disconnects\":"+String(isolatedChDisconnects);
  j+=",\"pv_day_recovery_attempts\":"+String(pvDayRecoveryAttempts);
  j+=",\"pv_day_recovery_gatt_ok\":"+String(pvDayRecoveryGattOk);
  j+=",\"ch_consecutive_errors\":"+String(cieloChConsecutiveFailures);
@@ -892,7 +1000,18 @@ static String restartHistoryJson(){
   j+=",\"stall_epoch\":"+String(e.stallEpoch)+",\"stall_ms\":"+String(e.stallMs);
   j+=",\"phase\":"+jsonQuote(cielo96::ble_worker_phase_name(e.phase));
   j+=",\"device\":"+String(e.device)+",\"outcome\":"+jsonQuote(e.outcome?"COMMUNICATION_RECOVERED":"PENDING");
-  j+=",\"recovered_epoch\":"+String(e.recoveredEpoch)+"}";
+  j+=",\"recovered_epoch\":"+String(e.recoveredEpoch);
+  // Anotar inconsistencias historicas sin reescribir ni inventar fechas NVS.
+  const time_t nowEpoch=time(nullptr);
+  const bool trustedNow=clockEvidenceTrusted()&&nowEpoch>0;
+  const bool futureEpoch=trustedNow&&e.epoch>(uint32_t(nowEpoch)+86400UL);
+  j+=",\"boot_epoch_quality\":"+jsonQuote(e.epoch==0?"MISSING":futureEpoch?"FUTURE_UNTRUSTED":"UNVERIFIED_HISTORICAL");
+  bool nextBootRecovered=false;
+  if(!e.outcome && i+1<restartJournal.count){
+   const auto& next=cielo96::restarts::at(restartJournal,i+1);
+   nextBootRecovered=(next.previous==e.boot && next.outcome==1);
+  }
+  j+=",\"following_boot_recovered\":"+String(nextBootRecovered?"true":"false")+"}";
  }
  return j+"]";
 }
@@ -931,6 +1050,8 @@ static void diagnosticJson(){
  j+=",\"loop_stack_bytes\":"+String(CIELO_LOOP_STACK_BYTES);
  j+=",\"loop_stack_min_free_bytes\":"+String(uxTaskGetStackHighWaterMark(nullptr));
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
+ j+=",\"heap_largest_block_min_15m_samples\":"+(largestHeapBlockSamples15m?String(largestHeapBlockMin15m):String("null"));
+ j+=",\"heap_largest_block_samples_15m\":"+String(largestHeapBlockSamples15m);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"fragmentation_pct\":"+(freeMem?String(cielo96::diag::fragmentationPct(freeMem,largest)):String("null"));
  j+=",\"fragmentation_definition\":\"100 x (1 - largest_free_block / free_heap), solo estimacion\"";
  j+=",\"filesystem_ok\":null,\"filesystem_errors\":null";
@@ -1062,6 +1183,31 @@ static void diagnosticJson(){
  j+=",\"optically_off\":null,\"reason\":\"Una escritura GATT no mide la luz real\"}}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
+ // nvs_get_stats consulta metadatos, sin escribir ni ejecutar limpieza.
+ nvs_stats_t nvsStats{};
+ const esp_err_t nvsStatsResult=nvs_get_stats("nvs",&nvsStats);
+ j+=",\"nvs_diagnostics\":{\"stats_error\":"+String((int)nvsStatsResult);
+ j+=",\"stats_available\":"+String(nvsStatsResult==ESP_OK?"true":"false");
+ if(nvsStatsResult==ESP_OK){
+  j+=",\"used_entries\":"+String(nvsStats.used_entries);
+  j+=",\"free_entries\":"+String(nvsStats.free_entries);
+  j+=",\"total_entries\":"+String(nvsStats.total_entries);
+  j+=",\"namespace_count\":"+String(nvsStats.namespace_count);
+ }
+ j+=",\"last_curve_slot\":"+jsonQuote(lastCurveNvsSlot);
+ j+=",\"last_curve_bytes_requested\":"+String(lastCurveNvsRequested);
+ j+=",\"last_curve_bytes_written\":"+String(lastCurveNvsWritten);
+ j+=",\"curve_write_failures_this_boot\":"+String(curveNvsFailedAttempts);
+ j+=",\"last_curve_error_code\":"+String((int)lastCurveNvsErr);
+ j+=",\"last_curve_error_name\":"+jsonQuote(esp_err_to_name(lastCurveNvsErr));
+ j+=",\"last_curve_stage\":"+jsonQuote(lastCurveNvsStage);
+ j+=",\"last_curve_failure\":"+jsonQuote(cielo96::nvssafe::message(lastCurveNvsFailure));
+ j+=",\"last_curve_stats_error\":"+String((int)lastCurveNvsStatsErr);
+ j+=",\"last_curve_free_entries_before\":"+String(lastCurveNvsFreeBefore);
+ j+=",\"last_curve_min_entries_required\":"+String(lastCurveNvsMinRequired);
+ j+=",\"space_preflight_note\":\"LOWER_BOUND_NOT_GUARANTEE\",\"inactive_slot_required\":true";
+ j+=",\"diag_writes_skipped_low_space\":"+String(diagWritesSkippedForSpace);
+ j+=",\"restart_writes_skipped_low_space\":"+String(restartWritesSkippedForSpace)+"}";
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"security\":{\"https_ready\":"+String("false")+",\"authentication\":\"NONE_LAN\",\"ota_signature\":\"NOT_REQUIRED_OWNER_REQUEST\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
@@ -1840,16 +1986,23 @@ static void bleUnexpectedDisconnectTick(){
   observedUnexpectedDisconnect[device]=link.unexpected_disconnects;
   record("BLE_ENLACE_PERDIDO",String(device?"Chihiros":"Pez Verde")+
    " desconexion inesperada; intentar retorno seguro, sin prueba optica");
-  if(pvControlDesired && !pvOffObligation){
+  // An isolated CH disconnect must not extinguish a healthy daytime PV.
+  // Only a PV link loss creates a PV OFF interlock.
+  if(device==0 && pvControlDesired && !pvOffObligation){
+   pvDisconnectOffSafetyEpisodes++;
    pvDisconnectInterlock=true;
    pvOffObligation=true;pvOffNextTry=millis();pvOffInFlightSeq=0;
    pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_DESCONEXION_OFF_PENDIENTE","POWER OFF antes de reanudar; sin radio no hay garantia fisica");
-  }else if(pvControlDesired && pvOffObligation){
+  }else if(device==0 && pvControlDesired && pvOffObligation){
    pvOffNextTry=millis();pvSafety=PvSafetyState::OffPending;
   }
-  if(cieloChRun && cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
+  if(device==1){
+   isolatedChDisconnects++;
+   record("CH_DESCONEXION_AISLADA","Pez Verde conserva curva y seguridad propias; retorno CH independiente");
+  }
+  if(device==1 && cieloChRun && cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
    cieloChRun=false;chReconnect.cancel();
    queue.cancel_pending(cielo::ble::Device::Chihiros);
    cieloRequestReturn("Desconexion BLE inesperada: devolver selector personalizado 0x03 a My Chihiros");
@@ -2226,7 +2379,9 @@ void setup(){
  }
  bootHistory[bootHistoryHead]={previousBootCount+1,(uint8_t)esp_reset_reason(),(uint8_t)priorBootClean,0};
  bootHistoryHead=(bootHistoryHead+1)%8;if(bootHistoryCount<8)bootHistoryCount++;
- prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
+ // boot_hist is redundant to restart_v2; preserve NVS headroom for curves.
+ if(!nvsPreserveCurveHeadroom())prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
+ else diagWritesSkippedForSpace++;
  if(prefs.getBytesLength("diag_journal")==sizeof(journal)){
   prefs.getBytes("diag_journal",&journal,sizeof(journal));
   if(journal.magic!=JOURNAL_MAGIC||journal.count>8||journal.head>=8)journal=JournalStore{JOURNAL_MAGIC,0,0,0,{}};
