@@ -20,6 +20,7 @@
 #include "cielo_profile_transaction.h"
 #include "cielo_storage_policy.h"
 #include "cielo_profile_fs.h"
+#include "cielo_curve_storage.h"
 #include "cielo_littlefs_readonly.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
@@ -64,7 +65,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.6.2-LITTLEFS-RO-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.7-LITTLEFS-AB-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -135,8 +136,8 @@ static cielo96::recovery::Supervisor bleSupervisor;
 static bool bleRecoveryBoot=false,bleRecoveryBootPvSafe=false,bleRecoveryExhausted=false;
 static WebServer srv(80);
 static Preferences prefs;
-static cielo96::profilefs::Store curveFs;
 static cielo96::storage::LittlefsReadonlyProbe littlefsReadonly;
+static cielo96::storage::CurveStore curveFs(littlefsReadonly);
 static const char* loadedCurveBackend="DEFAULT_RAM";
 static cielo96::ProfileImage profile;
 static cielo::ble::Scheduler queue(3500,250,2000);
@@ -511,12 +512,32 @@ static void loadProfile(){
   profile=*legacy;loaded=true;loadedCurveBackend="NVS_LEGACY";
   record("CURVAS_NVS_OK",String("NVS generacion=")+String(profile.generation));
  }
- // Non-destructive legacy migration: SPIFFS snapshots take precedence only
- // when valid AND newer. Never clear or rewrite NVS during boot.
+ const uint32_t nvsDelta=a.generation-b.generation;
+ const bool legacyConflict=va&&vb&&((!nvsDelta&&memcmp(&a,&b,sizeof(a))!=0)||nvsDelta==0x80000000UL);
+ if(legacyConflict){curveFs.block("NVS_GENERATION_CONFLICT");record("CURVAS_NVS_CONFLICTO","Guardado bloqueado; ambas copias conservadas");}
+ // Prefer a validated filesystem snapshot, while retaining both NVS slots.
  cielo96::ProfileImage file{};
- if(curveFs.newest(file) && (!loaded || cielo96::profilefs::newerGeneration(file.generation,profile.generation))){
-  profile=file;loaded=true;loadedCurveBackend="SPIFFS_AB";
-  record("CURVAS_FS_OK",String("SPIFFS generacion=")+String(profile.generation));
+ const bool fileValid=curveFs.newest(file);
+ bool conflict=legacyConflict;
+ if(fileValid){
+  const uint32_t delta=file.generation-profile.generation;
+  conflict=conflict||(loaded && ((delta==0&&memcmp(&file,&profile,sizeof(file))!=0)||delta==0x80000000UL));
+  if(conflict){
+   curveFs.block("NVS_FS_GENERATION_CONFLICT");
+   record("CURVAS_FS_CONFLICTO","Misma generacion con bytes distintos o rango ambiguo; guardado bloqueado");
+  }else if(!loaded || (!delta || cielo96::profilefs::newerGeneration(file.generation,profile.generation))){
+   profile=file;loaded=true;loadedCurveBackend=curveFs.backend();
+   record("CURVAS_FS_OK",String(curveFs.backend())+" generacion="+String(profile.generation));
+  }
+ }
+ // First migration copies the exact generation/bytes, without an NVS marker.
+ // A cut leaves NVS untouched; unpublished stages are preserved and skipped.
+ if(loaded && !conflict && curveFs.isLittlefs() && curveFs.ready() &&
+    strcmp(loadedCurveBackend,"NVS_LEGACY")==0){
+  if(curveFs.migrate(profile)){
+   loadedCurveBackend=curveFs.backend();
+   record("CURVAS_LFS_MIGRADA",String("NVS conservada; generacion=")+String(profile.generation));
+  }else record("CURVAS_LFS_PENDIENTE",curveFs.error());
  }
  if(!loaded){
   bool corrupt=prefs.getBytesLength("curvesA")!=0 || prefs.getBytesLength("curvesB")!=0;
@@ -562,19 +583,23 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  auto failure=[&](Failure reason,const char*stage,esp_err_t err)->bool{
   lastCurveNvsFailure=reason;lastCurveNvsStage=stage;lastCurveNvsErr=err;
   curveNvsFailedAttempts++;
-  if(strncmp(stage,"SPIFFS",6)==0){
-   if(curveFs.published())lastBackupError="Guardado no confirmado. Descarga el Informe Maestro antes de repetir.";
+  if(strncmp(stage,"SPIFFS",6)==0||strncmp(stage,"FS_",3)==0){
+   if(curveFs.published()||curveFs.uncertain())lastBackupError="Guardado no confirmado. Descarga el Informe Maestro antes de repetir.";
    else if(strcmp(curveFs.error(),"EXISTING_SLOT_UNREADABLE")==0)
     lastBackupError="No se puede leer una copia guardada. Se detuvo el guardado para proteger tus curvas.";
    else if(strcmp(curveFs.error(),"ACTIVE_RECHECK_FAILED")==0)
     lastBackupError="No se pudo verificar la curva activa. No se ha sustituido.";
    else if(strcmp(curveFs.error(),"CANDIDATE_NOT_NEWER")==0)
     lastBackupError="El almacenamiento tiene una version igual o mas reciente. Revisa el Informe Maestro antes de guardar.";
+   else if(strcmp(curveFs.error(),"STAGING_LIMIT_REACHED")==0)
+    lastBackupError="Hay temporales conservados que necesitan revision. Perfil anterior protegido; descarga el Informe Maestro.";
+   else if(strcmp(curveFs.error(),"SPACE_HEADROOM_LOW")==0)
+    lastBackupError="No hay margen de espacio suficiente en LittleFS. Perfil anterior conservado.";
    else lastBackupError="No se pudo completar el guardado. La copia anterior sigue disponible.";
   }else if(lastCurveTransaction.writeMayHavePersisted)
    lastBackupError="Guardado NVS no confirmado. Descarga el Informe Maestro antes de repetir.";
   else if(err==ESP_ERR_NVS_NOT_ENOUGH_SPACE && !curveFs.ready())
-   lastBackupError="No hay espacio NVS suficiente y SPIFFS no esta disponible. Perfil activo conservado; revisa el Informe Maestro.";
+   lastBackupError="No hay espacio NVS suficiente y el filesystem no esta disponible. Perfil activo conservado; revisa el Informe Maestro.";
   else lastBackupError=String(cielo96::nvssafe::message(reason));
   // El fallo se conserva en RAM, sin escribir un journal NVS durante
   // la misma transaccion que acaba de fallar.
@@ -589,24 +614,27 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  // An unmountable nonempty filesystem stays untouched. The NVS fallback
  // can reclaim ONLY a verified redundant older slot after SDK NoSpace.
  if(curveFs.ready()){
-  lastCurveNvsStage="SPIFFS_PREPARAR";
-  lastCurveNvsSlot="SPIFFS";
+  lastCurveNvsStage="FS_PREPARAR";
+  lastCurveNvsSlot=curveFs.backend();
+  const uint32_t fsBytesBefore=curveFs.little.bytesWritten();
   if(!curveFs.save(candidate)){
    lastCurveNvsSlot=curveFs.slot();
-   return failure(Failure::WriteFailed,"SPIFFS_WRITE",ESP_FAIL);
+   return failure(Failure::WriteFailed,"FS_WRITE",ESP_FAIL);
   }
   static cielo96::ProfileImage fsVerified{};
   if(!curveFs.newest(fsVerified) || memcmp(&fsVerified,&candidate,sizeof(candidate))!=0)
-   return failure(Failure::VerificationFailed,"SPIFFS_VERIFY",ESP_ERR_INVALID_CRC);
+   return failure(Failure::VerificationFailed,"FS_VERIFY",ESP_ERR_INVALID_CRC);
   lastCurveNvsSlot=curveFs.slot();
-  lastCurveNvsWritten=sizeof(candidate);
-  lastCurveNvsStage="SPIFFS_VERIFICADO";
+  lastCurveNvsWritten=curveFs.isLittlefs()?curveFs.little.bytesWritten()-fsBytesBefore:sizeof(candidate);
+  lastCurveNvsStage="FS_VERIFICADO";
   lastCurveNvsErr=ESP_OK;
-  profile=candidate;profileRecovery=false;loadedCurveBackend="SPIFFS_AB";
+  profile=candidate;profileRecovery=false;loadedCurveBackend=curveFs.backend();
   lastBackupError="ninguno";curveSaveInProgress=false;
   record("CURVA_GUARDADA_FS",String("generacion=")+String(profile.generation));
   return true;
  }
+ if(!curveFs.allowNvsWrites())
+  return failure(Failure::WriteFailed,"FS_NO_FALLBACK",ESP_ERR_INVALID_STATE);
  // Leer ambos slots antes de elegir. Nunca sobrescribir la unica copia valida.
  // Reutilizar un unico buffer estatico: no apilar tres perfiles de ~1 KB
  // sobre la pila de 16 KB del servidor HTTP/loop.
@@ -729,9 +757,9 @@ static void saveBothCurves(){
  candidate.generation=profile.generation+1;
  cielo96::profileSeal(candidate);
  if(!cielo96::curves::curveValid(candidate))return fail(400,"Perfil completo no valido");
- const bool persisted=strcmp(loadedCurveBackend,"NVS_LEGACY")==0||strcmp(loadedCurveBackend,"SPIFFS_AB")==0;
+ const bool persisted=strcmp(loadedCurveBackend,"NVS_LEGACY")==0||strcmp(loadedCurveBackend,"SPIFFS_AB")==0||strcmp(loadedCurveBackend,"LITTLEFS_AB")==0;
  const bool uncertain=(lastCurveTransaction.writeMayHavePersisted&&!lastCurveTransaction.verified)||
-  (curveFs.published()&&lastCurveNvsFailure!=cielo96::nvssafe::Failure::None);
+  curveFs.uncertain()||(curveFs.published()&&lastCurveNvsFailure!=cielo96::nvssafe::Failure::None);
  if(cielo96::storage::canSkipSave(profile,candidate,persisted&&!profileRecovery,uncertain)){
   ++curveUnchangedSavesSkipped;lastCurveRequestUnchanged=true;lastBackupError="ninguno";
   return jsonSend(200,String("{\"ok\":true,\"unchanged\":true,\"generation\":")+String(profile.generation)+
@@ -745,7 +773,7 @@ static void saveBothCurves(){
   response+=",\"nvs_error_name\":"+jsonQuote(esp_err_to_name(lastCurveNvsErr));
   response+=",\"nvs_stage\":"+jsonQuote(lastCurveNvsStage);
   response+=",\"previous_profile_preserved\":true";
-  response+=",\"write_may_have_persisted\":"+String((curveFs.published()||lastCurveTransaction.writeMayHavePersisted)?"true":"false")+"}";
+  response+=",\"write_may_have_persisted\":"+String((curveFs.uncertain()||curveFs.published()||lastCurveTransaction.writeMayHavePersisted)?"true":"false")+"}";
   return jsonSend(space?507:500,response);
  }
  lastPvDesired=false;lastChDesired=false;
@@ -1404,7 +1432,7 @@ static void diagnosticJson(){
  j+=",\"curve_slots\":"+curveNvsSlotsJson();
  j+=",\"diag_writes_skipped_low_space\":"+String(diagWritesSkippedForSpace);
  j+=",\"restart_writes_skipped_low_space\":"+String(restartWritesSkippedForSpace)+"}";
- j+=",\"curve_storage\":{\"backend\":"+jsonQuote(curveFs.ready()?"SPIFFS_AB":"NVS_LEGACY");
+ j+=",\"curve_storage\":{\"backend\":"+jsonQuote(curveFs.backend());
  j+=",\"loaded_backend\":"+jsonQuote(loadedCurveBackend);
  j+=",\"fs_available\":"+String(curveFs.ready()?"true":"false");
  j+=",\"fs_status\":"+jsonQuote(curveFs.status());
@@ -1426,6 +1454,24 @@ static void diagnosticJson(){
  j+=",\"total_bytes\":"+String(littlefsReadonly.totalBytes)+",\"used_bytes\":"+String(littlefsReadonly.usedBytes);
  j+=",\"retained_readonly_mount\":"+String(littlefsReadonly.retainedReadonlyMount?"true":"false");
  j+=",\"read_only\":true,\"format_if_mount_failed\":false,\"grow_on_mount\":false,\"curve_writes_enabled\":false}";
+ j+=",\"curve_writes_enabled\":"+String(curveFs.writable()?"true":"false");
+ j+=",\"nvs_curve_fallback_allowed\":"+String(curveFs.allowNvsWrites()?"true":"false");
+ j+=",\"littlefs_write_backend\":{\"enabled\":"+String(curveFs.isLittlefs()&&curveFs.ready()?"true":"false");
+ j+=",\"migration_attempted\":"+String(curveFs.little.migrationAttempted?"true":"false");
+ j+=",\"migration_verified\":"+String(curveFs.little.migrationVerified?"true":"false");
+ j+=",\"write_blocked\":"+String(curveFs.little.blocked()?"true":"false");
+ j+=",\"mount_error\":"+String((int)curveFs.little.mountError);
+ j+=",\"last_errno\":"+String(curveFs.little.lastErrno());
+ j+=",\"last_stage\":"+jsonQuote(curveFs.little.stage());
+ j+=",\"preserved_stages_last_attempt\":"+String(curveFs.little.preservedStages());
+ j+=",\"staging_limit\":64,\"reserve_bytes\":32768,\"save_attempts\":"+String(curveFs.little.saveAttempts());
+ j+=",\"verified_saves\":"+String(curveFs.little.verifiedSaves());
+ j+=",\"create_exclusive_calls\":"+String(curveFs.little.createCalls());
+ j+=",\"file_bytes_written\":"+String(curveFs.little.bytesWritten());
+ j+=",\"fsync_calls\":"+String(curveFs.little.syncCalls());
+ j+=",\"rename_calls\":"+String(curveFs.little.renameCalls());
+ j+=",\"publication_uncertain\":"+String(curveFs.uncertain()?"true":"false");
+ j+=",\"counter_scope\":\"CURRENT_BOOT_FILE_API_NOT_PHYSICAL_FLASH_WRITES\"}";
  j+=",\"last_fs_slot\":"+jsonQuote(curveFs.slot());
  j+=",\"last_fs_publish_completed\":"+String(curveFs.published()?"true":"false");
  j+=",\"fs_initialized_verified_blank\":"+String(curveFs.initializedFromBlank()?"true":"false");
@@ -2650,7 +2696,7 @@ void setup(){
  tracePhase(TracePhase::Profile);
  if(curveFs.begin())record("CURVE_FS_OK",curveFs.status());
  else record("CURVE_FS_INACTIVO",curveFs.status());
- if(!curveFs.ready()){littlefsReadonly.run();record("LITTLEFS_LECTURA",littlefsReadonly.status);}
+ if(curveFs.isLittlefs()||!curveFs.ready()){littlefsReadonly.run();record("LITTLEFS_LECTURA",littlefsReadonly.status);}
  loadProfile();
  cieloAlwaysOn=cielo96::autonomy::enabled(prefs.isKey("v5_always"),prefs.getBool("v5_always",false));
  if(cieloAlwaysOn && !prefs.isKey("v5_always") && prefs.putBool("v5_always",true)!=1){

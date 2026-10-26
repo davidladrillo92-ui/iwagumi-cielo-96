@@ -1,5 +1,10 @@
 # Preparación de migración: laboratorio sintético, 26/10/2026
 
+> Documento histórico de PR59. El protocolo se ha sustituido en RECOVERY3.7
+> por Publisher de producción con temporales exclusivos alternativos:132 cortes,
+>0 reintentos bloqueados. Véase RECOVERY3_7_LITTLEFS_AB_20261026.md. El comando
+> de laboratorio actual prueba ese protocolo nuevo.
+
 ## Resultado y alcance
 
 Se añade un banco de pruebas de publicación de curvas sobre LittleFS real en

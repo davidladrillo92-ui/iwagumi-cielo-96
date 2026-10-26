@@ -9,14 +9,17 @@ struct esp_vfs_littlefs_conf_t {
 };
 inline unsigned lfs_register_calls=0,lfs_unregister_calls=0,lfs_info_calls=0;
 inline bool lfs_mounted=false;
+inline bool lfs_allow_rw=false;
 inline esp_err_t lfs_register_error=ESP_OK,lfs_info_error=ESP_OK,lfs_unregister_error=ESP_OK;
 inline size_t lfs_total=0x180000,lfs_used=72*4096;
 inline bool esp_littlefs_mounted(const char*label){assert(strcmp(label,"spiffs")==0);return lfs_mounted;}
 inline esp_err_t esp_vfs_littlefs_register(const esp_vfs_littlefs_conf_t*c){
  ++lfs_register_calls;
- assert(strcmp(c->base_path,"/cielo-lfs-ro")==0&&strlen(c->base_path)<=15);
+ assert(strlen(c->base_path)<=15);
+ if(c->read_only)assert(strcmp(c->base_path,"/cielo-lfs-ro")==0);
+ else assert(lfs_allow_rw&&strcmp(c->base_path,"/cielo-lfs")==0);
  assert(strcmp(c->partition_label,"spiffs")==0&&!c->partition);
- assert(c->read_only&&!c->format_if_mount_failed&&!c->grow_on_mount&&!c->dont_mount);
+ assert(!c->format_if_mount_failed&&!c->grow_on_mount&&!c->dont_mount);
  if(lfs_register_error==ESP_OK)lfs_mounted=true;
  return lfs_register_error;
 }
