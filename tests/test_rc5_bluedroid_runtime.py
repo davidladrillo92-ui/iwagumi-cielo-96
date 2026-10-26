@@ -35,7 +35,8 @@ struct Sem {bool available=true;unsigned val=0;
  bool timedWait(const char*,unsigned ticks);unsigned value(){return val;}
 };
 struct BLEClient {
- std::atomic<bool> m_cieloPending{false},m_cieloExpired{false};bool m_isConnected=false;
+ std::atomic<bool> m_cieloPending{false},m_cieloExpired{false};
+ std::atomic<uint8_t> m_cieloStage{0};std::atomic<int> m_cieloLastEspError{0};bool m_isConnected=false;
  int m_appId=0,m_gattc_if=ESP_GATT_IF_NONE,m_conn_id=7;BLEAddress m_peerAddress;
  Sem m_semaphoreRegEvt,m_semaphoreOpenEvt;
  BLEAddress&getPeerAddress(){return m_peerAddress;}

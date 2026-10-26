@@ -101,10 +101,11 @@ bool BLEClient::connect(BLEAddress address, esp_ble_addr_type_t type) {
  if(m_cieloPending.load())return false;
  const uint32_t started=millis();
  m_cieloExpired=false;m_cieloPending=true;m_isConnected=false;
+ m_cieloStage=1;m_cieloLastEspError=0;
  m_appId=BLEDevice::m_appId++;
  BLEDevice::addPeerDevice(this,true,m_appId);
  auto expire=[&](){
-  m_cieloExpired=true;
+  m_cieloExpired=true;m_cieloStage=5;
   // Handle an OPEN callback racing exactly with the timeout boundary.
   if(!m_cieloPending.load()){
    if(m_isConnected){m_cieloPending=true;::esp_ble_gattc_close(m_gattc_if,m_conn_id);}
@@ -112,28 +113,34 @@ bool BLEClient::connect(BLEAddress address, esp_ble_addr_type_t type) {
   }
   return false;
  };
- if(!m_semaphoreRegEvt.take(0,"cielo-connect")){m_cieloPending=false;BLEDevice::removePeerDevice(m_appId,true);return false;}
+ if(!m_semaphoreRegEvt.take(0,"cielo-connect")){m_cieloPending=false;m_cieloStage=0;BLEDevice::removePeerDevice(m_appId,true);return false;}
  esp_err_t errRc=::esp_ble_gattc_app_register(m_appId);
- if(errRc!=ESP_OK){m_semaphoreRegEvt.give();m_cieloPending=false;BLEDevice::removePeerDevice(m_appId,true);return false;}
+ m_cieloLastEspError=static_cast<int>(errRc);
+ if(errRc!=ESP_OK){m_semaphoreRegEvt.give();m_cieloPending=false;m_cieloStage=0;BLEDevice::removePeerDevice(m_appId,true);return false;}
  // timedWait in Arduino 2.0.17 takes ticks internally despite its parameter name.
+ m_cieloStage=2;
  if(!m_semaphoreRegEvt.timedWait("cielo-register",pdMS_TO_TICKS(2000)))return expire();
  uint32_t rc=m_semaphoreRegEvt.value();
- if(rc!=ESP_GATT_OK){m_cieloPending=false;BLEDevice::removePeerDevice(m_appId,true);return false;}
+ if(rc!=ESP_GATT_OK){m_cieloPending=false;m_cieloStage=0;BLEDevice::removePeerDevice(m_appId,true);return false;}
  m_peerAddress=address;
- if(!m_semaphoreOpenEvt.take(0,"cielo-open")){m_cieloPending=false;::esp_ble_gattc_app_unregister(m_gattc_if);m_gattc_if=ESP_GATT_IF_NONE;BLEDevice::removePeerDevice(m_appId,true);return false;}
+ if(!m_semaphoreOpenEvt.take(0,"cielo-open")){m_cieloPending=false;m_cieloStage=0;::esp_ble_gattc_app_unregister(m_gattc_if);m_gattc_if=ESP_GATT_IF_NONE;BLEDevice::removePeerDevice(m_appId,true);return false;}
+ m_cieloStage=3;
  errRc=::esp_ble_gattc_open(m_gattc_if,*getPeerAddress().getNative(),type,1);
+ m_cieloLastEspError=static_cast<int>(errRc);
  if(errRc!=ESP_OK){
-  m_semaphoreOpenEvt.give();m_cieloPending=false;
+  m_semaphoreOpenEvt.give();m_cieloPending=false;m_cieloStage=0;
   ::esp_ble_gattc_app_unregister(m_gattc_if);m_gattc_if=ESP_GATT_IF_NONE;
   BLEDevice::removePeerDevice(m_appId,true);return false;
  }
  const uint32_t elapsed=uint32_t(millis()-started);
+ m_cieloStage=4;
  if(elapsed>=8000 || !m_semaphoreOpenEvt.timedWait("cielo-open",pdMS_TO_TICKS(8000-elapsed)))return expire();
  rc=m_semaphoreOpenEvt.value();
  if(rc!=ESP_GATT_OK){
   BLEDevice::removePeerDevice(m_appId,true);
   ::esp_ble_gattc_app_unregister(m_gattc_if);m_gattc_if=ESP_GATT_IF_NONE;
  }
+ m_cieloStage=0;
  return rc==ESP_GATT_OK && m_isConnected;
 } // connect
 
@@ -167,7 +174,7 @@ void BLEClient::gattClientEventHandler(
  if(m_cieloExpired.load()){
   if(event==ESP_GATTC_REG_EVT){
    if(evtParam->reg.status==ESP_GATT_OK)::esp_ble_gattc_app_unregister(gattc_if);
-   BLEDevice::removePeerDevice(m_appId,true);m_gattc_if=ESP_GATT_IF_NONE;m_semaphoreRegEvt.give(ESP_GATT_ERROR);m_semaphoreOpenEvt.give(ESP_GATT_ERROR);m_cieloPending=false;
+   BLEDevice::removePeerDevice(m_appId,true);m_gattc_if=ESP_GATT_IF_NONE;m_semaphoreRegEvt.give(ESP_GATT_ERROR);m_semaphoreOpenEvt.give(ESP_GATT_ERROR);m_cieloPending=false;m_cieloStage=0;
   }else if(event==ESP_GATTC_OPEN_EVT){
    m_gattc_if=gattc_if;m_conn_id=evtParam->open.conn_id;
    if(evtParam->open.status==ESP_GATT_OK){
@@ -175,12 +182,12 @@ void BLEClient::gattClientEventHandler(
     ::esp_ble_gattc_close(gattc_if,m_conn_id);
    }else{
     ::esp_ble_gattc_app_unregister(gattc_if);BLEDevice::removePeerDevice(m_appId,true);
-    m_gattc_if=ESP_GATT_IF_NONE;m_semaphoreRegEvt.give(ESP_GATT_ERROR);m_semaphoreOpenEvt.give(ESP_GATT_ERROR);m_cieloPending=false;
+    m_gattc_if=ESP_GATT_IF_NONE;m_semaphoreRegEvt.give(ESP_GATT_ERROR);m_semaphoreOpenEvt.give(ESP_GATT_ERROR);m_cieloPending=false;m_cieloStage=0;
    }
   }else if(event==ESP_GATTC_DISCONNECT_EVT || event==ESP_GATTC_UNREG_EVT){
    if(event==ESP_GATTC_DISCONNECT_EVT)::esp_ble_gattc_app_unregister(gattc_if);
    m_isConnected=false;BLEDevice::removePeerDevice(m_appId,true);
-   m_gattc_if=ESP_GATT_IF_NONE;m_semaphoreRegEvt.give(ESP_GATT_ERROR);m_semaphoreOpenEvt.give(ESP_GATT_ERROR);m_cieloPending=false;
+   m_gattc_if=ESP_GATT_IF_NONE;m_semaphoreRegEvt.give(ESP_GATT_ERROR);m_semaphoreOpenEvt.give(ESP_GATT_ERROR);m_cieloPending=false;m_cieloStage=0;
   }
   return;
  }
@@ -221,7 +228,7 @@ void BLEClient::gattClientEventHandler(
 				m_isConnected = false;
 				esp_ble_gattc_app_unregister(m_gattc_if);
 				m_gattc_if = ESP_GATT_IF_NONE;
-				m_cieloPending=false;
+				m_cieloPending=false;m_cieloStage=0;
 				m_semaphoreOpenEvt.give(ESP_GATT_IF_NONE);
 				m_semaphoreRssiCmplEvt.give();
 				m_semaphoreSearchCmplEvt.give(1);
@@ -250,7 +257,7 @@ void BLEClient::gattClientEventHandler(
 			} else {
 				log_e("Failed to connect, status=%s", GeneralUtils::errorToString(evtParam->open.status));
 			}
-			m_cieloPending=false;
+			m_cieloPending=false;m_cieloStage=0;
 			m_semaphoreOpenEvt.give(evtParam->open.status);
 			break;
 		} // ESP_GATTC_OPEN_EVT
@@ -266,7 +273,7 @@ void BLEClient::gattClientEventHandler(
 		case ESP_GATTC_REG_EVT: {
 			m_gattc_if = gattc_if;
 			// pass on the registration status result, in case of failure
-			if(evtParam->reg.status!=ESP_GATT_OK)m_cieloPending=false;
+			if(evtParam->reg.status!=ESP_GATT_OK)m_cieloPending=false;m_cieloStage=0;
 			m_semaphoreRegEvt.give(evtParam->reg.status);
 			break;
 		} // ESP_GATTC_REG_EVT

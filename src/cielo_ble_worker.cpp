@@ -28,16 +28,22 @@ QueueHandle_t requests=nullptr,responses=nullptr,scanRequests=nullptr,scanRespon
 struct SharedLink { std::atomic<bool> connected{false},released{false},idleReleased{false},expectedRelease{false};std::atomic<uint32_t> releases{0},lastDisconnect{0},pendingSince{0};};
 SharedLink shared[2]{};
 std::atomic<bool> pvOffRequired{false};
+// Healthy BLE connections remain owned by CIELO; the web thread only sets flags.
+std::atomic<bool> keepLinks[2]{};
+std::atomic<uint32_t> unexpectedLoss[2]{},lastUnexpectedLoss[2]{};
 bool offWrittenInCurrentOperation=false;
 struct CallbackCounters {std::atomic<uint32_t> connected{0},disconnected{0},lastConnect{0},lastDisconnect{0};};
 CallbackCounters callbackCounters[2]{};
 struct LinkCallbacks: BLEClientCallbacks {
  uint8_t device;explicit LinkCallbacks(uint8_t d):device(d){}
- void onConnect(BLEClient*) override {callbackCounters[device].connected.fetch_add(1);callbackCounters[device].lastConnect.store(millis());shared[device].connected=true;shared[device].idleReleased=false;}
+ void onConnect(BLEClient*) override {callbackCounters[device].connected.fetch_add(1);callbackCounters[device].lastConnect.store(millis());shared[device].connected=true;shared[device].idleReleased=false;shared[device].expectedRelease=false;}
  void onDisconnect(BLEClient*) override {
   callbackCounters[device].disconnected.fetch_add(1);callbackCounters[device].lastDisconnect.store(millis());
   shared[device].connected=false;shared[device].lastDisconnect=millis();
-  if(!shared[device].expectedRelease.exchange(false))shared[device].idleReleased=false;
+  if(!shared[device].expectedRelease.exchange(false)){
+    shared[device].idleReleased=false;
+    unexpectedLoss[device].fetch_add(1);lastUnexpectedLoss[device].store(millis());
+   }
  }
 };
 LinkCallbacks linkCallbacks[2]={LinkCallbacks(0),LinkCallbacks(1)};
@@ -55,7 +61,6 @@ inline void metricTime(volatile uint32_t&last,volatile uint32_t&maxVal,uint32_t 
 
 uint32_t linkTouched[2]{};
 // Reuse links across 30/60s curve updates; explicit app/OTA release is immediate.
-static constexpr uint32_t BLE_IDLE_RELEASE_MS=90000UL;
 TaskHandle_t workerHandle=nullptr;
 volatile uint32_t lastHeartbeat=0;
 volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
@@ -81,8 +86,9 @@ void setWorkerPhase(BleWorkerPhase p,uint8_t dev=255){
 void releaseTarget(uint8_t device,bool userRequested){
  setWorkerPhase(BleWorkerPhase::Disconnecting,device);
  Target& t=targets[device];
- shared[device].expectedRelease=true;shared[device].idleReleased=!userRequested;
- if(t.client && t.client->isConnected()){
+ const bool wasConnected=t.client && t.client->isConnected();
+ shared[device].expectedRelease=wasConnected;shared[device].idleReleased=!userRequested;
+ if(wasConnected){
   const uint32_t started=millis();
   t.client->disconnect();
   PhaseCounters& metrics=phaseCounters[device];metrics.disconnect_count++;
@@ -102,7 +108,12 @@ void reconcileLinks(){
   Target& t=targets[device];
   const bool connected=t.client&&t.client->isConnected();
   if(!connected){
-   if(shared[device].connected){shared[device].lastDisconnect=millis();shared[device].idleReleased=false;}
+   if(shared[device].connected){
+     shared[device].lastDisconnect=millis();shared[device].idleReleased=false;
+     if(!shared[device].expectedRelease.exchange(false)){
+      unexpectedLoss[device].fetch_add(1);lastUnexpectedLoss[device].store(millis());
+     }
+    }
    shared[device].connected=false;t.writer=nullptr;t.manualEntered=false;t.pvOn=false;
   }else shared[device].connected=t.writer!=nullptr;
   if(t.client&&t.client->cieloConnectPending()){
@@ -111,9 +122,8 @@ void reconcileLinks(){
  }
 }
 void releaseIdleLinks(){
- uint32_t now=millis();
  for(uint8_t k=0;k<2;k++)
-  if(linkTouched[k] && now-linkTouched[k]>=BLE_IDLE_RELEASE_MS)
+  if(targets[k].client && targets[k].client->isConnected() && !keepLinks[k].load())
    releaseTarget(k,false);
 }
 uint16_t chMessageId=1;
@@ -358,7 +368,9 @@ void task(void*){
   const uint8_t device=static_cast<uint8_t>(c.device)==1?1:0;
   linkTouched[device]=millis();
   // Bounded transactions: always leave the controller free after the full batch.
-  if(!targets[device].client || !targets[device].client->cieloConnectPending())releaseTarget(device,false);
+  if((!keepLinks[device].load() || !success) &&
+     (!targets[device].client || !targets[device].client->cieloConnectPending()))
+    releaseTarget(device,false);
  }
 }
 }
@@ -406,6 +418,10 @@ BleLinkStatus ble_link_status(uint8_t device){
  r.released_to_app=shared[device].released;
  r.release_count=shared[device].releases;
  r.last_disconnect_ms=shared[device].lastDisconnect;
+ r.unexpected_disconnects=unexpectedLoss[device].load();
+ r.last_unexpected_ms=lastUnexpectedLoss[device].load();
+ r.sdk_connect_stage=targets[device].client?targets[device].client->cieloConnectStage():0;
+ r.sdk_last_esp_error=targets[device].client?targets[device].client->cieloLastEspError():0;
  return r;
 }
 bool ble_probe_request(uint8_t device){
@@ -417,7 +433,9 @@ bool ble_probe_result(BleProbeResult& out){
 bool ble_scan_request(){uint8_t token=1;return scanRequests && xQueueSend(scanRequests,&token,0)==pdTRUE;}
 bool ble_scan_result(BleScanResult& out){return scanResponses && xQueueReceive(scanResponses,&out,0)==pdTRUE;}
 void ble_set_pv_off_required(bool value){pvOffRequired.store(value);}
-void ble_keep_links(bool,bool){} // Transactions are released after every batch.
+void ble_keep_links(bool pv,bool ch){
+ keepLinks[0].store(pv);keepLinks[1].store(ch);
+} // Worker exclusively performs actual disconnects; OTA/app release sets false.
 bool ble_dispatch(const cielo::ble::Command& c){return requests && xQueueSend(requests,&c,0)==pdTRUE;}
 bool ble_result(BleResult& r){return responses && xQueueReceive(responses,&r,0)==pdTRUE;}
 uint32_t ble_last_heartbeat(){return lastHeartbeat;}

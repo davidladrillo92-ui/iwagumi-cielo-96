@@ -17,6 +17,7 @@ struct {bool connected=false,idleReleased=false;std::atomic<bool>expectedRelease
 std::atomic<int> connectState[2]{};int lastStackError[2]{};
 struct CallbackCounter {std::atomic<uint32_t> connected{0},disconnected{0},lastConnect{0},lastDisconnect{0};};
 CallbackCounter callbackCounters[2]{};
+std::atomic<uint32_t> unexpectedLoss[2]{},lastUnexpectedLoss[2]{};
 struct Target {BLEClient*client=nullptr;void*writer=nullptr;bool manualEntered=false,pvOn=false;} targets[2];
 '''
 main=r'''
