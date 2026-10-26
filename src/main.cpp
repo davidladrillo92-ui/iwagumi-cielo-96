@@ -612,7 +612,16 @@ static void saveBothCurves(){
  candidate.generation=profile.generation+1;
  cielo96::profileSeal(candidate);
  if(!cielo96::curves::curveValid(candidate))return fail(400,"Perfil completo no valido");
- if(!saveProfile(candidate))return fail(507,"No se pudo comprobar la escritura NVS. Perfil previo conservado");
+ if(!saveProfile(candidate)){
+  const bool space=lastCurveNvsFailure==cielo96::nvssafe::Failure::InsufficientEntries||
+   lastCurveNvsErr==ESP_ERR_NVS_NOT_ENOUGH_SPACE;
+  String response="{\"ok\":false,\"error\":"+jsonQuote(lastBackupError);
+  response+=",\"nvs_error_code\":"+String((int)lastCurveNvsErr);
+  response+=",\"nvs_error_name\":"+jsonQuote(esp_err_to_name(lastCurveNvsErr));
+  response+=",\"nvs_stage\":"+jsonQuote(lastCurveNvsStage);
+  response+=",\"previous_profile_preserved\":true}";
+  return jsonSend(space?507:500,response);
+ }
  lastPvDesired=false;lastChDesired=false;
  record("PERFIL_ATOMICO_GUARDADO",String("PV=")+String(profile.pvCount)+" CH="+String(profile.chCount)+" gen="+String(profile.generation));
  jsonSend(200,String("{\"ok\":true,\"generation\":")+String(profile.generation)+",\"pv\":"+String(profile.pvCount)+",\"chi\":"+String(profile.chCount)+"}");
@@ -1164,7 +1173,16 @@ static void diagnosticJson(){
  j+=",\"last_curve_bytes_requested\":"+String(lastCurveNvsRequested);
  j+=",\"last_curve_bytes_written\":"+String(lastCurveNvsWritten);
  j+=",\"curve_write_failures_this_boot\":"+String(curveNvsFailedAttempts);
- j+=",\"write_error_detail\":\"PREFERENCES_PUTBYTES_RETURNS_SIZE_ONLY\"}";
+ j+=",\"last_curve_error_code\":"+String((int)lastCurveNvsErr);
+ j+=",\"last_curve_error_name\":"+jsonQuote(esp_err_to_name(lastCurveNvsErr));
+ j+=",\"last_curve_stage\":"+jsonQuote(lastCurveNvsStage);
+ j+=",\"last_curve_failure\":"+jsonQuote(cielo96::nvssafe::message(lastCurveNvsFailure));
+ j+=",\"last_curve_stats_error\":"+String((int)lastCurveNvsStatsErr);
+ j+=",\"last_curve_free_entries_before\":"+String(lastCurveNvsFreeBefore);
+ j+=",\"last_curve_min_entries_required\":"+String(lastCurveNvsMinRequired);
+ j+=",\"space_preflight_note\":\"LOWER_BOUND_NOT_GUARANTEE\",\"inactive_slot_required\":true";
+ j+=",\"diag_writes_skipped_low_space\":"+String(diagWritesSkippedForSpace);
+ j+=",\"restart_writes_skipped_low_space\":"+String(restartWritesSkippedForSpace)+"}";
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"security\":{\"https_ready\":"+String("false")+",\"authentication\":\"NONE_LAN\",\"ota_signature\":\"NOT_REQUIRED_OWNER_REQUEST\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
