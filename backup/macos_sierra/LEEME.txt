@@ -1,0 +1,37 @@
+CIELO · COPIA USB PRIVADA · iMac con macOS Sierra10.12.6 y Python3.9
+Este paquete es independiente del vigilante de Telegram. No instala herramientas,
+no actualiza el ATOM y no modifica el vigilante, sus datos ni sus credenciales.
+
+1. Descomprime el ZIP y conserva la carpeta completa. Puedes hacer primero la
+   comprobacion sin conectar el ATOM; entonces aparecera el puerto como pendiente.
+2. Abre COMPROBAR.command. Solo comprueba Python3.9, esptool4/5, cifrado y puertos
+   observados. No abre el puerto ni envia reinicios. Si falta algo, comparte el
+   JSON COMPROBACION; no instales paquetes al azar ni uses el Python2.7 de Sierra.
+3. Cuando las herramientas esten disponibles y las luces puedan funcionar sin
+   el ATOM unos minutos, conectalo por USB con cable de datos (puede reiniciarse).
+   Comprueba el puerto y abre HACER_COPIA.command. Cierra antes el monitor serie
+   de Arduino si esta abierto. Lee las indicaciones, escribe COPIAR y escoge el
+   puerto observado si hay varios. La lectura pausa/reinicia el ATOM; las luces
+   pueden quedarse en su ultimo estado mientras tanto. Telegram puede avisar.
+4. Introduce una contrasena nueva de al menos12 caracteres, dos veces. No se
+   muestra ni se guarda. Conservala en privado; no hace falta enviarla al chat.
+5. Espera: se lee la flash completa dos veces sin ejecutar el programa entre
+   lecturas; se exige coincidencia exacta, se valida la tabla de particiones y
+   se cifra. Se descifra de nuevo en memoria para verificar antes de finalizar.
+
+RESULTADOS_PRIVADOS contiene:
+- CIELO_COPIA_ACTUAL_*.cieloenc: respaldo cifrado privado. Guarda tambien su
+  contrasena. No contiene un BIN nuevo para instalar ni debe cargarse por OTA.
+- CIELO_INFORME_COPIA_*.json: metadatos sin contrasenas ni contenido de NVS.
+  Este JSON es el informe que puedes compartir para continuar la auditoria.
+- COMPROBACION_*.json: comprobacion previa del entorno.
+
+Las lecturas sin cifrar son temporales y se eliminan; esto no promete borrado
+seguro del disco. La carpeta usa permisos0700 y los archivos privados0600.
+El paquete no tiene comando de escritura de firmware, borrado o restauracion.
+Una lectura fallida nunca provoca un formateo. Si el ATOM queda esperando en
+el cargador, desconecta y vuelve a conectar su alimentacion para que arranque.
+
+No hay validacion fisica de este paquete en tu iMac aun. Las pruebas de software
+incluyen Python3.9, puertos simulados, lecturas distintas/correctas, cifrado,
+recuperacion de errores y ausencia de comandos de escritura de flash.

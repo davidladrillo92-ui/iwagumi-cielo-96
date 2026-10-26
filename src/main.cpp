@@ -20,6 +20,7 @@
 #include "cielo_profile_transaction.h"
 #include "cielo_storage_policy.h"
 #include "cielo_profile_fs.h"
+#include "cielo_littlefs_readonly.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
 #include "profiles_generated.h"
@@ -63,7 +64,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.6.1-STORAGE-AUDIT-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.6.2-LITTLEFS-RO-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -135,6 +136,7 @@ static bool bleRecoveryBoot=false,bleRecoveryBootPvSafe=false,bleRecoveryExhaust
 static WebServer srv(80);
 static Preferences prefs;
 static cielo96::profilefs::Store curveFs;
+static cielo96::storage::LittlefsReadonlyProbe littlefsReadonly;
 static const char* loadedCurveBackend="DEFAULT_RAM";
 static cielo96::ProfileImage profile;
 static cielo::ble::Scheduler queue(3500,250,2000);
@@ -1414,6 +1416,16 @@ static void diagnosticJson(){
  j+=",\"partition_address\":"+String(curveFs.partitionAddress())+",\"partition_bytes\":"+String(curveFs.partitionSize());
  j+=",\"partition_encrypted\":"+String(curveFs.partitionEncrypted()?"true":"false");
  j+=",\"mount_error_code_available\":false,\"auto_format_allowed\":false";
+ j+=",\"littlefs_readonly_probe\":{\"status\":"+jsonQuote(littlefsReadonly.status);
+ j+=",\"driver_version\":"+jsonQuote(littlefsReadonly.driverVersion());
+ j+=",\"signature_block0\":"+String(littlefsReadonly.signature0?"true":"false")+",\"signature_block1\":"+String(littlefsReadonly.signature1?"true":"false");
+ j+=",\"mount_attempted\":"+String(littlefsReadonly.mountAttempted?"true":"false")+",\"verified\":"+String(littlefsReadonly.verified?"true":"false");
+ j+=",\"signature_read_error\":"+String((int)littlefsReadonly.readError);
+ j+=",\"mount_error\":"+(littlefsReadonly.mountAttempted?String((int)littlefsReadonly.mountError):String("null"));
+ j+=",\"info_error\":"+String((int)littlefsReadonly.infoError)+",\"unmount_error\":"+String((int)littlefsReadonly.unmountError);
+ j+=",\"total_bytes\":"+String(littlefsReadonly.totalBytes)+",\"used_bytes\":"+String(littlefsReadonly.usedBytes);
+ j+=",\"retained_readonly_mount\":"+String(littlefsReadonly.retainedReadonlyMount?"true":"false");
+ j+=",\"read_only\":true,\"format_if_mount_failed\":false,\"grow_on_mount\":false,\"curve_writes_enabled\":false}";
  j+=",\"last_fs_slot\":"+jsonQuote(curveFs.slot());
  j+=",\"last_fs_publish_completed\":"+String(curveFs.published()?"true":"false");
  j+=",\"fs_initialized_verified_blank\":"+String(curveFs.initializedFromBlank()?"true":"false");
@@ -2638,6 +2650,7 @@ void setup(){
  tracePhase(TracePhase::Profile);
  if(curveFs.begin())record("CURVE_FS_OK",curveFs.status());
  else record("CURVE_FS_INACTIVO",curveFs.status());
+ if(!curveFs.ready()){littlefsReadonly.run();record("LITTLEFS_LECTURA",littlefsReadonly.status);}
  loadProfile();
  cieloAlwaysOn=cielo96::autonomy::enabled(prefs.isKey("v5_always"),prefs.getBool("v5_always",false));
  if(cieloAlwaysOn && !prefs.isKey("v5_always") && prefs.putBool("v5_always",true)!=1){
