@@ -63,9 +63,14 @@ public:
 // CIELO: a timed-out attempt is quarantined until its SDK event settles.
  bool cieloConnectPending() const {return m_cieloPending.load();}
  bool cieloConnectExpired() const {return m_cieloExpired.load();}
+ // Diagnostic only: 1=register request, 2=REG wait, 3=OPEN request, 4=OPEN wait, 5=late-event quarantine.
+ uint8_t cieloConnectStage() const {return m_cieloStage.load();}
+ int cieloLastEspError() const {return m_cieloLastEspError.load();}
 uint16_t m_appId;
 private:
  std::atomic<bool> m_cieloPending{false},m_cieloExpired{false};
+ std::atomic<uint8_t> m_cieloStage{0};
+ std::atomic<int> m_cieloLastEspError{0};
 	friend class BLEDevice;
 	friend class BLERemoteService;
 	friend class BLERemoteCharacteristic;
