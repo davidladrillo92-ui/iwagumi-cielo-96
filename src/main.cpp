@@ -414,6 +414,9 @@ static void cieloTrendTick(){
  t.pv=cieloPvConfirmed;t.ch=cieloChConfirmed;
  t.pvErrors=devices[0].errors;t.chErrors=devices[1].errors;
  t.heap=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+ const uint32_t largestNow=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+ if(largestNow<largestHeapBlockMin15m)largestHeapBlockMin15m=largestNow;
+ largestHeapBlockSamples15m++;
  cieloTrendHead=(cieloTrendHead+1)%96;
  if(cieloTrendCount<96)cieloTrendCount++;
  time_t ep=time(nullptr);struct tm local{};localtime_r(&ep,&local);
