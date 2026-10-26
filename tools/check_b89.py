@@ -12,7 +12,8 @@ with tempfile.TemporaryDirectory() as t:
  for source in sorted(Path('tests').glob('test_*.cpp')):
   output=str(Path(t)/source.stem)
   extra=['src/cielo_monitor.cpp'] if source.stem=='test_b89_monitor' else []
-  run('g++','-std=c++17','-Wall','-Wextra','-Werror','-Iinclude',str(source),*extra,'-o',output)
+  mock=['-Itests/mockfs'] if source.stem=='test_rc5_3_5_fs_store' else []
+  run('g++','-std=c++17','-Wall','-Wextra','-Werror',*mock,'-Iinclude',str(source),*extra,'-o',output)
   run(output)
  for source in sorted(Path('tests').glob('test_*.js')):run('node',str(source))
 for source in sorted(Path('tests').glob('test_*.py')):
