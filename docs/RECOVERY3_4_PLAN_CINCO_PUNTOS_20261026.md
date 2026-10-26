@@ -61,3 +61,15 @@ Fecha: 2026-10-26. Base: RECOVERY3.3 BLE persistente, Informe Maestro 75 (14:49:
 ## Restricciones innegociables
 
 No cambiar puntos ni horarios V5, transporte Bluedroid, conexiones persistentes, prioridad de apagado, rollback OTA, monitor iMac Sierra, Telegram ni NVS existente. Ningún ensayo de desconexión física o instalación sin autorización del propietario. GitHub CI valida compilación y pruebas de host; no sustituye la prueba física.
+
+## Implementación RECOVERY3.4 — segunda iteración
+
+- **Escritura NVS con error exacto:** sustitución localizada de `Preferences.putBytes` por `nvs_open`, `nvs_set_blob`, `nvs_commit` y `nvs_get_blob`, manteniendo la misma partición y namespace `cielo96`. El Informe Maestro ahora muestra `last_curve_error_code`, `last_curve_error_name` y `last_curve_stage`. No se ha medido todavía el error real del dispositivo: se verá tras instalar y repetir un guardado.
+- **Doble copia protegida:** inspección de `curvesA/curvesB` antes de escribir. Nunca sobrescribe el único slot válido; si ambos son válidos, sobrescribe el más antiguo. Perfil RAM solo cambia después de `commit` + lectura + comprobación de checksum + igualdad byte a byte.
+- **Preflight NVS:** se consulta `nvs_get_stats` y se rechaza solo si no hay ni el mínimo teórico de entradas para un blob de `sizeof(ProfileImage)`. Esta estimación es una cota inferior, no garantiza espacio contiguo ni ausencia de fragmentación; el resultado de `nvs_set_blob` es autoritativo.
+- **Reducción de escrituras:** el diario de diagnóstico se mantiene en RAM y omite volcado si el espacio es escaso; `boot_hist` redundante también se omite bajo presión. El historial principal `restart_v2` conserva su prioridad. Los contadores de omisiones aparecen en el informe. No se borran entradas antiguas ni se hace `nvs_erase_all`.
+- **Mensajes específicos:** se distingue perfil inválido, falta de estadísticas, insuficiencia de entradas, error de apertura, escritura, confirmación, lectura y verificación. HTTP 507 solo para falta de espacio; HTTP 500 para otros fallos. El perfil anterior permanece en RAM.
+- **Desconexiones BLE independientes:** desconexión de Chihiros no impone POWER OFF a Pez Verde. La desconexión de Pez Verde sí exige OFF GATT antes de reanudar RGB diurno. Chihiros continúa con retorno personalizado 0x03 y liberación del enlace a My Chihiros.
+- **Pruebas:** tests C++ de política NVS, escenarios host de recuperación PV/CH, aserciones de integración y compilación PlatformIO en GitHub Actions.
+
+**Límites:** un fallo de flash/NVS persistente puede impedir cualquier nuevo guardado; no se puede prometer que RECOVERY3.4 arregle el dispositivo sin diagnosticar la causa física. Ningún GATT verifica el estado óptico. Las pruebas de desconexión diurna requieren supervisión del usuario. OTA debe realizarse con respaldo del firmware y del perfil existente.
