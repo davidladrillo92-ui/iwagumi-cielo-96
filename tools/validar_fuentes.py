@@ -90,7 +90,8 @@ assert 'if(queue.busy()||contrastStage==1||contrastStage==4)' in code
 assert "30,30,30,0,millis(),45000" in code
 
 assert 'ble_release_request(index)' in code and '/api/ble/release' in code
-assert 'releaseIdleLinks()' in bleworker and 'BLE_IDLE_RELEASE_MS=90000UL' in bleworker
+assert 'releaseIdleLinks()' in bleworker and 'keepLinks[k].load()' in bleworker
+assert 'void ble_keep_links(bool pv,bool ch)' in bleworker and 'unexpectedLoss[device].fetch_add(1)' in bleworker
 assert 'ble_link_status(linkIndex)' in code
 assert '/api/lab/preview' in code and 'CURVA_PREVIA_CH' in code
 assert 'chihiros_auto_verified' in code and 'CH_AUTO_MODE_UNVERIFIED' in bleworker
