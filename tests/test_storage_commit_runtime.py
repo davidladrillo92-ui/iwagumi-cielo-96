@@ -33,7 +33,7 @@ cielo96::profiletxn::Result lastCurveTransaction;
 cielo96::nvssafe::Failure lastCurveNvsFailure=cielo96::nvssafe::Failure::None;
 constexpr int ESP_ERR_NVS_NOT_ENOUGH_SPACE=4357;int lastCurveNvsErr=0;
 const char* lastCurveNvsStage="sin_intento";const char* esp_err_to_name(int){return "ESP_OK";}
-String lastBackupError="ninguno";struct {bool published(){return false;}}curveFs;
+String lastBackupError="ninguno";struct {bool published(){return false;}bool uncertain(){return false;}}curveFs;
 int status=0;String body;void fail(int code,const char*s){status=code;body=s;}
 void jsonSend(int code,const String&s){status=code;body=s;}
 void record(const char*,const String&){}

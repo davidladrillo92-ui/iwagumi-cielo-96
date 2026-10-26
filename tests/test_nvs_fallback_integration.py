@@ -32,7 +32,9 @@ struct String {
  friend String operator+(const String& a,const String& b){String s;s.value=a.value+b.value;return s;}
 };
 struct FsUnavailable {
- bool ready(){return false;}bool published(){return false;}
+ bool allow=true;bool allowNvsWrites(){return allow;}bool isLittlefs(){return false;}
+ const char* backend(){return "NVS_LEGACY";}struct {uint32_t bytesWritten(){return 0;}}little;
+ bool ready(){return false;}bool published(){return false;}bool uncertain(){return false;}
  bool save(const ProfileImage&){assert(false);return false;}
  bool newest(ProfileImage&){assert(false);return false;}
  const char* error(){return "NONE";}const char* slot(){return "NONE";}
@@ -46,7 +48,7 @@ const char* lastCurveNvsStage="sin_intento";const char* lastCurveNvsSlot="sin_in
 size_t lastCurveNvsWritten=0,lastCurveNvsRequested=0,lastCurveNvsMinRequired=0,lastCurveNvsFreeBefore=0;
 uint32_t curveNvsFailedAttempts=0,curveNvsSetAttempts=0;String lastBackupError;
 void record(const char*,const String&){assert(!curveSaveInProgress||!lastCurveTransaction.verified);}
-void reset(){mock=initial();profile=image(8);profileRecovery=false;statsFail=false;}
+void reset(){mock=initial();profile=image(8);profileRecovery=false;statsFail=false;curveFs.allow=true;}
 '''
 checks = r'''
 int main(){
@@ -73,6 +75,8 @@ int main(){
  assert(lastBackupError.value.find("no confirmado")!=std::string::npos);
  reset();statsFail=true;
  assert(!saveProfile(candidate)&&mock.writes==0&&mock.eraseCalls==0);
+ reset();curveFs.allow=false;
+ assert(!saveProfile(candidate)&&mock.writes==0&&mock.eraseCalls==0&&profile.generation==8);
  reset();mock.used={{50,50,50,50}};mock.publishedThenError=true;
  assert(!saveProfile(candidate)&&mock.records["curvesA"].generation==9);
  assert(lastCurveTransaction.writeMayHavePersisted&&!lastCurveTransaction.writeAccepted);

@@ -2,6 +2,7 @@
 // Nothing in this directory is included by the ESP32 firmware.
 #include "lfs.h"
 #include "cielo_curve_policy.h"
+#include "cielo_littlefs_transaction.h"
 #include "v5_fixture.h"
 #include <algorithm>
 #include <array>
@@ -13,8 +14,8 @@
 
 using cielo96::ProfileImage;
 constexpr size_t BlockSize=4096, BlockCount=384;
-constexpr const char *A="/cielo_profile_a.bin", *B="/cielo_profile_b.bin";
-constexpr const char *Temp="/cielo_profile_tmp.bin", *Foreign="/fixture_foreign.dat";
+constexpr const char *A=cielo96::littlecurve::kA, *B=cielo96::littlecurve::kB;
+constexpr const char *Temp="/cielo_lfs_stage_00.bin", *Foreign="/fixture_foreign.dat";
 struct PowerCut {};
 enum class Cut {Before, After, Partial};
 struct Disk {
@@ -59,15 +60,15 @@ struct Session {
  int close(){return lfs_unmount(&fs);}
 };
 
-bool writeFile(Session&s,const char*path,const void*bytes,size_t size){
+bool writeFile(Session&s,const char*path,const void*bytes,size_t size,bool exclusive=false){
  lfs_file_t f{};std::array<uint8_t,256> cache{};lfs_file_config cfg{};cfg.buffer=cache.data();
- int e=lfs_file_opencfg(&s.fs,&f,path,LFS_O_WRONLY|LFS_O_CREAT|LFS_O_TRUNC,&cfg);if(e)return false;
+ int e=lfs_file_opencfg(&s.fs,&f,path,LFS_O_WRONLY|LFS_O_CREAT|(exclusive?LFS_O_EXCL:LFS_O_TRUNC),&cfg);if(e)return false;
  auto n=lfs_file_write(&s.fs,&f,bytes,size);int synced=lfs_file_sync(&s.fs,&f);int closed=lfs_file_close(&s.fs,&f);
  return n==static_cast<lfs_ssize_t>(size)&&!synced&&!closed;
 }
-enum class Read {Absent,Valid,Unreadable};
+using Read=cielo96::littlecurve::Read;
 Read readProfile(Session&s,const char*path,ProfileImage&out){
- lfs_info info{};int e=lfs_stat(&s.fs,path,&info);if(e==LFS_ERR_NOENT)return Read::Absent;
+ lfs_info info{};int e=lfs_stat(&s.fs,path,&info);if(e==LFS_ERR_NOENT)return Read::Missing;
  if(e||info.type!=LFS_TYPE_REG||info.size!=sizeof(out))return Read::Unreadable;
  lfs_file_t f{};std::array<uint8_t,256> cache{};lfs_file_config cfg{};cfg.buffer=cache.data();
  if(lfs_file_opencfg(&s.fs,&f,path,LFS_O_RDONLY,&cfg))return Read::Unreadable;
@@ -77,40 +78,23 @@ Read readProfile(Session&s,const char*path,ProfileImage&out){
 bool equal(const ProfileImage&a,const ProfileImage&b){return std::memcmp(&a,&b,sizeof(a))==0;}
 enum class Result {Saved,Unchanged,Refused};
 
-// Experimental publication sequence, NOT a firmware backend. NVS is an immutable
-// input to this experiment; no marker, key removal or generation increment.
+// Execute the exact firmware Publisher, with the pinned LittleFS C core.
+struct LabIO {
+ Session& s;
+ Read read(const char*p,ProfileImage&out){return readProfile(s,p,out);}
+ cielo96::littlecurve::Present present(const char*p){
+  lfs_info info{};const int e=lfs_stat(&s.fs,p,&info);
+  if(e==LFS_ERR_NOENT)return cielo96::littlecurve::Present::Missing;
+  return e?cielo96::littlecurve::Present::Error:cielo96::littlecurve::Present::Exists;
+ }
+ bool headroom(){const auto used=lfs_fs_size(&s.fs);return used>=0&&used<=static_cast<lfs_ssize_t>(BlockCount-8);}
+ bool createExclusive(const char*p,const ProfileImage&v){return writeFile(s,p,&v,sizeof(v),true);}
+ bool replace(const char*a,const char*b){return lfs_rename(&s.fs,a,b)==0;}
+};
 Result publish(Session&s,const ProfileImage&candidate){
- if(!cielo96::curves::curveValid(candidate))return Result::Refused;
- ProfileImage a{},b{},temp{},check{};
- Read ra=readProfile(s,A,a),rb=readProfile(s,B,b);
- if(ra==Read::Unreadable||rb==Read::Unreadable)return Result::Refused;
- if(ra==Read::Valid&&rb==Read::Valid){
-  uint32_t delta=a.generation-b.generation;
-  if((delta==0&&!equal(a,b))||delta==0x80000000UL)return Result::Refused;
- }
- const auto*active=cielo96::curves::newestValid(ra==Read::Valid?&a:nullptr,rb==Read::Valid?&b:nullptr);
- if(active){
-  uint32_t delta=candidate.generation-active->generation;
-  if(!delta)return equal(candidate,*active)?Result::Unchanged:Result::Refused;
-  if(delta>=0x80000000UL)return Result::Refused;
- }
- // Conservative experimental headroom: metadata and COW need working blocks.
- // This is not a promise that a byte-count check makes a write succeed.
- lfs_ssize_t used=lfs_fs_size(&s.fs);
- if(used<0||used>static_cast<lfs_ssize_t>(BlockCount-8))return Result::Refused;
- Read rt=readProfile(s,Temp,temp);
- // An unknown/partial temporary is preserved for explicit recovery; it is
- // never silently truncated. This may block migration, not the NVS fallback.
- if(rt==Read::Unreadable||(rt==Read::Valid&&!equal(temp,candidate)))return Result::Refused;
- if(rt==Read::Absent&&!writeFile(s,Temp,&candidate,sizeof(candidate)))return Result::Refused;
- if(readProfile(s,Temp,check)!=Read::Valid||!equal(check,candidate))return Result::Refused;
- const char*activePath=active==&a?A:B;
- if(active&&(readProfile(s,activePath,check)!=Read::Valid||!equal(check,*active)))return Result::Refused;
- const char*destination=active==&a?B:A;
- // LittleFS rename replaces the inactive file directly. Never remove active.
- if(lfs_rename(&s.fs,Temp,destination))return Result::Refused;
- if(readProfile(s,destination,check)!=Read::Valid||!equal(check,candidate))return Result::Refused;
- return Result::Saved;
+ LabIO io{s};cielo96::littlecurve::Publisher<LabIO> txn(io);
+ if(!txn.save(candidate))return Result::Refused;
+ return txn.unchanged?Result::Unchanged:Result::Saved;
 }
 
 std::vector<uint8_t> foreignBytes(){std::vector<uint8_t> v(282079);for(size_t i=0;i<v.size();i++)v[i]=uint8_t((i*17+11)%251);return v;}
@@ -153,8 +137,8 @@ void campaign(const Disk&baseline,const ProfileImage&candidate,const ProfileImag
   if(preserveA)assert(readProfile(reboot,A,retained)==Read::Valid&&equal(retained,fallback));
   if(preserveB)assert(readProfile(reboot,B,retained)==Read::Valid&&equal(retained,fallback));
   auto retried=publish(reboot,candidate);
-  if(retried==Result::Refused){++blockedRetries;assert(equal(recovered(reboot,fallback),found));}
-  else assert(equal(recovered(reboot,fallback),candidate));
+  if(retried==Result::Refused)++blockedRetries;
+  assert(retried!=Result::Refused);assert(equal(recovered(reboot,fallback),candidate));
   assert(trial.nvs==baseline.nvs);assert(!reboot.close());++testedCuts;
  }
  std::cout<<"scenario_mutation_boundaries="<<ops<<" program_calls="<<successful.programs
@@ -197,14 +181,24 @@ int main(int argc,char**){
  Disk damaged=prepared(&p);{Session q(damaged);assert(!q.mount());uint8_t unknown[11]={1};
   assert(writeFile(q,B,unknown,sizeof(unknown)));assert(!q.close());}refusal(damaged,next);
  Disk temp=prepared(&p);{Session q(temp);assert(!q.mount());uint8_t unknown[11]={2};
-  assert(writeFile(q,Temp,unknown,sizeof(unknown)));assert(!q.close());}refusal(temp,next);
+  assert(writeFile(q,Temp,unknown,sizeof(unknown)));assert(!q.close());}
+ {Session q(temp);assert(!q.mount());assert(publish(q,next)==Result::Saved);lfs_info st{};
+  assert(!lfs_stat(&q.fs,Temp,&st)&&st.size==11);assert(!q.close());}
  Disk otherTemp=prepared(&p);{Session q(otherTemp);assert(!q.mount());
-  assert(writeFile(q,Temp,&old,sizeof(old)));assert(!q.close());}refusal(otherTemp,next);
+  assert(writeFile(q,Temp,&old,sizeof(old)));assert(!q.close());}
+ {Session q(otherTemp);assert(!q.mount());assert(publish(q,next)==Result::Saved);ProfileImage retained{};
+  assert(readProfile(q,Temp,retained)==Read::Valid&&equal(retained,old));assert(!q.close());}
  Disk io=prepared(&p);{Session q(io);assert(!q.mount());io.arm();io.readError=true;
   assert(publish(q,next)==Result::Refused&&io.mutations==0);io.readError=false;assert(!q.close());}
- // Recover an already verified temporary; do not write it a second time.
+ // Preserve even a valid preexisting stage; a fresh name is used for retry.
  Disk ready=prepared(&p);{Session q(ready);assert(!q.mount());assert(writeFile(q,Temp,&next,sizeof(next)));assert(!q.close());}
  campaign(ready,next,p);
+ // A saturated staging namespace refuses without deleting anything.
+ Disk saturated=prepared(&p);{Session q(saturated);assert(!q.mount());
+  for(unsigned i=0;i<cielo96::littlecurve::kMaxStages;++i){char name[40];
+   snprintf(name,sizeof(name),"/cielo_lfs_stage_%02u.bin",i);uint8_t unknown=0x71;
+   assert(writeFile(q,name,&unknown,1));}assert(!q.close());}
+ refusal(saturated,next);
  fullDisk(p,next);
  Disk blankFlash;auto before=blankFlash.flash;Session unformatted(blankFlash);
  assert(unformatted.mount()<0&&blankFlash.mutations==0&&blankFlash.flash==before);
@@ -215,6 +209,7 @@ int main(int argc,char**){
  ProfileImage wrapped=p;wrapped.generation=0;cielo96::profileSeal(wrapped);
  Disk wrap=prepared(&last);Session w(wrap);assert(!w.mount());assert(publish(w,wrapped)==Result::Saved);
  assert(equal(recovered(w,last),wrapped));assert(!w.close());
+ assert(blockedRetries==0);
  std::cout<<"{\"synthetic_only\":true,\"disk_version\":"<<LFS_DISK_VERSION
           <<",\"profile_bytes\":788,\"power_cut_cases\":"<<testedCuts
           <<",\"retries_preserved_for_review\":"<<blockedRetries
