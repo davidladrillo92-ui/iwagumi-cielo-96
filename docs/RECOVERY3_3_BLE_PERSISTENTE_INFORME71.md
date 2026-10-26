@@ -4,7 +4,7 @@
 Firmware instalado al recoger el informe: RECOVERY3.1-CANDIDATE, boot 126, 6131 s. Arranques 125 y 126 por bloqueos de 120004 ms (Pez Verde) y 120002 ms (Chihiros), fase reportada CONEXION. Boot 126: PV 100/100 y CH 100/100 GATT; 100 y 101 conexiones físicas, respectivamente; Wi-Fi 0 caídas, RSSI -36 dBm. El contador de 180 fallos persistentes es histórico, no 180 fallos de este arranque.
 
 ## Comparativa real de código
-- SIMPLE1 reutilizaba conexiones hasta 90 s de inactividad. **RC3 ya liberaba la conexión después de cada lote** (5 s de inactividad adicional); por tanto, no es exacto decir que todas las versiones antiguas las retenían.
+- SIMPLE1 reutilizaba conexiones hasta 90 s de inactividad. Los informes históricos 57 y 58 también registran bloqueos de 120 s con SIMPLE1: la incidencia no nació con RECOVERY3.1. La comparación correcta es la **frecuencia** de bloqueos por unidad de tiempo y conexión. **RC3 ya liberaba la conexión después de cada lote** (5 s de inactividad adicional); por tanto, no es exacto decir que todas las versiones antiguas las retenían.
 - RECOVERY3.1 liberaba explícitamente cada conexión tras cada lote; con actualizaciones/heartbeats de 60 s se producían muchas aperturas/cierres.
 - PV OFF tras GATT aceptado pasó de 300 s a 60 s; RECOVERY3.3 recupera 300 s tras éxito, conservando el backoff de fallo y el OFF prioritario.
 - La conexión Bluedroid parcheada tiene 8 s de espera nominal REG/OPEN; los 120 s de supervisor no prueban que el tiempo de conexión sea siempre acotado. Pueden existir llamadas SDK/semáforos o callbacks pendientes. Se añaden etapas de diagnóstico pasivo, **sin destruir clientes SDK bloqueados**.
