@@ -61,7 +61,6 @@ inline void metricTime(volatile uint32_t&last,volatile uint32_t&maxVal,uint32_t 
 
 uint32_t linkTouched[2]{};
 // Reuse links across 30/60s curve updates; explicit app/OTA release is immediate.
-static constexpr uint32_t BLE_IDLE_RELEASE_MS=90000UL;
 TaskHandle_t workerHandle=nullptr;
 volatile uint32_t lastHeartbeat=0;
 volatile uint8_t workerPhase=static_cast<uint8_t>(BleWorkerPhase::Starting);
@@ -123,7 +122,6 @@ void reconcileLinks(){
  }
 }
 void releaseIdleLinks(){
- uint32_t now=millis();
  for(uint8_t k=0;k<2;k++)
   if(targets[k].client && targets[k].client->isConnected() && !keepLinks[k].load())
    releaseTarget(k,false);
