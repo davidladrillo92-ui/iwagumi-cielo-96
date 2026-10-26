@@ -16,7 +16,7 @@ assert 'const bool night=' in p
 assert 'cadenceTrial15=false;' in p and 'cadenceEndsAt=millis()+1200000UL' in p
 assert 'bleResultErrors-cadenceStartBleErrors' in p and 'heap_caps_get_free_size(MALLOC_CAP_INTERNAL)' in p
 assert 'atSecond' in e and 'a.minute==1379 && b.minute==1380' in e
-assert 'curveValid(candidate)' in p and 'nvs_get_blob(verify,key,&scratch,&bytes)' in p and 'curvesA' in p and 'curvesB' in p
+assert 'curveValid(candidate)' in p and 'nvs_get_blob(verify,key,&value,&bytes)' in p and 'curvesA' in p and 'curvesB' in p
 assert 'server' not in ''
 assert '/api/save' not in u and '/api/chihiros/curve' not in u
 assert "return fail(410,\"Ruta antigua retirada" in p

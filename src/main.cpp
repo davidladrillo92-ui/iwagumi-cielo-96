@@ -17,6 +17,7 @@
 #include <nvs.h>
 #include <esp_err.h>
 #include "cielo_nvs_safe.h"
+#include "cielo_profile_transaction.h"
 #include "cielo_profile_fs.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
@@ -60,7 +61,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.5.1-FS-GUARD-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.5.2-NVS-RECOVERY-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -291,7 +292,7 @@ static mbedtls_sha256_context otaDigest;
 static bool otaDigestStarted=false;
 static uint8_t otaDigestOut[32]{};
 static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin actualizaciones";
-// Observabilidad NVS: diagnostico en RAM; nunca borra claves ni modifica particiones.
+// Diagnostico en RAM; recuperacion limitada al slot de curvas redundante.
 static size_t lastCurveNvsRequested=0,lastCurveNvsWritten=0;
 static const char* lastCurveNvsSlot="sin_intento";
 static uint32_t curveNvsFailedAttempts=0;
@@ -301,11 +302,12 @@ static esp_err_t lastCurveNvsStatsErr=ESP_OK;
 static const char* lastCurveNvsStage="sin_intento";
 static size_t lastCurveNvsFreeBefore=0,lastCurveNvsMinRequired=0;
 static bool curveSaveInProgress=false;
+static cielo96::profiletxn::Result lastCurveTransaction;
 static uint32_t diagWritesSkippedForSpace=0,restartWritesSkippedForSpace=0;
 static bool nvsPreserveCurveHeadroom(){
  nvs_stats_t stats{};
  if(nvs_get_stats("nvs",&stats)!=ESP_OK)return true; // Fail closed for noncritical writes.
- const size_t reserve=cielo96::nvssafe::minimumFreeEntries(sizeof(cielo96::ProfileImage))+8u;
+ const size_t reserve=cielo96::nvssafe::diagnosticReserve(sizeof(cielo96::ProfileImage));
  return stats.free_entries<reserve;
 }
 static String storedSSID,storedPass,apPassword;
@@ -502,10 +504,36 @@ static void loadProfile(){
     corrupt?"NVS invalida; Natural v4 en RAM":"Primera inicializacion; Natural v4 sin copia anterior");
  }
 }
+struct CurveNvsStore {
+ static constexpr int Ok=ESP_OK,NoSpace=ESP_ERR_NVS_NOT_ENOUGH_SPACE;
+ static constexpr int Unsafe=ESP_ERR_INVALID_STATE,Corrupt=ESP_ERR_INVALID_CRC;
+ nvs_handle_t handle;
+ explicit CurveNvsStore(nvs_handle_t h):handle(h){}
+ int write(const char*key,const cielo96::ProfileImage& value){return nvs_set_blob(handle,key,&value,sizeof(value));}
+ int erase(const char*key){return nvs_erase_key(handle,key);}
+ int commit(){return nvs_commit(handle);}
+ int read(const char*key,cielo96::ProfileImage& value){
+  nvs_handle_t verify=0;esp_err_t err=nvs_open("cielo96",NVS_READONLY,&verify);
+  if(err!=ESP_OK)return err;
+  size_t bytes=sizeof(value);err=nvs_get_blob(verify,key,&value,&bytes);nvs_close(verify);
+  return err==ESP_OK&&bytes!=sizeof(value)?ESP_ERR_INVALID_SIZE:err;
+ }
+};
+static String curveNvsSlotsJson(){
+ String j="[";CurveNvsStore reader(0);static cielo96::ProfileImage scratch{};
+ for(unsigned i=0;i<2;i++){
+  const char* key=i?"curvesB":"curvesA";scratch=cielo96::ProfileImage{};
+  const int err=reader.read(key,scratch);const bool valid=err==ESP_OK&&cielo96::curves::curveValid(scratch);
+  if(i)j+=',';
+  j+="{\"slot\":"+jsonQuote(key)+",\"read_error\":"+String(err)+",\"valid\":"+String(valid?"true":"false");
+  if(valid){j+=",\"generation\":"+String(scratch.generation);j+=",\"matches_active\":"+String(memcmp(&scratch,&profile,sizeof(profile))==0?"true":"false");}
+  j+="}";
+ }return j+"]";
+}
 static bool saveProfile(const cielo96::ProfileImage& candidate){
  using cielo96::nvssafe::Failure;
  curveSaveInProgress=true;
- lastCurveNvsFailure=Failure::None;lastCurveNvsErr=ESP_OK;
+ lastCurveNvsFailure=Failure::None;lastCurveNvsErr=ESP_OK;lastCurveTransaction={};
  lastCurveNvsStage="validacion";
  lastCurveNvsWritten=0;lastCurveNvsRequested=sizeof(candidate);
  lastCurveNvsMinRequired=cielo96::nvssafe::minimumFreeEntries(sizeof(candidate));
@@ -522,7 +550,11 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
    else if(strcmp(curveFs.error(),"CANDIDATE_NOT_NEWER")==0)
     lastBackupError="El almacenamiento tiene una version igual o mas reciente. Revisa el Informe Maestro antes de guardar.";
    else lastBackupError="No se pudo completar el guardado. La copia anterior sigue disponible.";
-  }else lastBackupError=String(cielo96::nvssafe::message(reason));
+  }else if(lastCurveTransaction.writeMayHavePersisted)
+   lastBackupError="Guardado NVS no confirmado. Descarga el Informe Maestro antes de repetir.";
+  else if(err==ESP_ERR_NVS_NOT_ENOUGH_SPACE && !curveFs.ready())
+   lastBackupError="No hay espacio NVS suficiente y SPIFFS no esta disponible. Perfil activo conservado; revisa el Informe Maestro.";
+  else lastBackupError=String(cielo96::nvssafe::message(reason));
   // El fallo se conserva en RAM, sin escribir un journal NVS durante
   // la misma transaccion que acaba de fallar.
   record("CURVA_ERROR",lastBackupError);
@@ -532,8 +564,9 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  if(!cielo96::curves::curveValid(candidate))
   return failure(Failure::InvalidProfile,"validacion",ESP_ERR_INVALID_ARG);
  // RECOVERY3.5: profiles are stored in dual snapshots on the already
- // reserved SPIFFS partition. Old NVS A/B remain untouched as rollback.
- // If the filesystem cannot safely mount, retain RECOVERY3.4 NVS fallback.
+ // reserved SPIFFS partition. FS saves preserve both legacy NVS slots.
+ // An unmountable nonempty filesystem stays untouched. The NVS fallback
+ // can reclaim ONLY a verified redundant older slot after SDK NoSpace.
  if(curveFs.ready()){
   lastCurveNvsStage="SPIFFS_PREPARAR";
   lastCurveNvsSlot="SPIFFS";
@@ -558,13 +591,20 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  // sobre la pila de 16 KB del servidor HTTP/loop.
  static cielo96::ProfileImage scratch{};
  scratch=cielo96::ProfileImage{};
- const bool va=prefs.getBytesLength("curvesA")==sizeof(scratch)&&
-  prefs.getBytes("curvesA",&scratch,sizeof(scratch))==sizeof(scratch)&&cielo96::curves::curveValid(scratch);
+ CurveNvsStore reader(0);
+ const int readA=reader.read("curvesA",scratch);
+ if(readA!=ESP_OK&&readA!=ESP_ERR_NVS_NOT_FOUND&&readA!=ESP_ERR_INVALID_SIZE)
+  return failure(Failure::ReadFailed,"leer_slot_A",readA);
+ const bool va=readA==ESP_OK&&cielo96::curves::curveValid(scratch);
  const uint32_t genA=va?scratch.generation:0;
  scratch=cielo96::ProfileImage{};
- const bool vb=prefs.getBytesLength("curvesB")==sizeof(scratch)&&
-  prefs.getBytes("curvesB",&scratch,sizeof(scratch))==sizeof(scratch)&&cielo96::curves::curveValid(scratch);
+ const int readB=reader.read("curvesB",scratch);
+ if(readB!=ESP_OK&&readB!=ESP_ERR_NVS_NOT_FOUND&&readB!=ESP_ERR_INVALID_SIZE)
+  return failure(Failure::ReadFailed,"leer_slot_B",readB);
+ const bool vb=readB==ESP_OK&&cielo96::curves::curveValid(scratch);
  const uint32_t genB=vb?scratch.generation:0;
+ if(!va&&!vb&&profile.generation!=0)
+  return failure(Failure::ActiveMismatch,"localizar_activo",ESP_ERR_INVALID_STATE);
  const char*key=cielo96::nvssafe::target(va,genA,vb,genB);
  lastCurveNvsSlot=key;
  if(!cielo96::nvssafe::targetPreservesOnlyCopy(va,vb,key))
@@ -575,34 +615,20 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  if(lastCurveNvsStatsErr!=ESP_OK)
   return failure(Failure::StatsUnavailable,"preflight",lastCurveNvsStatsErr);
  lastCurveNvsFreeBefore=stats.free_entries;
- if(cielo96::nvssafe::definitelyTooLittleSpace(stats.free_entries,sizeof(candidate)))
+ if(cielo96::nvssafe::definitelyTooLittleSpace(stats.free_entries,sizeof(candidate)) && !(va&&vb))
   return failure(Failure::InsufficientEntries,"preflight",ESP_ERR_NVS_NOT_ENOUGH_SPACE);
- // Direct NVS API gives precise esp_err_t for open, set_blob and commit.
- // Commit only to the inactive/older slot, then verify by independent read.
+ // Reclamation is limited to the verified redundant profile, and only after
+ // the SDK actually reports lack of space. The current slot stays intact.
  nvs_handle_t handle=0;
- lastCurveNvsStage="abrir";
  esp_err_t err=nvs_open("cielo96",NVS_READWRITE,&handle);
  if(err!=ESP_OK)return failure(Failure::OpenFailed,"abrir",err);
- lastCurveNvsStage="escribir";
- err=nvs_set_blob(handle,key,&candidate,sizeof(candidate));
- if(err!=ESP_OK){nvs_close(handle);return failure(Failure::WriteFailed,"escribir",err);}
- lastCurveNvsStage="confirmar";
- err=nvs_commit(handle);
+ CurveNvsStore store(handle);
+ const char*survivor=(va||vb)?(key[6]=='A'?"curvesB":"curvesA"):nullptr;
+ lastCurveTransaction=cielo96::profiletxn::save(store,key,survivor,profile,candidate,va&&vb);
  nvs_close(handle);
- if(err!=ESP_OK)return failure(Failure::CommitFailed,"confirmar",err);
- lastCurveNvsWritten=sizeof(candidate);
- nvs_handle_t verify=0;
- lastCurveNvsStage="releer";
- err=nvs_open("cielo96",NVS_READONLY,&verify);
- if(err!=ESP_OK)return failure(Failure::ReadFailed,"releer_abrir",err);
- scratch=cielo96::ProfileImage{};
- size_t bytes=sizeof(scratch);
- err=nvs_get_blob(verify,key,&scratch,&bytes);
- nvs_close(verify);
- if(err!=ESP_OK||bytes!=sizeof(scratch))
-  return failure(Failure::ReadFailed,"releer",err==ESP_OK?ESP_ERR_INVALID_SIZE:err);
- if(!cielo96::curves::curveValid(scratch)||memcmp(&candidate,&scratch,sizeof(scratch))!=0)
-  return failure(Failure::VerificationFailed,"verificar",ESP_ERR_INVALID_CRC);
+ lastCurveNvsWritten=lastCurveTransaction.writeAccepted?sizeof(candidate):0;
+ if(!lastCurveTransaction.verified)
+  return failure(lastCurveTransaction.failure,lastCurveTransaction.stage,lastCurveTransaction.error);
  // RAM only changes after successful commit + byte-for-byte validation.
  profile=candidate;profileRecovery=false;loadedCurveBackend="NVS_LEGACY";
  lastBackupError="ninguno";lastCurveNvsStage="correcto";lastCurveNvsErr=ESP_OK;
@@ -687,7 +713,7 @@ static void saveBothCurves(){
   response+=",\"nvs_error_name\":"+jsonQuote(esp_err_to_name(lastCurveNvsErr));
   response+=",\"nvs_stage\":"+jsonQuote(lastCurveNvsStage);
   response+=",\"previous_profile_preserved\":true";
-  response+=",\"write_may_have_persisted\":"+String(curveFs.published()?"true":"false")+"}";
+  response+=",\"write_may_have_persisted\":"+String((curveFs.published()||lastCurveTransaction.writeMayHavePersisted)?"true":"false")+"}";
   return jsonSend(space?507:500,response);
  }
  lastPvDesired=false;lastChDesired=false;
@@ -1251,6 +1277,15 @@ static void diagnosticJson(){
  j+=",\"last_curve_free_entries_before\":"+String(lastCurveNvsFreeBefore);
  j+=",\"last_curve_min_entries_required\":"+String(lastCurveNvsMinRequired);
  j+=",\"space_preflight_note\":\"LOWER_BOUND_NOT_GUARANTEE\",\"inactive_slot_required\":true";
+ j+=",\"gc_workspace_entries\":126";
+ j+=",\"diagnostic_reserve_entries\":"+String(cielo96::nvssafe::diagnosticReserve(sizeof(cielo96::ProfileImage)));
+ j+=",\"recovery_attempted\":"+String(lastCurveTransaction.recoveryAttempted?"true":"false");
+ j+=",\"inactive_slot_reclaimed\":"+String(lastCurveTransaction.inactiveReclaimed?"true":"false");
+ j+=",\"initial_write_error\":"+String(lastCurveTransaction.initialWriteError);
+ j+=",\"write_accepted\":"+String(lastCurveTransaction.writeAccepted?"true":"false");
+ j+=",\"write_may_have_persisted\":"+String(lastCurveTransaction.writeMayHavePersisted?"true":"false");
+ j+=",\"save_verified\":"+String(lastCurveTransaction.verified?"true":"false");
+ j+=",\"curve_slots\":"+curveNvsSlotsJson();
  j+=",\"diag_writes_skipped_low_space\":"+String(diagWritesSkippedForSpace);
  j+=",\"restart_writes_skipped_low_space\":"+String(restartWritesSkippedForSpace)+"}";
  j+=",\"curve_storage\":{\"backend\":"+jsonQuote(curveFs.ready()?"SPIFFS_AB":"NVS_LEGACY");
@@ -1263,7 +1298,8 @@ static void diagnosticJson(){
  j+=",\"fs_initialized_verified_blank\":"+String(curveFs.initializedFromBlank()?"true":"false");
  j+=",\"total_bytes\":"+String((uint32_t)curveFs.total());
  j+=",\"used_bytes\":"+String((uint32_t)curveFs.used());
- j+=",\"nvs_legacy_preserved\":true,\"partition_table_unchanged\":true}";
+ j+=",\"nvs_legacy_preserved\":"+String((lastCurveTransaction.inactiveReclaimed||lastCurveTransaction.writeMayHavePersisted)?"false":"true");
+ j+=",\"active_nvs_slot_never_erased\":true,\"partition_table_unchanged\":true}";
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"security\":{\"https_ready\":"+String("false")+",\"authentication\":\"NONE_LAN\",\"ota_signature\":\"NOT_REQUIRED_OWNER_REQUEST\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
