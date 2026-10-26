@@ -21,11 +21,11 @@ assert 'last_curve_free_entries_before' in source
 assert 'esp_err_to_name(lastCurveNvsErr)' in source
 assert 'nvs_set_blob(handle,key,&candidate,sizeof(candidate))' in source
 assert 'nvs_commit(handle)' in source
-assert 'nvs_get_blob(verify,key,&readback,&bytes)' in source
+assert 'nvs_get_blob(verify,key,&scratch,&bytes)' in source
 assert 'prefs.clear()' not in source
-assert 'cielo96::nvssafe::target(va,a.generation,vb,b.generation)' in source
+assert 'cielo96::nvssafe::target(va,genA,vb,genB)' in source
 assert 'nvsPreserveCurveHeadroom()' in source
-assert 'memcmp(&candidate,&readback,sizeof(readback))!=0' in source
+assert 'memcmp(&candidate,&scratch,sizeof(scratch))!=0' in source
 assert 'if(device==0 && pvControlDesired && !pvOffObligation)' in source
 assert 'if(device==1 && cieloChRun && cieloChWasDriven' in source
 assert 'isolated_ch_disconnects' in source
