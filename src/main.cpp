@@ -903,7 +903,18 @@ static String restartHistoryJson(){
   j+=",\"stall_epoch\":"+String(e.stallEpoch)+",\"stall_ms\":"+String(e.stallMs);
   j+=",\"phase\":"+jsonQuote(cielo96::ble_worker_phase_name(e.phase));
   j+=",\"device\":"+String(e.device)+",\"outcome\":"+jsonQuote(e.outcome?"COMMUNICATION_RECOVERED":"PENDING");
-  j+=",\"recovered_epoch\":"+String(e.recoveredEpoch)+"}";
+  j+=",\"recovered_epoch\":"+String(e.recoveredEpoch);
+  // Anotar inconsistencias historicas sin reescribir ni inventar fechas NVS.
+  const time_t nowEpoch=time(nullptr);
+  const bool trustedNow=clockEvidenceTrusted()&&nowEpoch>0;
+  const bool futureEpoch=trustedNow&&e.epoch>(uint32_t(nowEpoch)+86400UL);
+  j+=",\"boot_epoch_quality\":"+jsonQuote(e.epoch==0?"MISSING":futureEpoch?"FUTURE_UNTRUSTED":"UNVERIFIED_HISTORICAL");
+  bool nextBootRecovered=false;
+  if(!e.outcome && i+1<restartJournal.count){
+   const auto& next=cielo96::restarts::at(restartJournal,i+1);
+   nextBootRecovered=(next.previous==e.boot && next.outcome==1);
+  }
+  j+=",\"following_boot_recovered\":"+String(nextBootRecovered?"true":"false")+"}";
  }
  return j+"]";
 }
