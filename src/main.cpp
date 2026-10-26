@@ -15,6 +15,8 @@
 #include <esp_attr.h>
 #include <esp_ota_ops.h>
 #include <nvs.h>
+#include <esp_err.h>
+#include "cielo_nvs_safe.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
 #include "profiles_generated.h"
@@ -289,6 +291,13 @@ static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin
 static size_t lastCurveNvsRequested=0,lastCurveNvsWritten=0;
 static const char* lastCurveNvsSlot="sin_intento";
 static uint32_t curveNvsFailedAttempts=0;
+static cielo96::nvssafe::Failure lastCurveNvsFailure=cielo96::nvssafe::Failure::None;
+static esp_err_t lastCurveNvsErr=ESP_OK;
+static esp_err_t lastCurveNvsStatsErr=ESP_OK;
+static const char* lastCurveNvsStage="sin_intento";
+static size_t lastCurveNvsFreeBefore=0,lastCurveNvsMinRequired=0;
+static bool curveSaveInProgress=false;
+static uint32_t diagWritesSkippedForSpace=0,restartWritesSkippedForSpace=0;
 static String storedSSID,storedPass,apPassword;
 static uint32_t bootMs=0;
 static constexpr int ATOMS3_BUTTON_GPIO=41;
@@ -467,23 +476,72 @@ static void loadProfile(){
  }
 }
 static bool saveProfile(const cielo96::ProfileImage& candidate){
- if(!cielo96::curves::curveValid(candidate))return false;
- const char*key=(candidate.generation&1)?"curvesA":"curvesB";
- lastCurveNvsSlot=key;
- lastCurveNvsRequested=sizeof(candidate);
- lastCurveNvsWritten=prefs.putBytes(key,&candidate,sizeof(candidate));
- if(lastCurveNvsWritten!=sizeof(candidate)){
+ using cielo96::nvssafe::Failure;
+ curveSaveInProgress=true;
+ lastCurveNvsFailure=Failure::None;lastCurveNvsErr=ESP_OK;
+ lastCurveNvsStage="validacion";
+ lastCurveNvsWritten=0;lastCurveNvsRequested=sizeof(candidate);
+ lastCurveNvsMinRequired=cielo96::nvssafe::minimumFreeEntries(sizeof(candidate));
+ lastCurveNvsFreeBefore=0;
+ auto failure=[&](Failure reason,const char*stage,esp_err_t err)->bool{
+  lastCurveNvsFailure=reason;lastCurveNvsStage=stage;lastCurveNvsErr=err;
   curveNvsFailedAttempts++;
-  lastBackupError="NVS escritura incompleta";
-  record("CURVA_ERROR",lastBackupError);
-  return false;
- }
+  lastBackupError=cielo96::nvssafe::message(reason);
+  curveSaveInProgress=false;
+  record("CURVA_ERROR",lastBackupError);return false;
+ };
+ if(!cielo96::curves::curveValid(candidate))
+  return failure(Failure::InvalidProfile,"validacion",ESP_ERR_INVALID_ARG);
+ // Leer ambos slots antes de elegir. Nunca sobrescribir la unica copia valida.
+ cielo96::ProfileImage a{},b{};
+ const bool va=prefs.getBytesLength("curvesA")==sizeof(a)&&
+  prefs.getBytes("curvesA",&a,sizeof(a))==sizeof(a)&&cielo96::profileValid(a);
+ const bool vb=prefs.getBytesLength("curvesB")==sizeof(b)&&
+  prefs.getBytes("curvesB",&b,sizeof(b))==sizeof(b)&&cielo96::profileValid(b);
+ const char*key=cielo96::nvssafe::target(va,a.generation,vb,b.generation);
+ lastCurveNvsSlot=key;
+ if(!cielo96::nvssafe::targetPreservesOnlyCopy(va,vb,key))
+  return failure(Failure::InvalidProfile,"seleccion_slot",ESP_ERR_INVALID_STATE);
+ nvs_stats_t stats{};
+ lastCurveNvsStage="preflight";
+ lastCurveNvsStatsErr=nvs_get_stats("nvs",&stats);
+ if(lastCurveNvsStatsErr!=ESP_OK)
+  return failure(Failure::StatsUnavailable,"preflight",lastCurveNvsStatsErr);
+ lastCurveNvsFreeBefore=stats.free_entries;
+ if(cielo96::nvssafe::definitelyTooLittleSpace(stats.free_entries,sizeof(candidate)))
+  return failure(Failure::InsufficientEntries,"preflight",ESP_ERR_NVS_NOT_ENOUGH_SPACE);
+ // Direct NVS API gives precise esp_err_t for open, set_blob and commit.
+ // Commit only to the inactive/older slot, then verify by independent read.
+ nvs_handle_t handle=0;
+ lastCurveNvsStage="abrir";
+ esp_err_t err=nvs_open("cielo96",NVS_READWRITE,&handle);
+ if(err!=ESP_OK)return failure(Failure::OpenFailed,"abrir",err);
+ lastCurveNvsStage="escribir";
+ err=nvs_set_blob(handle,key,&candidate,sizeof(candidate));
+ if(err!=ESP_OK){nvs_close(handle);return failure(Failure::WriteFailed,"escribir",err);}
+ lastCurveNvsStage="confirmar";
+ err=nvs_commit(handle);
+ nvs_close(handle);
+ if(err!=ESP_OK)return failure(Failure::CommitFailed,"confirmar",err);
+ lastCurveNvsWritten=sizeof(candidate);
+ nvs_handle_t verify=0;
+ lastCurveNvsStage="releer";
+ err=nvs_open("cielo96",NVS_READONLY,&verify);
+ if(err!=ESP_OK)return failure(Failure::ReadFailed,"releer_abrir",err);
  cielo96::ProfileImage readback{};
- if(prefs.getBytes(key,&readback,sizeof(readback))!=sizeof(readback)||!cielo96::profileValid(readback)
-    ||memcmp(&candidate,&readback,sizeof(readback))!=0){
-  lastBackupError="NVS verificacion posterior fallo";record("CURVA_ERROR",lastBackupError);return false;
- }
- profile=candidate;profileRecovery=false;record("CURVA_GUARDADA",String("generacion=")+String(profile.generation));return true;
+ size_t bytes=sizeof(readback);
+ err=nvs_get_blob(verify,key,&readback,&bytes);
+ nvs_close(verify);
+ if(err!=ESP_OK||bytes!=sizeof(readback))
+  return failure(Failure::ReadFailed,"releer",err==ESP_OK?ESP_ERR_INVALID_SIZE:err);
+ if(!cielo96::profileValid(readback)||memcmp(&candidate,&readback,sizeof(readback))!=0)
+  return failure(Failure::VerificationFailed,"verificar",ESP_ERR_INVALID_CRC);
+ // RAM only changes after successful commit + byte-for-byte validation.
+ profile=candidate;profileRecovery=false;
+ lastBackupError="ninguno";lastCurveNvsStage="correcto";lastCurveNvsErr=ESP_OK;
+ curveSaveInProgress=false;
+ record("CURVA_GUARDADA",String("generacion=")+String(profile.generation));
+ return true;
 }
 static bool positiveInt(const String&s,unsigned& n){
  if(!s.length())return false;uint32_t x=0;
