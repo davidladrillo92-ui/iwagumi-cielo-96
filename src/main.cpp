@@ -17,6 +17,7 @@
 #include <nvs.h>
 #include <esp_err.h>
 #include "cielo_nvs_safe.h"
+#include "cielo_profile_fs.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
 #include "profiles_generated.h"
@@ -59,7 +60,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.4-NVS-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.5-CURVAS-FS-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -130,6 +131,7 @@ static cielo96::recovery::Supervisor bleSupervisor;
 static bool bleRecoveryBoot=false,bleRecoveryBootPvSafe=false,bleRecoveryExhausted=false;
 static WebServer srv(80);
 static Preferences prefs;
+static cielo96::profilefs::Store curveFs;
 static cielo96::ProfileImage profile;
 static cielo::ble::Scheduler queue(3500,250,2000);
 static bool bleReady=false, profileRecovery=false, wifiApOn=false;
@@ -473,20 +475,30 @@ static void loadProfile(){
  memcpy(profile.ch,cielo::chihiros,sizeof(cielo::chihiros));
  cielo96::profileSeal(profile);
  cielo96::ProfileImage a{},b{};
- bool va=false,vb=false;
+ bool va=false,vb=false,loaded=false;
  if(prefs.getBytesLength("curvesA")==sizeof(a)){
- prefs.getBytes("curvesA",&a,sizeof(a));va=cielo96::profileValid(a);
+  prefs.getBytes("curvesA",&a,sizeof(a));va=cielo96::curves::curveValid(a);
  }
  if(prefs.getBytesLength("curvesB")==sizeof(b)){
- prefs.getBytes("curvesB",&b,sizeof(b));vb=cielo96::profileValid(b);
+  prefs.getBytes("curvesB",&b,sizeof(b));vb=cielo96::curves::curveValid(b);
  }
- const cielo96::ProfileImage* latest=cielo96::curves::newestValid(va?&a:nullptr,vb?&b:nullptr);
- if(latest){profile=*latest;
-  record("CURVAS_OK",String("NVS generacion=")+String(profile.generation));
- }else{
+ const cielo96::ProfileImage* legacy=cielo96::curves::newestValid(va?&a:nullptr,vb?&b:nullptr);
+ if(legacy){
+  profile=*legacy;loaded=true;
+  record("CURVAS_NVS_OK",String("NVS generacion=")+String(profile.generation));
+ }
+ // Non-destructive legacy migration: SPIFFS snapshots take precedence only
+ // when valid AND newer. Never clear or rewrite NVS during boot.
+ cielo96::ProfileImage file{};
+ if(curveFs.newest(file) && (!loaded || cielo96::profilefs::newerGeneration(file.generation,profile.generation))){
+  profile=file;loaded=true;
+  record("CURVAS_FS_OK",String("SPIFFS generacion=")+String(profile.generation));
+ }
+ if(!loaded){
   bool corrupt=prefs.getBytesLength("curvesA")!=0 || prefs.getBytesLength("curvesB")!=0;
   profileRecovery=corrupt;
-  record(corrupt?"CURVA_ERROR":"CURVAS_INICIALES",corrupt?"NVS invalida; Natural v4 en RAM":"Primera inicializacion; Natural v4 sin copia anterior");
+  record(corrupt?"CURVA_ERROR":"CURVAS_INICIALES",
+    corrupt?"NVS invalida; Natural v4 en RAM":"Primera inicializacion; Natural v4 sin copia anterior");
  }
 }
 static bool saveProfile(const cielo96::ProfileImage& candidate){
@@ -500,7 +512,9 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  auto failure=[&](Failure reason,const char*stage,esp_err_t err)->bool{
   lastCurveNvsFailure=reason;lastCurveNvsStage=stage;lastCurveNvsErr=err;
   curveNvsFailedAttempts++;
-  lastBackupError=cielo96::nvssafe::message(reason);
+  lastBackupError=strncmp(stage,"SPIFFS",6)==0?
+    String("Error SPIFFS ")+curveFs.error()+": perfil anterior conservado":
+    String(cielo96::nvssafe::message(reason));
   // El fallo se conserva en RAM, sin escribir un journal NVS durante
   // la misma transaccion que acaba de fallar.
   record("CURVA_ERROR",lastBackupError);
@@ -509,6 +523,28 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  };
  if(!cielo96::curves::curveValid(candidate))
   return failure(Failure::InvalidProfile,"validacion",ESP_ERR_INVALID_ARG);
+ // RECOVERY3.5: profiles are stored in dual snapshots on the already
+ // reserved SPIFFS partition. Old NVS A/B remain untouched as rollback.
+ // If the filesystem cannot safely mount, retain RECOVERY3.4 NVS fallback.
+ if(curveFs.ready()){
+  lastCurveNvsStage="SPIFFS_PREPARAR";
+  lastCurveNvsSlot="SPIFFS";
+  if(!curveFs.save(candidate)){
+   lastCurveNvsSlot=curveFs.slot();
+   return failure(Failure::WriteFailed,"SPIFFS_WRITE",ESP_FAIL);
+  }
+  static cielo96::ProfileImage fsVerified{};
+  if(!curveFs.newest(fsVerified) || memcmp(&fsVerified,&candidate,sizeof(candidate))!=0)
+   return failure(Failure::VerificationFailed,"SPIFFS_VERIFY",ESP_ERR_INVALID_CRC);
+  lastCurveNvsSlot=curveFs.slot();
+  lastCurveNvsWritten=sizeof(candidate);
+  lastCurveNvsStage="SPIFFS_VERIFICADO";
+  lastCurveNvsErr=ESP_OK;
+  profile=candidate;profileRecovery=false;
+  lastBackupError="ninguno";curveSaveInProgress=false;
+  record("CURVA_GUARDADA_FS",String("generacion=")+String(profile.generation));
+  return true;
+ }
  // Leer ambos slots antes de elegir. Nunca sobrescribir la unica copia valida.
  // Reutilizar un unico buffer estatico: no apilar tres perfiles de ~1 KB
  // sobre la pila de 16 KB del servidor HTTP/loop.
@@ -1208,6 +1244,15 @@ static void diagnosticJson(){
  j+=",\"space_preflight_note\":\"LOWER_BOUND_NOT_GUARANTEE\",\"inactive_slot_required\":true";
  j+=",\"diag_writes_skipped_low_space\":"+String(diagWritesSkippedForSpace);
  j+=",\"restart_writes_skipped_low_space\":"+String(restartWritesSkippedForSpace)+"}";
+ j+=",\"curve_storage\":{\"backend\":"+jsonQuote(curveFs.ready()?"SPIFFS_AB":"NVS_LEGACY");
+ j+=",\"fs_available\":"+String(curveFs.ready()?"true":"false");
+ j+=",\"fs_status\":"+jsonQuote(curveFs.status());
+ j+=",\"fs_error\":"+jsonQuote(curveFs.error());
+ j+=",\"last_fs_slot\":"+jsonQuote(curveFs.slot());
+ j+=",\"fs_initialized_verified_blank\":"+String(curveFs.initializedFromBlank()?"true":"false");
+ j+=",\"total_bytes\":"+String((uint32_t)curveFs.total());
+ j+=",\"used_bytes\":"+String((uint32_t)curveFs.used());
+ j+=",\"nvs_legacy_preserved\":true,\"partition_table_unchanged\":true}";
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"security\":{\"https_ready\":"+String("false")+",\"authentication\":\"NONE_LAN\",\"ota_signature\":\"NOT_REQUIRED_OWNER_REQUEST\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
@@ -2412,6 +2457,8 @@ void setup(){
  otaRunningPartition=running?running->label:"desconocida";
  otaNextPartition=next?next->label:"NO_DISPONIBLE";
  tracePhase(TracePhase::Profile);
+ if(curveFs.begin())record("CURVE_FS_OK",curveFs.status());
+ else record("CURVE_FS_INACTIVO",curveFs.status());
  loadProfile();
  cieloAlwaysOn=cielo96::autonomy::enabled(prefs.isKey("v5_always"),prefs.getBool("v5_always",false));
  if(cieloAlwaysOn && !prefs.isKey("v5_always") && prefs.putBool("v5_always",true)!=1){
