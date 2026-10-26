@@ -219,6 +219,8 @@ static bool pvOffObligation=false,pvControlDesired=false;
 static bool pvDayRecoveryPending=false;
 static uint32_t pvDayRecoveryStarted=0,pvDayRecoveryAttempts=0,pvDayRecoveryGattOk=0;
 static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffScheduled=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
+static bool pvDisconnectInterlock=false; // OFF must be accepted before any daytime RGB after unexpected link loss.
+static uint32_t observedUnexpectedDisconnect[2]={0,0};
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
 static uint32_t cieloDaySamples=0,cieloNightSamples=0;
@@ -956,7 +958,9 @@ static void diagnosticJson(){
   j+=",\"connection_pending\":"+String(link.connection_pending?"true":"false");
   j+=",\"pending_age_ms\":"+String(link.pending_age_ms);
   j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
-  j+=",\"release_count\":"+String(link.release_count)+"}";
+  j+=",\"release_count\":"+String(link.release_count);
+   j+=",\"unexpected_disconnects\":"+String(link.unexpected_disconnects);
+   j+=",\"last_unexpected_ms\":"+String(link.last_unexpected_ms)+"}";
  }
  j+=",\"queued\":"+String(m.submitted)+",\"queued_total_is_submitted\":true";
  j+=",\"queue_depth\":"+String((queue.pending(cielo::ble::Device::PezVerde)?1:0)+(queue.pending(cielo::ble::Device::Chihiros)?1:0));
@@ -1825,6 +1829,31 @@ static void cieloRequestReturn(const char* reason){
  cieloChReturnPending=true;cieloReturnReason=reason;
  record("V4_RETORNO_PEDIDO",cieloReturnReason+"; selector personalizado 0x03, no escenas 0x12");
 }
+// SDK callbacks never send BLE; the main loop performs all safety decisions.
+static void bleUnexpectedDisconnectTick(){
+ if(!bleReady || rescueOpen || otaBusy || otaTxn.phase!=OtaPhase::Idle)return;
+ for(uint8_t device=0;device<2;device++){
+  const auto link=cielo96::ble_link_status(device);
+  if(link.unexpected_disconnects==observedUnexpectedDisconnect[device])continue;
+  observedUnexpectedDisconnect[device]=link.unexpected_disconnects;
+  record("BLE_ENLACE_PERDIDO",String(device?"Chihiros":"Pez Verde")+
+   " desconexion inesperada; intentar retorno seguro, sin prueba optica");
+  if(pvControlDesired && !pvOffObligation){
+   pvDisconnectInterlock=true;
+   pvOffObligation=true;pvOffNextTry=millis();pvOffInFlightSeq=0;
+   pvSafety=PvSafetyState::OffPending;
+   queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
+   record("PV_DESCONEXION_OFF_PENDIENTE","POWER OFF antes de reanudar; sin radio no hay garantia fisica");
+  }else if(pvControlDesired && pvOffObligation){
+   pvOffNextTry=millis();pvSafety=PvSafetyState::OffPending;
+  }
+  if(cieloChRun && cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
+   cieloChRun=false;chReconnect.cancel();
+   queue.cancel_pending(cielo::ble::Device::Chihiros);
+   cieloRequestReturn("Desconexion BLE inesperada: devolver selector personalizado 0x03 a My Chihiros");
+  }
+ }
+}
 static void lightingTask(){
  const uint32_t now=millis();
  if(cieloWatchdogTripped && bleReady && !queue.busy() &&
@@ -1854,7 +1883,7 @@ static void lightingTask(){
    pvOffObligation=true;pvOffNextTry=now;pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_OFF_OBLIGATORIO","Consigna cero: POWER OFF prioritario; RGB anterior cancelado");
-  }else if(!night && pvOffObligation && !bleRecoveryBootPvSafe){
+  }else if(!night && pvOffObligation && !bleRecoveryBootPvSafe && !pvDisconnectInterlock){
    pvOffObligation=false;pvOffNextTry=0;pvOffInFlightSeq=0;pvSafety=PvSafetyState::Active;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_DIA_REANUDADO","Curva actual recuperada; ningun RGB obsoleto");
@@ -1967,7 +1996,11 @@ static void bleTick(){
      cieloPvConfirmed++;cieloPvConsecutiveFailures=0;cieloLastSuccessfulPvAt=now;
      if(wasOffCommand){
       pvOffLastGatt=now;pvOffFailures=0;pvSafety=PvSafetyState::OffGattOk;
-      pvOffNextTry=now+60000UL;
+      pvOffNextTry=now+300000UL; // Confirmed OFF: five-minute check; failed OFF uses urgent backoff.
+      if(pvDisconnectInterlock){
+       pvDisconnectInterlock=false;
+       record("PV_DESCONEXION_OFF_GATT_OK","OFF de seguridad aceptado; solo se reanuda RGB diurno vigente");
+      }
       record("PV_POWER_OFF_GATT_OK","POWER OFF GATT OK; sin verificacion optica");
      }else {
       pvSafety=PvSafetyState::Active;
@@ -2378,7 +2411,7 @@ void loop(){
   !otaBusy&&otaTxn.phase==OtaPhase::Idle&&!rescueOpen&&cieloChRun&&!cieloChReturnPending);
  // Tras un rescate, encolar OFF antes que el retorno Chihiros, incluso sin hora.
  if(bleRecoveryBootPvSafe)lightingTask();
- if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();}
+ if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();bleUnexpectedDisconnectTick();}
  if(bleRecoveryBootPvSafe && pvOffLastGatt && currentBootMarkedHealthy && timeOK() &&
     cielo96::profileValid(profile) && desiredPv().brightness==0 && !cieloWatchdogTripped){
   bleRecoveryBootPvSafe=false;
