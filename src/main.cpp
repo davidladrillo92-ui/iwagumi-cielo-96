@@ -501,8 +501,11 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
   lastCurveNvsFailure=reason;lastCurveNvsStage=stage;lastCurveNvsErr=err;
   curveNvsFailedAttempts++;
   lastBackupError=cielo96::nvssafe::message(reason);
+  // El fallo se conserva en RAM, sin escribir un journal NVS durante
+  // la misma transaccion que acaba de fallar.
+  record("CURVA_ERROR",lastBackupError);
   curveSaveInProgress=false;
-  record("CURVA_ERROR",lastBackupError);return false;
+  return false;
  };
  if(!cielo96::curves::curveValid(candidate))
   return failure(Failure::InvalidProfile,"validacion",ESP_ERR_INVALID_ARG);
