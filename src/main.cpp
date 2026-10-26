@@ -1298,7 +1298,7 @@ static void diagnosticJson(){
  j+=",\"fs_initialized_verified_blank\":"+String(curveFs.initializedFromBlank()?"true":"false");
  j+=",\"total_bytes\":"+String((uint32_t)curveFs.total());
  j+=",\"used_bytes\":"+String((uint32_t)curveFs.used());
- j+=",\"nvs_legacy_preserved\":"+String(lastCurveTransaction.inactiveReclaimed?"false":"true");
+ j+=",\"nvs_legacy_preserved\":"+String((lastCurveTransaction.inactiveReclaimed||lastCurveTransaction.writeMayHavePersisted)?"false":"true");
  j+=",\"active_nvs_slot_never_erased\":true,\"partition_table_unchanged\":true}";
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"security\":{\"https_ready\":"+String("false")+",\"authentication\":\"NONE_LAN\",\"ota_signature\":\"NOT_REQUIRED_OWNER_REQUEST\"}";
