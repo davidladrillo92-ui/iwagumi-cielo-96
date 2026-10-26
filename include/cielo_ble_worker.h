@@ -32,6 +32,8 @@ struct BleLinkStatus {
  uint32_t last_disconnect_ms=0;
  uint32_t unexpected_disconnects=0;
  uint32_t last_unexpected_ms=0;
+ uint8_t sdk_connect_stage=0; // 0=idle,1=register request,2=REG wait,3=OPEN request,4=OPEN wait,5=late callback
+ int sdk_last_esp_error=0;
 };
 // Experimento exclusivo: select custom curve (0x03), GATT en worker y desconectar.
 struct BleCustomResumeResult {bool success=false;uint32_t duration_ms=0;char reason[48]{};};
