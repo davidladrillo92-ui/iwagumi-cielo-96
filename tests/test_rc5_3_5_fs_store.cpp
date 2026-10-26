@@ -16,9 +16,11 @@ static ProfileImage sample(uint32_t gen){
 }
 int main(){
  profilefs::Store store;
- assert(store.begin());
- assert(store.ready() && store.initializedFromBlank());
- assert(SPIFFS.format_count==1);
+ assert(!store.begin());
+ assert(!store.ready() && !store.initializedFromBlank());
+ assert(strcmp(store.status(),"UNMOUNTABLE_BLANK_PRESERVED")==0);
+ assert(SPIFFS.format_count==0);
+ SPIFFS.formatted=true;assert(store.begin()&&store.ready());
  ProfileImage latest{};
  assert(!store.newest(latest));
  for(uint32_t g=9;g<=19;g++){

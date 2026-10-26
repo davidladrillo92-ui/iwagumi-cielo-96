@@ -74,7 +74,7 @@ p.ch[28]={1380,1,1,2};
 p.ch[29]={1439,1,1,2};
 p.ch[30]={1440,0,0,0};
 profileSeal(p);assert(curves::curveValid(p));
-profilefs::Store store;assert(store.begin()&&store.save(p));
+SPIFFS.formatted=true;profilefs::Store store;assert(store.begin()&&store.save(p));
 profilefs::Store reboot;assert(reboot.begin());ProfileImage actual{};assert(reboot.newest(actual));
 assert(actual.generation==9&&actual.pvCount==38&&actual.chCount==31);assert(memcmp(&actual,&p,sizeof(p))==0);
 std::cout<<"PASS exact V5 38/31 points: filesystem write, independent read and boot selection preserve all bytes\n";}

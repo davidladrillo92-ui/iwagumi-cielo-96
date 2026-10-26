@@ -1,6 +1,6 @@
 #pragma once
 // RECOVERY3.5: independent A/B curve snapshots in the EXISTING SPIFFS partition.
-// Never repartition, never erase NVS, and never format a non-erased partition.
+// Never repartition, erase NVS or format ANY partition, including blank flash.
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <FS.h>
@@ -18,46 +18,65 @@ static constexpr const char* kTemp="/cielo_profile_tmp.bin";
 class Store {
  bool ready_=false;
  bool published_=false;
- bool formatted_erased_=false;
+ enum class RawState:uint8_t {NotRead,Blank,Nonempty,ReadError};
+ RawState rawState_=RawState::NotRead;
+ esp_err_t rawError_=ESP_OK;
+ size_t rawBytes_=0,firstData_=0;
+ size_t partitionAddress_=0,partitionSize_=0;
+ bool partitionEncrypted_=false;
  const char* status_="NOT_INITIALIZED";
  const char* error_="NONE";
  const char* slot_="NONE";
 
- static bool erased(const esp_partition_t* partition) {
-  if(!partition)return false;
+ void inspectRaw(const esp_partition_t* partition) {
   uint8_t bytes[1024];
   for(size_t off=0;off<partition->size;off+=sizeof(bytes)) {
    const size_t n=(partition->size-off)<sizeof(bytes)?partition->size-off:sizeof(bytes);
-   if(esp_partition_read(partition,off,bytes,n)!=ESP_OK)return false;
-   for(size_t i=0;i<n;i++)if(bytes[i]!=0xff)return false;
+   rawError_=esp_partition_read(partition,off,bytes,n);
+   if(rawError_!=ESP_OK){rawState_=RawState::ReadError;return;}
+   rawBytes_+=n;
+   for(size_t i=0;i<n;i++)if(bytes[i]!=0xff){rawState_=RawState::Nonempty;firstData_=off+i;return;}
    if((off%16384)==0)delay(1);
   }
-  return true;
+  rawState_=RawState::Blank;
  }
 public:
  bool begin() {
-  ready_=false;formatted_erased_=false;slot_="NONE";error_="NONE";published_=false;
+  ready_=false;slot_="NONE";error_="NONE";published_=false;
+  rawState_=RawState::NotRead;rawError_=ESP_OK;rawBytes_=0;firstData_=0;
+  partitionAddress_=0;partitionSize_=0;partitionEncrypted_=false;
   // This layout was inspected from the original ATOMS3 Lite flash. Refuse
   // any different partition instead of touching an unknown filesystem.
   const esp_partition_t* part=esp_partition_find_first(
     ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_SPIFFS,"spiffs");
+  if(part){partitionAddress_=part->address;partitionSize_=part->size;partitionEncrypted_=part->encrypted;}
   if(!part||part->address!=0x670000UL||part->size!=0x180000UL){
    status_="PARTITION_MISMATCH_OR_MISSING";return false;
   }
+  if(partitionEncrypted_){status_="ENCRYPTED_PARTITION_UNSUPPORTED_PRESERVED";return false;}
   if(SPIFFS.begin(false,"/spiffs",4,"spiffs")){
    ready_=true;status_="MOUNTED_EXISTING";return true;
   }
-  // Formatting is permitted ONLY when every byte was already 0xFF.
-  // Nonempty unmountable filesystem remains untouched and requires USB audit.
-  if(!erased(part)){status_="UNMOUNTABLE_NONEMPTY_PRESERVED";return false;}
-  if(!SPIFFS.begin(true,"/spiffs",4,"spiffs")){
-   status_="ERASED_PARTITION_FORMAT_FAILED";return false;
-  }
-  formatted_erased_=true;ready_=true;status_="INITIALIZED_VERIFIED_BLANK";
-  return true;
+  // Failure does not prove corruption or even nonempty flash. Read errors
+  // must not masquerade as existing content. No format/check/repair fallback.
+  inspectRaw(part);
+  status_=rawState_==RawState::ReadError?"PARTITION_READ_FAILED_PRESERVED":
+   rawState_==RawState::Blank?"UNMOUNTABLE_BLANK_PRESERVED":"UNMOUNTABLE_NONEMPTY_PRESERVED";
+  return false;
  }
  bool ready() const {return ready_;}
- bool initializedFromBlank() const {return formatted_erased_;}
+ bool initializedFromBlank() const {return false;} // compatibility: automatic format removed
+ const char* rawState() const {
+  switch(rawState_){case RawState::Blank:return "ALL_FF";case RawState::Nonempty:return "NON_FF_FOUND";
+   case RawState::ReadError:return "READ_ERROR";default:return "NOT_READ";}
+ }
+ int rawError() const {return rawError_;}
+ size_t rawBytesRead() const {return rawBytes_;}
+ bool hasFirstData() const {return rawState_==RawState::Nonempty;}
+ size_t firstDataOffset() const {return firstData_;}
+ size_t partitionAddress() const {return partitionAddress_;}
+ size_t partitionSize() const {return partitionSize_;}
+ bool partitionEncrypted() const {return partitionEncrypted_;}
  const char* status() const {return status_;}
  const char* error() const {return error_;}
  const char* slot() const {return slot_;}

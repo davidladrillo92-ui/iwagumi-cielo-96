@@ -17,8 +17,10 @@ assert "prefs.clear()" not in src
 assert "nvs_legacy_preserved" in src
 assert "curve_storage" in src
 assert "SPIFFS.begin(false" in fs
-assert "if(!erased(part))" in fs
-assert "SPIFFS.begin(true" in fs
+assert "inspectRaw(part)" in fs
+assert "SPIFFS.begin(true" not in fs
+assert "SPIFFS.format(" not in fs
+assert "PARTITION_READ_FAILED_PRESERVED" in fs
 assert "SPIFFS.remove(destination)" in fs
 assert "SPIFFS.rename(kTemp,destination)" in fs
 assert "memcmp(&readback,&candidate,sizeof(candidate))" in fs

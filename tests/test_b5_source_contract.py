@@ -12,7 +12,7 @@ assert 'j+=",\\"persistent_diagnostics\\":{' in s
 assert 'prefs.getBytesLength("boot_hist")' in s
 assert 'prefs.putBytes("boot_hist",bootHistory' in s
 assert 'prefs.getBytesLength("diag_journal")' in s
-assert 'prefs.putBytes("diag_journal",&journal' in s
+assert 'trackedJournalWrite("diag_journal",&journal' in s
 assert 'journalHasFlushed=true;journalLastFlush=millis()' in s
 assert 'void flushJournal()' in s
 assert 'static void persistCritical' in s and '(void)detail;' in s
