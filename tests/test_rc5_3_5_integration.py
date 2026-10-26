@@ -11,7 +11,7 @@ assert "curveFs.save(candidate)" in src
 assert "curveFs.newest(file)" in src
 assert "curveFs.newest(fsVerified)" in src
 assert "memcmp(&fsVerified,&candidate,sizeof(candidate))!=0" in src
-assert "nvs_set_blob(handle,key,&candidate,sizeof(candidate))" in src
+assert "nvs_set_blob(handle,key,&value,sizeof(value))" in src
 assert "nvs_commit(handle)" in src
 assert "prefs.clear()" not in src
 assert "nvs_legacy_preserved" in src

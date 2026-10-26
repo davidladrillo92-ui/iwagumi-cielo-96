@@ -5,9 +5,9 @@ import tempfile
 
 source = Path("src/main.cpp").read_text()
 assert '#include "cielo_nvs_safe.h"' in source
-assert "nvs_set_blob(handle,key,&candidate,sizeof(candidate))" in source
+assert "nvs_set_blob(handle,key,&value,sizeof(value))" in source
 assert "nvs_commit(handle)" in source
-assert "nvs_get_blob(verify,key,&scratch,&bytes)" in source
+assert "nvs_get_blob(verify,key,&value,&bytes)" in source
 assert "lastCurveNvsErr=err" in source
 assert "nvsPreserveCurveHeadroom()" in source
 assert 'previous_profile_preserved' in source
@@ -16,7 +16,8 @@ assert "nvs_get_stats(\"nvs\",&stats)" in source
 assert "ESP_ERR_NVS_NOT_ENOUGH_SPACE" in source
 assert "prefs.clear()" not in source
 assert "nvs_erase_all(" not in source
-assert "nvs_erase_key(" not in source
+assert "int erase(const char*key){return nvs_erase_key(handle,key);}" in source
+assert "store.erase(target)" in Path("include/cielo_profile_transaction.h").read_text()
 
 cpp = r"""
 #include <cassert>

@@ -5,7 +5,7 @@
 namespace cielo96 { namespace nvssafe {
 enum class Failure : uint8_t {
  None, InvalidProfile, StatsUnavailable, InsufficientEntries,
- OpenFailed, WriteFailed, CommitFailed, ReadFailed, VerificationFailed
+ OpenFailed, WriteFailed, CommitFailed, ReadFailed, VerificationFailed, ActiveMismatch, ReclaimFailed
 };
 inline const char* message(Failure f) {
  switch(f) {
@@ -17,6 +17,8 @@ inline const char* message(Failure f) {
  case Failure::WriteFailed:return "Error de escritura NVS: perfil anterior conservado";
  case Failure::CommitFailed:return "Error al confirmar NVS: perfil anterior conservado";
  case Failure::ReadFailed:return "Error al releer NVS: perfil anterior conservado";
+ case Failure::ActiveMismatch:return "No se pudo verificar la copia activa. Revisa el Informe Maestro antes de repetir.";
+ case Failure::ReclaimFailed:return "No se pudo liberar el respaldo inactivo: copia activa conservada";
  case Failure::VerificationFailed:return "Fallo de verificacion NVS: perfil anterior conservado";
  }
  return "Error NVS desconocido: perfil anterior conservado";
@@ -30,6 +32,9 @@ inline size_t minimumFreeEntries(size_t blobBytes) {
 inline bool definitelyTooLittleSpace(size_t freeEntries,size_t blobBytes) {
  return freeEntries < minimumFreeEntries(blobBytes);
 }
+// Statistics include the GC workspace; reserve one page (126 entries) and
+// two complete blob writes before admitting noncritical diagnostic writes.
+inline size_t diagnosticReserve(size_t blobBytes){return 126u+2u*minimumFreeEntries(blobBytes)+8u;}
 // The only valid slot must never be the write target. If both are valid,
 // overwrite the older generation, never the active latest generation.
 inline const char* target(bool validA,uint32_t genA,bool validB,uint32_t genB) {
