@@ -30,6 +30,8 @@ struct BleLinkStatus {
  bool released_to_app=false;
  uint32_t release_count=0;
  uint32_t last_disconnect_ms=0;
+ uint32_t unexpected_disconnects=0;
+ uint32_t last_unexpected_ms=0;
 };
 // Experimento exclusivo: select custom curve (0x03), GATT en worker y desconectar.
 struct BleCustomResumeResult {bool success=false;uint32_t duration_ms=0;char reason[48]{};};
