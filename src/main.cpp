@@ -224,6 +224,7 @@ static uint32_t pvDayRecoveryStarted=0,pvDayRecoveryAttempts=0,pvDayRecoveryGatt
 static uint32_t pvOffNextTry=0,pvOffLastTry=0,pvOffLastGatt=0,pvOffAttempts=0,pvOffScheduled=0,pvOffFailures=0,pvRetryNext=0,pvOffInFlightSeq=0;
 static bool pvDisconnectInterlock=false; // OFF must be accepted before any daytime RGB after unexpected link loss.
 static uint32_t observedUnexpectedDisconnect[2]={0,0};
+static uint32_t isolatedChDisconnects=0,pvDisconnectOffSafetyEpisodes=0;
 static const char* pvSafetyName(){switch(pvSafety){case PvSafetyState::Active:return "ACTIVA";case PvSafetyState::Degraded:return "DEGRADADA";case PvSafetyState::OffPending:return "APAGADO_PENDIENTE";case PvSafetyState::OffRetrying:return "REINTENTANDO";case PvSafetyState::OffGattOk:return "APAGADO_GATT_OK";default:return "PAUSADA";}}
 
 static uint32_t cieloDaySamples=0,cieloNightSamples=0;
@@ -701,6 +702,8 @@ static String cieloModeJson(){
  j+=",\"pv_off_last_gatt_ms\":"+String(pvOffLastGatt)+",\"pv_off_last_attempt_ms\":"+String(pvOffLastTry);
  j+=",\"pv_optically_confirmed\":false";
  j+=",\"pv_day_recovery_pending\":"+String(pvDayRecoveryPending?"true":"false");
+ j+=",\"pv_disconnect_off_safety_episodes\":"+String(pvDisconnectOffSafetyEpisodes);
+ j+=",\"isolated_ch_disconnects\":"+String(isolatedChDisconnects);
  j+=",\"pv_day_recovery_attempts\":"+String(pvDayRecoveryAttempts);
  j+=",\"pv_day_recovery_gatt_ok\":"+String(pvDayRecoveryGattOk);
  j+=",\"ch_consecutive_errors\":"+String(cieloChConsecutiveFailures);
@@ -1974,16 +1977,23 @@ static void bleUnexpectedDisconnectTick(){
   observedUnexpectedDisconnect[device]=link.unexpected_disconnects;
   record("BLE_ENLACE_PERDIDO",String(device?"Chihiros":"Pez Verde")+
    " desconexion inesperada; intentar retorno seguro, sin prueba optica");
-  if(pvControlDesired && !pvOffObligation){
+  // An isolated CH disconnect must not extinguish a healthy daytime PV.
+  // Only a PV link loss creates a PV OFF interlock.
+  if(device==0 && pvControlDesired && !pvOffObligation){
+   pvDisconnectOffSafetyEpisodes++;
    pvDisconnectInterlock=true;
    pvOffObligation=true;pvOffNextTry=millis();pvOffInFlightSeq=0;
    pvSafety=PvSafetyState::OffPending;
    queue.cancel_pending(cielo::ble::Device::PezVerde);lastPvDesired=false;
    record("PV_DESCONEXION_OFF_PENDIENTE","POWER OFF antes de reanudar; sin radio no hay garantia fisica");
-  }else if(pvControlDesired && pvOffObligation){
+  }else if(device==0 && pvControlDesired && pvOffObligation){
    pvOffNextTry=millis();pvSafety=PvSafetyState::OffPending;
   }
-  if(cieloChRun && cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
+  if(device==1){
+   isolatedChDisconnects++;
+   record("CH_DESCONEXION_AISLADA","Pez Verde conserva curva y seguridad propias; retorno CH independiente");
+  }
+  if(device==1 && cieloChRun && cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
    cieloChRun=false;chReconnect.cancel();
    queue.cancel_pending(cielo::ble::Device::Chihiros);
    cieloRequestReturn("Desconexion BLE inesperada: devolver selector personalizado 0x03 a My Chihiros");
