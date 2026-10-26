@@ -19,6 +19,7 @@ m={'schema':'cielo-build-v1','commit':subprocess.check_output(['git','rev-parse'
    'source_branch':os.environ.get('GITHUB_HEAD_REF') or os.environ.get('GITHUB_REF_NAME') or 'local',
    'version':match.group(1),'board':'ATOMS3 Lite C124 / ESP32-S3',
    'application_bytes':len(raw),'application_sha256':hashlib.sha256(raw).hexdigest(),
+   'littlefs_probe_policy':{'read_only':True,'format_if_mount_failed':False,'grow_on_mount':False,'curve_writes_enabled':False},
    'ota_signature':'NOT_REQUIRED_LAN_OWNER_REQUEST','hardware_validation':'PENDING','installed_confirmed':'11.1.0-RC5-RECOVERY3.6-MAINTENANCE-CANDIDATE (informe 81; boot 132; gen 9; 38 PV / 31 CH; persistencia tras reinicio confirmada)',
    'v5_reference':{'pv':34,'ch':31,'fnv1a32':'5814359c'},
    'stack_report':json.loads(Path('dist/STACK_REPORT.json').read_text()),
