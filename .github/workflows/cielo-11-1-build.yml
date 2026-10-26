@@ -1,9 +1,9 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-20261025, dev/cielo-recovery3-1-bloqueos-clasificados-20261025, dev/cielo-recovery3-1-selective-ch-20261025, dev/cielo-recovery3-1-pv-diagnostics-20261025, dev/cielo-rc5-recovery3-1-integrada-20261025, dev/cielo-rc5-3-2-app-stability-20261026, dev/cielo-rc5-3-3-persistent-ble-safety-20261026, dev/cielo-rc5-3-4-consolidacion-cinco-puntos-20261026, dev/cielo-rc5-recovery3-5-spiffs-curvas-seguras-20261026, dev/cielo-rc5-recovery3-5-1-fs-guard-20261026, dev/cielo-rc5-recovery3-5-2-nvs-recovery-20261026]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-20261025, dev/cielo-recovery3-1-bloqueos-clasificados-20261025, dev/cielo-recovery3-1-selective-ch-20261025, dev/cielo-recovery3-1-pv-diagnostics-20261025, dev/cielo-rc5-recovery3-1-integrada-20261025, dev/cielo-rc5-3-2-app-stability-20261026, dev/cielo-rc5-3-3-persistent-ble-safety-20261026, dev/cielo-rc5-3-4-consolidacion-cinco-puntos-20261026, dev/cielo-rc5-recovery3-5-spiffs-curvas-seguras-20261026, dev/cielo-rc5-recovery3-5-1-fs-guard-20261026, dev/cielo-rc5-recovery3-5-2-nvs-recovery-20261026, dev/cielo-rc5-recovery3-6-maintenance-20261026]
   pull_request:
-    branches: [dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-5-spiffs-curvas-seguras-20261026, dev/cielo-rc5-recovery3-5-1-fs-guard-20261026]
+    branches: [dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-5-spiffs-curvas-seguras-20261026, dev/cielo-rc5-recovery3-5-1-fs-guard-20261026, dev/cielo-rc5-recovery3-5-2-nvs-recovery-20261026]
   workflow_dispatch:
 permissions:
   contents: read
@@ -71,13 +71,14 @@ jobs:
           python tools/check_stack_build.py
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
-          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_RECOVERY3_5_2_NVS_RECOVERY_CANDIDATO.bin
+          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_RECOVERY3_6_MANTENIMIENTO_CANDIDATO.bin
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R monitor docs dist/
           mkdir -p dist/tools dist/include
           cp tools/cielo_flash.py tools/cielo_spiffs.py tools/sign_firmware.py tools/update_observer.py dist/tools/
           cp include/cielo_ota_signing_public.h dist/include/
           python tools/package_manifest.py .pio/build/atoms3_lite_c124/firmware.bin dist/BUILD_MANIFEST.json
+          cat dist/BUILD_MANIFEST.json
           git archive --format=zip --output=dist/CIELO_11_1_FUENTES_COMPLETAS.zip HEAD
           sha256sum dist/CIELO_11_1_FUENTES_COMPLETAS.zip >> dist/SHA256.txt
           printf '%s\n' "ATOMS3 Lite C124, fuente GitHub HEAD, firmware SOLO APLICACION, OTA LAN SIN CLAVE NI FIRMA OBLIGATORIA; BACKUP USB Y VALIDACION FISICA PENDIENTES" > dist/LEEME_RECUPERACION.txt
@@ -91,7 +92,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CIELO_RC5_RECOVERY3_5_2_DEBUG_ELF_MAP
+          name: CIELO_RC5_RECOVERY3_6_DEBUG_ELF_MAP
           path: |
             .pio/build/atoms3_lite_c124/firmware.elf
             .pio/build/atoms3_lite_c124/firmware.map

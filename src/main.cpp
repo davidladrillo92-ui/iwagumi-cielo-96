@@ -34,6 +34,7 @@
 #include "cielo_pwa_assets.h"
 #include "cielo_monitor_service.h"
 #include "cielo_maintenance.h"
+#include "cielo_worklight.h"
 #include "cielo_ble_recovery.h"
 #include "cielo_ble_blockage.h"
 #include "cielo_ble_selective.h"
@@ -61,7 +62,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.5.2-NVS-RECOVERY-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.6-MAINTENANCE-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -257,6 +258,9 @@ static const char* chSafetyName(){
 static uint32_t pezManualUntil=0,chiManualUntil=0;
 static uint32_t lastScheduleAt=0,lastWiFiAttempt=0,lastStatusAt=0,otaBytes=0,otaLastChunkAt=0;
 static uint32_t lastPvDesiredAt=0,lastChDesiredAt=0;
+static cielo96::worklight::Session workLight;
+static uint32_t workLightTicks=0;
+static String workLightEndReason="Sin sesion previa";
 static bool cadenceTrial15=false;
 static uint32_t cadenceEndsAt=0,cadenceStartBleErrors=0,cadenceTicks15=0,cadenceTicks30=0;
 static uint32_t cadenceSkippedBusy=0,cadenceFallbacks=0;
@@ -363,8 +367,8 @@ static uint32_t journalLastFlush=0;
 static void flushJournal(){
  if(!journalDirty || !cielo96::diag::shouldFlush(millis(),journalLastFlush,journalHasFlushed))return;
  if(curveSaveInProgress||nvsPreserveCurveHeadroom()){
-  diagWritesSkippedForSpace++;
-  return; // RAM journal stays dirty; preserve NVS space for curves.
+  diagWritesSkippedForSpace++;journalLastFlush=millis();journalHasFlushed=true;
+  return; // RAM journal stays dirty; retry at most every five minutes.
  }
  journalHasFlushed=true;journalLastFlush=millis(); // Respetar límite incluso si NVS falla.
  if(prefs.putBytes("diag_journal",&journal,sizeof(journal))==sizeof(journal)){
@@ -468,8 +472,12 @@ static String pointsCh(){String s;s.reserve(profile.chCount*20);
  s+=String(p.minute)+','+String(p.r)+','+String(p.g)+','+String(p.b);
  }return s;
 }
-static cielo::PvValue desiredPv(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):cielo::at(profile.pv,profile.pvCount,minuteOfDay())):cielo::PvValue{0,0,0,0};}
-static cielo::ChiValue desiredCh(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):cielo::at(profile.ch,profile.chCount,minuteOfDay())):cielo::ChiValue{0,0,0};}
+static cielo::PvValue programPv(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):cielo::at(profile.pv,profile.pvCount,minuteOfDay())):cielo::PvValue{0,0,0,0};}
+static cielo::ChiValue programCh(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):cielo::at(profile.ch,profile.chCount,minuteOfDay())):cielo::ChiValue{0,0,0};}
+
+static cielo96::worklight::Levels programLevels(){return {programPv(),programCh()};}
+static cielo::PvValue desiredPv(){return workLight.output(millis(),programLevels()).pv;}
+static cielo::ChiValue desiredCh(){return workLight.output(millis(),programLevels()).ch;}
 
 static void loadProfile(){
  profile=cielo96::ProfileImage{};
@@ -824,6 +832,80 @@ static String cieloTrendJson(){
  }
  j+="]}";return j;
 }
+// Temporary lighting uses the serial scheduler and existing safety interlocks.
+static const char* workLightBlockReason(bool starting){
+ if(rescueOpen)return "Rescate de solo lectura";
+ if(otaBusy||otaTxn.phase!=OtaPhase::Idle)return "Termina la actualizacion antes del mantenimiento";
+ if(!currentBootMarkedHealthy||!bleReady||!timeOK()||!cielo96::curves::curveValid(profile)||!wifiCoexistReady())
+  return "Espera arranque estable, reloj y Bluetooth disponibles";
+ if(!cieloAlwaysOn||!cieloPvRun||!cieloChRun||!pvControlDesired)
+  return "Activa primero la programacion de las dos luces";
+ if(cieloWatchdogTripped||bleRecoveryBootPvSafe||pvDisconnectInterlock||chSelectiveHold||
+    cielo96::ble_worker_snapshot().heartbeat_age_ms>=15000UL)
+  return "Bluetooth en recuperacion: mantenimiento no disponible";
+ if(customResumePending||cieloChReturnPending||cieloChAwaitResponse||lab.txArmed||lab.scanPending||lab.probePending||
+    contrastStage==1||contrastStage==2||contrastStage==4||cadenceTrial15||pezManual||chiManual)
+  return "Termina la prueba o el retorno pendiente antes del mantenimiento";
+ if(pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk&&(starting||desiredPv().brightness>0))
+  return "Apagado de seguridad pendiente: espera su confirmacion";
+ if(starting&&(!bleCommunicationRecent(0)||!bleCommunicationRecent(1)))
+  return "Espera comunicacion reciente con las dos pantallas";
+ return nullptr;
+}
+static void workLightRefreshSchedule(){
+ queue.cancel_pending(cielo::ble::Device::PezVerde);
+ queue.cancel_pending(cielo::ble::Device::Chihiros);
+ lastPvDesired=false;lastChDesired=false;lastScheduleAt=millis()-30000UL;
+}
+static void workLightCancel(const char* reason){
+ if(!workLight.active())return;
+ workLight.cancel();workLightEndReason=reason;workLightRefreshSchedule();
+ record("MANTENIMIENTO_CANCELADO",reason);
+}
+static void workLightTick(){
+ if(!workLight.active())return;
+ if(const char* reason=workLightBlockReason(false)){workLightCancel(reason);return;}
+ if(workLight.advance(millis())){
+  workLightRefreshSchedule();
+  if(workLight.active())record("MANTENIMIENTO_LISTO","Consigna de trabajo 50/50/50 y fondo azul 15%; optica no medida");
+  else {workLightEndReason="Retorno a la programacion completado";record("MANTENIMIENTO_FIN",workLightEndReason);}
+ }
+}
+static String workLightJson(){
+ const uint32_t now=millis();const auto levels=workLight.output(now,programLevels());
+ const char* reason=workLightBlockReason(true);
+ String j="{\"active\":"+String(workLight.active()?"true":"false")+",\"phase\":"+jsonQuote(workLight.phaseName());
+ j+=",\"can_start\":"+String(!workLight.active()&&!reason?"true":"false")+",\"unavailable_reason\":"+jsonQuote(reason?reason:"");
+ j+=",\"elapsed_sec\":"+String(workLight.elapsed(now)/1000UL)+",\"remaining_sec\":"+String((workLight.remaining(now)+999UL)/1000UL);
+ j+=",\"rise_sec\":600,\"return_sec\":120,\"interval_ms\":10000,\"ticks\":"+String(workLightTicks);
+ j+=",\"target_ch\":[50,50,50],\"target_pv\":[96,150,210,15]";
+ j+=",\"requested_ch\":["+String(levels.ch.r)+","+String(levels.ch.g)+","+String(levels.ch.b)+"]";
+ j+=",\"requested_pv\":["+String(levels.pv.r)+","+String(levels.pv.g)+","+String(levels.pv.b)+","+String(levels.pv.brightness)+"]";
+ j+=",\"last_end_reason\":"+jsonQuote(workLightEndReason)+",\"saved_profile_unchanged\":true,\"resume_after_reboot\":false,\"optically_verified\":false}";
+ return j;
+}
+static void workLightStart(){
+ if(srv.arg("confirm")!="INICIAR_MANTENIMIENTO")return fail(400,"Inicia mantenimiento desde su boton");
+ if(workLight.active()){
+  if(workLight.phase()==cielo96::worklight::Phase::Returning)return fail(409,"Espera a que termine el retorno de mantenimiento");
+  return jsonSend(200,workLightJson()); // duplicate request never restarts ramp
+ }
+ if(const char* reason=workLightBlockReason(true))return fail(423,reason);
+ if(queue.busy())return fail(409,"Una orden Bluetooth esta terminando. Espera unos segundos y repite");
+ auto current=programLevels();
+ if(lastPvDesired&&lastPvDesiredAt)current.pv=prevPv;
+ if(pvOffObligation)current.pv={0,0,0,0};
+ if(lastChDesired&&lastChDesiredAt)current.ch=prevCh;
+ workLight.start(millis(),current);workLightEndReason="Sesion en curso";workLightRefreshSchedule();
+ record("MANTENIMIENTO_INICIO","Rampa 10 min; CH 50/50/50; PV azul 15%; hasta pulsar Parar");
+ jsonSend(200,workLightJson());
+}
+static void workLightStop(){
+ if(workLight.stop(millis(),programLevels())){
+  workLightRefreshSchedule();record("MANTENIMIENTO_RETORNO","Transicion 2 min hacia la programacion actual");
+ }
+ jsonSend(200,workLightJson());
+}
 static void statusJson(){
  auto p=desiredPv();auto c=desiredCh();bool w=WiFi.status()==WL_CONNECTED;
  String j;j.reserve(4500);
@@ -840,6 +922,7 @@ static void statusJson(){
  j+=",\"profileGeneration\":"+String(profile.generation)+",\"profileSchemaVersion\":2";
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"cieloV4\":"+cieloModeJson();
+ j+=",\"work_light\":"+workLightJson();
  j+=",\"chActive\":"+String(cieloChRun?"true":"false")+",\"chEvening\":"+String(cieloChRun?"true":"false")+",\"chContinuous\":"+String(cieloChRun?"true":"false");
  j+=",\"chStatus\":"+jsonQuote(cieloChRun?"Natural V4: control por CIELO":cieloChReturnPending||cieloChAwaitResponse?"Restaurando curva de My Chihiros":"My Chihiros: curva personalizada");
  j+=",\"chEveningStatus\":"+jsonQuote(cieloChRun?"NATURAL_V4_ACTIVA":"MY_CHIHIROS")+",\"bleFailures\":"+String(bleResultErrors);
@@ -1252,6 +1335,7 @@ static void diagnosticJson(){
  j+=",\"last_gatt_ok_uptime_ms\":"+(pvOffLastGatt?String(pvOffLastGatt):String("null"));
  j+=",\"gatt_status\":"+jsonQuote(pvOffLastGatt?"GATT_ACEPTADO":"NO_PROBADO");
  j+=",\"optically_off\":null,\"reason\":\"Una escritura GATT no mide la luz real\"}}";
+ j+=",\"work_light\":"+workLightJson();
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
  // nvs_get_stats consulta metadatos, sin escribir ni ejecutar limpieza.
@@ -1571,6 +1655,7 @@ static void otaPreparationTick(){
  record("OTA_PREPARADA","Worker libre; Chihiros curva personalizada GATT OK, no verificacion optica");
 }
 static void otaPrepare(){
+ if(workLight.active())return fail(409,"Para la luz de mantenimiento antes de preparar la actualizacion");
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA desactivada");
  if(rescueOpen)return fail(403,"Rescate solo lectura");
  if(!requireAdminWrite())return;
@@ -1804,6 +1889,8 @@ static void configureRoutes(){
   lab.probePending=true;lab.probeStartedMs=millis();lab.probeRequests++;
   record("LAB_GATT_PROBE_INICIO",device+" sin escrituras; desconexion al terminar");ok();
  });
+ srv.on("/api/work-light/start",HTTP_POST,[]{if(requireAdminWrite())workLightStart();});
+ srv.on("/api/work-light/stop",HTTP_POST,[]{if(requireAdminWrite())workLightStop();});
  srv.on("/api/cielo/v4/status",HTTP_GET,[]{if(requireLocalRead())jsonSend(200,cieloModeJson());});
  srv.on("/api/cielo/v4/start",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(otaTxn.phase==OtaPhase::Preparing||otaTxn.phase==OtaPhase::Ready||
@@ -1823,6 +1910,7 @@ static void configureRoutes(){
    return fail(507,"No se pudo guardar el control continuo en NVS");
   if(!prefs.putBool("pv_auto",true))
    return fail(507,"No se pudo conservar la recuperacion independiente de Pez Verde");
+  workLightCancel("Programacion normal solicitada");
   cieloAlwaysOn=true;cieloResumePending=false;chReconnect.cancel();
   cieloPvRun=true;cieloChRun=true;cieloWatchdogTripped=false;
   pvControlDesired=true;pvSafety=PvSafetyState::Active;pvRetryNext=0;pvOffNextTry=0;
@@ -1842,6 +1930,7 @@ static void configureRoutes(){
   if(customResumePending||lab.scanPending||lab.probePending||
      contrastStage==1||contrastStage==2||contrastStage==4)
    return fail(409,"Espera a que finalice el ensayo previo");
+  workLightCancel("Retorno a My Chihiros solicitado");
   cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;chReconnect.cancel();prefs.putBool("v5_always",false);
   cieloRequestReturn("Emergencia: volver a My Chihiros");
   record("V4_BOTON_MYCHIHIROS","Pez Verde sigue usando Natural V4 si estaba activa");
@@ -1852,6 +1941,7 @@ static void configureRoutes(){
      otaTxn.phase==OtaPhase::Uploading)return fail(423,"OTA ya gestiona las luces: no pulses pausa");
   if(rescueOpen)return fail(403,"Rescate de solo lectura");
   if(srv.arg("confirm")!="PAUSAR_TODO")return fail(403,"Confirma pausa de ambas pantallas");
+  workLightCancel("Control pausado por el usuario");
   cieloPvRun=false;cieloChRun=false;cieloAlwaysOn=false;cieloResumePending=false;chReconnect.cancel();prefs.putBool("v5_always",false);
   pvControlDesired=false;pvOffObligation=false;pvOffInFlightSeq=0;pvSafety=PvSafetyState::Paused;
   if(!prefs.putBool("pv_auto",false))record("PV_NVS_FALLO","Pausa PV no persistida, verificar tras reinicio");
@@ -1903,6 +1993,7 @@ static void configureRoutes(){
   ok();
  });
  srv.on("/api/ble/release",HTTP_POST,[]{if(!requireAdminWrite())return;
+  if(workLight.active())return fail(409,"Para mantenimiento antes de ceder una pantalla");
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(!bleReady)return fail(423,"Bluetooth aun no inicializado");
   if(queue.busy()||lab.probePending||lab.scanPending)return fail(409,"Espera a que termine la operacion Bluetooth");
@@ -1969,10 +2060,12 @@ static void configureRoutes(){
    struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
   }return fail(400,"Epoch demasiado corto");});
   srv.on("/api/curves/commit",HTTP_POST,[]{if(!requireAdminWrite())return;
+  if(workLight.active())return fail(409,"Termina mantenimiento antes de guardar curvas");
    if(rescueOpen||otaBusy||otaTxn.phase!=OtaPhase::Idle)return fail(423,"Cambios bloqueados durante rescate o OTA");
    saveBothCurves();
   });
   srv.on("/api/cielo/cadence",HTTP_POST,[]{if(!requireAdminWrite())return;
+  if(workLight.active())return fail(409,"Termina mantenimiento antes del ensayo de cadencia");
    if(rescueOpen)return fail(423,"Rescate de solo lectura");cadenceSet();
   });
   srv.on("/api/cielo/cadence",HTTP_GET,[]{if(requirePrivateRead())jsonSend(200,cadenceJson());});
@@ -2078,6 +2171,7 @@ static void bleUnexpectedDisconnectTick(){
   observedUnexpectedDisconnect[device]=link.unexpected_disconnects;
   record("BLE_ENLACE_PERDIDO",String(device?"Chihiros":"Pez Verde")+
    " desconexion inesperada; intentar retorno seguro, sin prueba optica");
+  workLightCancel("Desconexion Bluetooth: retorno a la programacion");
   // An isolated CH disconnect must not extinguish a healthy daytime PV.
   // Only a PV link loss creates a PV OFF interlock.
   if(device==0 && pvControlDesired && !pvOffObligation){
@@ -2150,7 +2244,7 @@ static void lightingTask(){
     record("CADENCIA_RETORNO_30S",cadenceFallbackReason);
    }
   }
-  const uint32_t cadenceMs=activeCadenceMs();
+  const uint32_t cadenceMs=workLight.active()?cielo96::worklight::TickMs:activeCadenceMs();
   if(now-lastScheduleAt<cadenceMs && !pvOffObligation)return;
   const bool cadenceDue=now-lastScheduleAt>=cadenceMs;
   if(cadenceDue){lastScheduleAt=now;
@@ -2158,7 +2252,7 @@ static void lightingTask(){
     cadenceDiagnostics.sample(queue.busy(),queue.pending(cielo::ble::Device::PezVerde)||queue.pending(cielo::ble::Device::Chihiros),phase.phase_age_ms);
     if(pvOffObligation)cadenceDiagnostics.offPriority++;
 
-    if(cadenceTrial15)cadenceTicks15++;else cadenceTicks30++;
+    if(workLight.active())workLightTicks++;else if(cadenceTrial15)cadenceTicks15++;else cadenceTicks30++;
     if(queue.busy()||queue.pending(cielo::ble::Device::PezVerde)||queue.pending(cielo::ble::Device::Chihiros))cadenceSkippedBusy++;
   }
  if(!timeOK() || !cielo96::profileValid(profile)){
@@ -2232,6 +2326,7 @@ static void bleTick(){
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
   queue.complete(res.sequence,res.success,now);bleResultCount++;
+  if(!res.success)workLightCancel("Fallo Bluetooth: mantenimiento cancelado");
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
      (cieloPvRun||cieloChRun||cieloChWasDriven||pvOffObligation)){
    if(res.device==0 && (cieloPvRun||pvOffObligation)){
@@ -2656,6 +2751,7 @@ void loop(){
    record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
   }
  }
+ workLightTick();
  // The worker checks this atomic interlock again after connecting and before each PV frame.
  cielo96::ble_set_pv_off_required(pvOffObligation);
  cielo96::ble_keep_links(!otaBusy&&otaTxn.phase==OtaPhase::Idle&&!rescueOpen&&pvControlDesired,
