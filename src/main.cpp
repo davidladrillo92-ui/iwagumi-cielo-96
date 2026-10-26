@@ -298,6 +298,12 @@ static const char* lastCurveNvsStage="sin_intento";
 static size_t lastCurveNvsFreeBefore=0,lastCurveNvsMinRequired=0;
 static bool curveSaveInProgress=false;
 static uint32_t diagWritesSkippedForSpace=0,restartWritesSkippedForSpace=0;
+static bool nvsPreserveCurveHeadroom(){
+ nvs_stats_t stats{};
+ if(nvs_get_stats("nvs",&stats)!=ESP_OK)return true; // Fail closed for noncritical writes.
+ const size_t reserve=cielo96::nvssafe::minimumFreeEntries(sizeof(cielo96::ProfileImage))+8u;
+ return stats.free_entries<reserve;
+}
 static String storedSSID,storedPass,apPassword;
 static uint32_t bootMs=0;
 static constexpr int ATOMS3_BUTTON_GPIO=41;
@@ -331,6 +337,9 @@ static uint32_t restartJournalSavedAt=0;
 static uint32_t bootEpoch=0;
 static void flushRestartJournal(){
  if(!restartJournalDirty||uint32_t(millis()-restartJournalSavedAt)<300000UL)return;
+ if(curveSaveInProgress){restartWritesSkippedForSpace++;return;}
+ // Restart evidence has higher priority than ordinary diagnostics; do not
+ // discard a pending restart journal merely because NVS is nearly full.
  restartJournalSavedAt=millis();
  cielo96::restarts::seal(restartJournal);
  if(prefs.putBytes("restart_v2",&restartJournal,sizeof(restartJournal))==sizeof(restartJournal))restartJournalDirty=false;
@@ -347,6 +356,10 @@ static bool journalDirty=false,journalHasFlushed=false;
 static uint32_t journalLastFlush=0;
 static void flushJournal(){
  if(!journalDirty || !cielo96::diag::shouldFlush(millis(),journalLastFlush,journalHasFlushed))return;
+ if(curveSaveInProgress||nvsPreserveCurveHeadroom()){
+  diagWritesSkippedForSpace++;
+  return; // RAM journal stays dirty; preserve NVS space for curves.
+ }
  journalHasFlushed=true;journalLastFlush=millis(); // Respetar límite incluso si NVS falla.
  if(prefs.putBytes("diag_journal",&journal,sizeof(journal))==sizeof(journal)){
   prefs.putUInt("fault_count",savedFailures);
@@ -2347,7 +2360,9 @@ void setup(){
  }
  bootHistory[bootHistoryHead]={previousBootCount+1,(uint8_t)esp_reset_reason(),(uint8_t)priorBootClean,0};
  bootHistoryHead=(bootHistoryHead+1)%8;if(bootHistoryCount<8)bootHistoryCount++;
- prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
+ // boot_hist is redundant to restart_v2; preserve NVS headroom for curves.
+ if(!nvsPreserveCurveHeadroom())prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
+ else diagWritesSkippedForSpace++;
  if(prefs.getBytesLength("diag_journal")==sizeof(journal)){
   prefs.getBytes("diag_journal",&journal,sizeof(journal));
   if(journal.magic!=JOURNAL_MAGIC||journal.count>8||journal.head>=8)journal=JournalStore{JOURNAL_MAGIC,0,0,0,{}};
