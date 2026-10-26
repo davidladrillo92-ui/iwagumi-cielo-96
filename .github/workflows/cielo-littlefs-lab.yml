@@ -1,0 +1,37 @@
+name: CIELO LittleFS · Laboratorio sintético
+on:
+  push:
+    branches: [dev/cielo-littlefs-migration-lab-20261026]
+  pull_request:
+    paths:
+      - '.github/workflows/cielo-littlefs-lab.yml'
+      - 'tests/littlefs_lab/**'
+      - 'tests/vendor/littlefs/**'
+      - 'tools/check_littlefs_migration_lab.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  synthetic_only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '${{ matrix.python }}'
+      - name: Verificar alcance de almacenamiento
+        run: python tests/test_storage_scope.py
+      - name: Simular cortes y falta de espacio con LittleFS real
+        run: python tools/check_littlefs_migration_lab.py | tee LITTLEFS_LAB_RESULT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LITTLEFS_LAB_PYTHON_${{ matrix.python }}
+          path: LITTLEFS_LAB_RESULT.txt
+          if-no-files-found: error

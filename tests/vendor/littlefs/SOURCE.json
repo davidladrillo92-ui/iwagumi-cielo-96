@@ -1,0 +1,13 @@
+{
+  "upstream": "https://github.com/littlefs-project/littlefs",
+  "commit": "f53a0cc961a8acac85f868b431d2f3e58e447ba3",
+  "selected_by": "joltwallet/esp_littlefs v1.14.1 src/littlefs gitlink",
+  "scope": "Host test sources only; not linked into firmware; no changes to installed SDK",
+  "git_blobs": {
+    "lfs.c": "d5885ca08396a7c30f28686ce5d54d4a1821f4d8",
+    "lfs.h": "991450223bc44f656a7096c2710b2aab0ae6de3e",
+    "lfs_util.c": "dac72abc3c101dc720727d3379723548d46dae1e",
+    "lfs_util.h": "4e5770090b03cf67d0806bbb6e0d568113a065a9",
+    "LICENSE.md": "e6c3a7bac1d8b3ed2ff3160a5bb49abebdd6fe7e"
+  }
+}
