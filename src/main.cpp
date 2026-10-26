@@ -958,6 +958,8 @@ static void diagnosticJson(){
  j+=",\"loop_stack_bytes\":"+String(CIELO_LOOP_STACK_BYTES);
  j+=",\"loop_stack_min_free_bytes\":"+String(uxTaskGetStackHighWaterMark(nullptr));
  j+=",\"heap_free\":"+String(freeMem)+",\"heap_minimum\":"+String(minimum)+",\"largest_heap_block\":"+String(largest);
+ j+=",\"heap_largest_block_min_15m_samples\":"+(largestHeapBlockSamples15m?String(largestHeapBlockMin15m):String("null"));
+ j+=",\"heap_largest_block_samples_15m\":"+String(largestHeapBlockSamples15m);
  j+=",\"heap_metric\":\"MALLOC_CAP_INTERNAL\",\"fragmentation_pct\":"+(freeMem?String(cielo96::diag::fragmentationPct(freeMem,largest)):String("null"));
  j+=",\"fragmentation_definition\":\"100 x (1 - largest_free_block / free_heap), solo estimacion\"";
  j+=",\"filesystem_ok\":null,\"filesystem_errors\":null";
