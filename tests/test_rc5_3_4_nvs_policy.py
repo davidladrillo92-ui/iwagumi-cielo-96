@@ -29,8 +29,8 @@ int main() {
  assert(target(false,0,true,9)[6]=='A');
  assert(target(true,8,true,7)[6]=='B');
  assert(target(true,7,true,8)[6]=='A');
- assert(target(true,0xffffffffu,true,0)[6]=='B');
- assert(target(true,0,true,0xffffffffu)[6]=='A');
+ assert(target(true,0xffffffffu,true,0)[6]=='A');
+ assert(target(true,0,true,0xffffffffu)[6]=='B');
  assert(targetPreservesOnlyCopy(true,false,"curvesB"));
  assert(!targetPreservesOnlyCopy(true,false,"curvesA"));
  assert(targetPreservesOnlyCopy(false,true,"curvesA"));
