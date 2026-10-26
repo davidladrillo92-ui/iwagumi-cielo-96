@@ -960,7 +960,9 @@ static void diagnosticJson(){
   j+=",\"released_to_app\":"+String(link.released_to_app?"true":"false");
   j+=",\"release_count\":"+String(link.release_count);
    j+=",\"unexpected_disconnects\":"+String(link.unexpected_disconnects);
-   j+=",\"last_unexpected_ms\":"+String(link.last_unexpected_ms)+"}";
+   j+=",\"last_unexpected_ms\":"+String(link.last_unexpected_ms);
+   j+=",\"sdk_connect_stage\":"+String(link.sdk_connect_stage);
+   j+=",\"sdk_last_esp_error\":"+String(link.sdk_last_esp_error)+"}";
  }
  j+=",\"queued\":"+String(m.submitted)+",\"queued_total_is_submitted\":true";
  j+=",\"queue_depth\":"+String((queue.pending(cielo::ble::Device::PezVerde)?1:0)+(queue.pending(cielo::ble::Device::Chihiros)?1:0));
