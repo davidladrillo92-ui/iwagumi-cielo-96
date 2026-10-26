@@ -41,15 +41,17 @@ int main(){
  profilefs::Store reboot;
  assert(reboot.begin() && reboot.ready());
  assert(reboot.newest(latest) && latest.generation==19);
+ // The older slot was removed before the failed rename. Recreate it safely.
+ assert(store.save(sample(20)));
+ assert(store.newest(latest) && latest.generation==20);
  // A corrupt newest slot must allow recovery of the other one.
- auto newestPath=std::string(store.slot());
  assert(SPIFFS.exists(profilefs::kA) && SPIFFS.exists(profilefs::kB));
  // Both slots contain valid profiles; invalidate exactly the newest one.
  ProfileImage a{},b{};
  assert(store.read(profilefs::kA,a) && store.read(profilefs::kB,b));
  const char* newestFile=profilefs::newerGeneration(a.generation,b.generation)?profilefs::kA:profilefs::kB;
  SPIFFS.files[newestFile][0]^=0x01;
- assert(reboot.newest(latest) && latest.generation==18);
+ assert(reboot.newest(latest) && latest.generation==19);
  // Under an UNMOUNTABLE, NONBLANK partition, never silently format data.
  SPIFFS=MockSPIFFS{};
  mock_flash[0]=0x42;
