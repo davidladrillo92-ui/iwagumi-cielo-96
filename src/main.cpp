@@ -509,9 +509,9 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  // Leer ambos slots antes de elegir. Nunca sobrescribir la unica copia valida.
  cielo96::ProfileImage a{},b{};
  const bool va=prefs.getBytesLength("curvesA")==sizeof(a)&&
-  prefs.getBytes("curvesA",&a,sizeof(a))==sizeof(a)&&cielo96::profileValid(a);
+  prefs.getBytes("curvesA",&a,sizeof(a))==sizeof(a)&&cielo96::curves::curveValid(a);
  const bool vb=prefs.getBytesLength("curvesB")==sizeof(b)&&
-  prefs.getBytes("curvesB",&b,sizeof(b))==sizeof(b)&&cielo96::profileValid(b);
+  prefs.getBytes("curvesB",&b,sizeof(b))==sizeof(b)&&cielo96::curves::curveValid(b);
  const char*key=cielo96::nvssafe::target(va,a.generation,vb,b.generation);
  lastCurveNvsSlot=key;
  if(!cielo96::nvssafe::targetPreservesOnlyCopy(va,vb,key))
