@@ -7,7 +7,7 @@ source = Path("src/main.cpp").read_text()
 assert '#include "cielo_nvs_safe.h"' in source
 assert "nvs_set_blob(handle,key,&candidate,sizeof(candidate))" in source
 assert "nvs_commit(handle)" in source
-assert "nvs_get_blob(verify,key,&readback,&bytes)" in source
+assert "nvs_get_blob(verify,key,&scratch,&bytes)" in source
 assert "lastCurveNvsErr=err" in source
 assert "nvsPreserveCurveHeadroom()" in source
 assert 'previous_profile_preserved' in source
