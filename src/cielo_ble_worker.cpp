@@ -420,6 +420,8 @@ BleLinkStatus ble_link_status(uint8_t device){
  r.last_disconnect_ms=shared[device].lastDisconnect;
  r.unexpected_disconnects=unexpectedLoss[device].load();
  r.last_unexpected_ms=lastUnexpectedLoss[device].load();
+ r.sdk_connect_stage=targets[device].client?targets[device].client->cieloConnectStage():0;
+ r.sdk_last_esp_error=targets[device].client?targets[device].client->cieloLastEspError():0;
  return r;
 }
 bool ble_probe_request(uint8_t device){
