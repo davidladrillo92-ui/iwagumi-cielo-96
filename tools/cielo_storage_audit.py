@@ -41,7 +41,7 @@ def analyze(raw,full_flash=False):
         'erased_4k_blocks':sum(raw[i:i+4096]==b'\xff'*4096 for i in range(0,len(raw),4096)),
         'total_4k_blocks':len(raw)//4096,'littlefs_text_hint_offsets':hints,
         'format':'BLANK' if not nonblank_count else 'UNDETERMINED',
-        'signature_is_only_a_hint':True,
+        'signature_is_only_a_hint':True,'raw_distribution_is_not_live_filesystem_usage':True,
         'note':'Nonempty no demuestra corrupcion. Un texto littlefs no identifica de forma concluyente el formato.'}
     return result
 

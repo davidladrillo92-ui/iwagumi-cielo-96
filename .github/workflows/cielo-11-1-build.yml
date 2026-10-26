@@ -75,7 +75,7 @@ jobs:
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R monitor docs dist/
           mkdir -p dist/tools dist/include
-          cp tools/cielo_flash.py tools/cielo_spiffs.py tools/cielo_storage_audit.py tools/sign_firmware.py tools/update_observer.py dist/tools/
+          cp tools/cielo_flash.py tools/cielo_spiffs.py tools/cielo_storage_audit.py tools/cielo_littlefs_readonly_audit.c tools/sign_firmware.py tools/update_observer.py dist/tools/
           cp include/cielo_ota_signing_public.h dist/include/
           python tools/package_manifest.py .pio/build/atoms3_lite_c124/firmware.bin dist/BUILD_MANIFEST.json
           cat dist/BUILD_MANIFEST.json

@@ -69,9 +69,50 @@ El informe81 no contiene las páginas físicas. No se afirma fragmentación medi
 
 ## Resolver la causa sin formatear
 
-No se ha recuperado SPIFFS con este cambio. Falta la copia del contenido real
-o los logs originales del registro VFS. No cambiar a LittleFS, variar geometrías
-o ejecutar esp_spiffs_check sobre el ATOM por ensayo y error.
+No se ha recuperado el almacenamiento del ATOM con este cambio. Se localizó y
+analizó la copia privada completa del19/10/2026; no equivale a una copia del estado
+actual. No variar geometrías ni ejecutar check sobre el ATOM por ensayo y error.
+
+### Hallazgo confirmado en la copia histórica
+
+La tabla validada sitúa la partición llamada spiffs en0x670000/0x180000. Su contenido
+monta con el código oficial littlefs-project/littlefs v2.9.3, compilado con
+LFS_READONLY, archivo de entrada abierto rb y callbacks de escritura/borrado
+rechazados. Resultado: mount=0,stat=0,list=0,versión de disco0x00020001(LittleFS2.1),
+bloques4096,384bloques,72usados,2archivos,282079bytes de archivos,0directorios,
+488lecturas y0callbacks de escritura/borrado. SHA de entrada antes/después idéntica.
+No se publican contenido, nombres de archivos, NVS ni credenciales del respaldo.
+
+No había bloques enteramenteFF, pero LittleFS informa solo72bloques usados:
+los bytes noFF y bloques no borrados incluyen datos obsoletos y no equivalen a
+ocupación útil del filesystem. Esa copia no demuestra falta de capacidad.
+
+Esto confirma LittleFS válido para el montaje/listado de esa copia. No demuestra
+integridad de cada payload ni que la imagen actual sea idéntica. La firma literal
+littlefs estaba a offsets8 y4104; el montaje independiente valida el indicio.
+El nombre de partición spiffs NO determina su formato. Intentar montarla mediante
+SPIFFS es incompatible con este contenido y explica el fallo de la copia; falta
+confirmar el mismo estado en el dispositivo actual antes de migrar escrituras.
+
+Se incluye el auditor C de solo lectura en tools/cielo_littlefs_readonly_audit.c.
+Necesita lfs.c,lfs.h,lfs_util.c,lfs_util.h del tag oficialv2.9.3; se compila con
+-DLFS_READONLY -DLFS_NO_DEBUG -DLFS_NO_WARN -DLFS_NO_ERROR. Solo enumera metadatos,
+no extrae contenido ni contacta hardware. La entrada original se mantuvo intacta.
+
+### Adaptación del controlador: siguiente fase
+
+Arduino-ESP32 2.0.17 ya proporciona LittleFS, pero su begin(false) configura
+read_only=false y grow_on_mount=true. Desactivar formato no es una promesa de
+montaje sin escrituras. Por eso la inspección controlada debe registrar el VFS
+LittleFS con read_only=true,format_if_mount_failed=false,grow_on_mount=false,
+comprobando la compatibilidad de versión/geometría del componente enlazado.
+No sustituir el framework ni actualizar BLE para este propósito.
+
+Tras verificar copia reciente, archivos existentes y capacidad disponible:
+probar snapshots de curvas en una copia desechable con el mismo controlador,
+validar cortes/CRC/rename y diseñar la migración no destructiva conservando NVS.
+Este PR no activa a ciegas escritura LittleFS en el ATOM y no promete que los
+1.5MiB estén ya disponibles para las curvas.
 
 Ruta verificable:
 
@@ -121,3 +162,9 @@ de3.6.1 y causa exacta del montaje pendientes. No presentar esta versión como
 - ESP-IDF v4.4.7, nvs_storage.cpp, Storage::writeItem: comparación previa a
   escritura y publicación de la versión nueva antes de retirar la antigua.
   https://github.com/espressif/esp-idf/blob/v4.4.7/components/nvs_flash/src/nvs_storage.cpp
+
+
+Fuente primaria adicional: Arduino-ESP32 2.0.17 libraries/LittleFS/src/LittleFS.cpp,
+campos read_only y grow_on_mount observados; repositorio oficial LittleFSv2.9.3.
+https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/LittleFS/src/LittleFS.cpp
+https://github.com/littlefs-project/littlefs/tree/v2.9.3
