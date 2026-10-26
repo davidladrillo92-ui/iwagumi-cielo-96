@@ -13,10 +13,22 @@ assert 'nvs_get_stats("nvs",&nvsStats)' in source
 assert 'last_curve_bytes_requested' in source
 assert 'last_curve_bytes_written' in source
 assert 'curve_write_failures_this_boot' in source
-assert 'PREFERENCES_PUTBYTES_RETURNS_SIZE_ONLY' in source
+assert 'last_curve_error_code' in source
+assert 'last_curve_error_name' in source
+assert 'last_curve_stage' in source
+assert 'last_curve_min_entries_required' in source
+assert 'last_curve_free_entries_before' in source
+assert 'esp_err_to_name(lastCurveNvsErr)' in source
+assert 'nvs_set_blob(handle,key,&candidate,sizeof(candidate))' in source
+assert 'nvs_commit(handle)' in source
+assert 'nvs_get_blob(verify,key,&readback,&bytes)' in source
 assert 'prefs.clear()' not in source
-assert 'prefs.putBytes(key,&candidate,sizeof(candidate))' in source
+assert 'cielo96::nvssafe::target(va,a.generation,vb,b.generation)' in source
+assert 'nvsPreserveCurveHeadroom()' in source
 assert 'memcmp(&candidate,&readback,sizeof(readback))!=0' in source
+assert 'if(device==0 && pvControlDesired && !pvOffObligation)' in source
+assert 'if(device==1 && cieloChRun && cieloChWasDriven' in source
+assert 'isolated_ch_disconnects' in source
 
 # Historical evidence is annotated, not rewritten.
 assert 'FUTURE_UNTRUSTED' in source
