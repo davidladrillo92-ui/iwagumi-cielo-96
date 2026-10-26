@@ -4,7 +4,7 @@
 #include "cielo_profile_fs.h"
 using namespace cielo96;
 ProfileImage sample(unsigned gen){ProfileImage p{};p.generation=gen;p.pvCount=2;p.chCount=2;p.pv[0]={840,10,22,62,0};p.pv[1]={1440,58,78,132,0};p.ch[0]={870,1,1,1};p.ch[1]={1440,0,0,0};profileSeal(p);return p;}
-void prepare(profilefs::Store&s){SPIFFS=MockSPIFFS{};std::fill(mock_flash.begin(),mock_flash.end(),0xff);assert(s.begin());assert(s.save(sample(9)));assert(s.save(sample(10)));assert(s.save(sample(11)));}
+void prepare(profilefs::Store&s){SPIFFS=MockSPIFFS{};SPIFFS.formatted=true;std::fill(mock_flash.begin(),mock_flash.end(),0xff);assert(s.begin());assert(s.save(sample(9)));assert(s.save(sample(10)));assert(s.save(sample(11)));}
 int main(){
  profilefs::Store store;prepare(store);ProfileImage a{},b{},latest{};
  assert(store.read(profilefs::kA,a)&&store.read(profilefs::kB,b));

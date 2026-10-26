@@ -1,0 +1,58 @@
+{
+  "ranges": [
+    {
+      "name": "program",
+      "start": "static cielo::PvValue programPv(){",
+      "end": "static void loadProfile(){",
+      "sha256": "45b8d2355946448ff96b19270d233a2d9d41245c2b810bde321f1a50485b520e"
+    },
+    {
+      "name": "work_light",
+      "start": "static const char* workLightBlockReason",
+      "end": "static void statusJson(){",
+      "sha256": "517e43dcc6b76a516363b04ef0e8ecf9ced73f005b956685abbf4eae044adc35"
+    },
+    {
+      "name": "lighting",
+      "start": "static void lightingTask(){",
+      "end": "static void bleTick(){",
+      "sha256": "a15c84d20188dd7dad981edf2bc40607e241cf3634b54e1aa193f5892404c591"
+    },
+    {
+      "name": "ble",
+      "start": "static void bleTick(){",
+      "end": "static void chReconnectTick(){",
+      "sha256": "96f384ede9140fa2fe3f92c4d925f4874197537dc4a5b3736b93b1aca4545873"
+    },
+    {
+      "name": "reconnect",
+      "start": "static void chReconnectTick(){",
+      "end": "static void bleRecoveryTick(){",
+      "sha256": "6b45dfd21d9663fe057aa61800ebdc34f987b4d76e07a437fbdb88ee641e050a"
+    },
+    {
+      "name": "recovery",
+      "start": "static void bleRecoveryTick(){",
+      "end": "void setup(){",
+      "sha256": "e45162915e559c4644bb37e74023b3e657be4962430c15e46e0ab138cf18ab1d"
+    },
+    {
+      "name": "disconnect",
+      "start": "static void cieloRequestReturn(const char* reason){",
+      "end": "static void lightingTask(){",
+      "sha256": "86ec38dc31559a19bd65207889b6ca2fd559a8f5e59354d0f9fa06f19966cd20"
+    }
+  ],
+  "files": {
+    "include/cielo_engine.h": "845a77f9cf8278d79c72b69e6ac214a9b53ec86930fbff06e5df9d6946f1f0b8",
+    "include/cielo_night_safety.h": "cfa2138a3a41c17dd19585361b28f2ae742d00d60f354535b3307dce295a9835",
+    "include/cielo_worklight.h": "1b2b00d8f5d599c9a6eeae1e10cddf7d9ab167c7b15285b59cf8d1918f856908",
+    "web/interfaz_r4.html": "198995ef30593e1ad097bb40b2702b8a2f76c0ee95689611004ba392fa45648a",
+    "src/cielo_ui.cpp": "bf1f31f2547ffe4d2b170dd8cd387484075a3c55e113f548c455f9325fb72df4",
+    "partitions_8mb.csv": "dc7a0f73550d3bdb3a85edab3d3f5d00f9ea4bd751f9003783564abeacab4996",
+    "src/cielo_ble_worker.cpp": "35b5629d752787eb974defb37a13bbe78aa867619a5e8f281b276bca5b2a039d",
+    "include/cielo_ble_queue.h": "436138e627451fcb1ba5ad66a5c72b058d5db309a66456ff476425e648355de7",
+    "include/cielo_pv_day_recovery.h": "b6ff75eb2a799034c7ce753a07138f1a621e926bc31626d0824d177282fca84c",
+    "tools/prepare_bluedroid.py": "068b8223c3a6ac2cc490d3d4f121b6c6a736d763283485fb05e06d74a4edbed4"
+  }
+}

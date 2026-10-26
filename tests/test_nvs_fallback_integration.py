@@ -44,7 +44,7 @@ nvssafe::Failure lastCurveNvsFailure=nvssafe::Failure::None;
 int lastCurveNvsErr=0,lastCurveNvsStatsErr=0;
 const char* lastCurveNvsStage="sin_intento";const char* lastCurveNvsSlot="sin_intento";
 size_t lastCurveNvsWritten=0,lastCurveNvsRequested=0,lastCurveNvsMinRequired=0,lastCurveNvsFreeBefore=0;
-uint32_t curveNvsFailedAttempts=0;String lastBackupError;
+uint32_t curveNvsFailedAttempts=0,curveNvsSetAttempts=0;String lastBackupError;
 void record(const char*,const String&){assert(!curveSaveInProgress||!lastCurveTransaction.verified);}
 void reset(){mock=initial();profile=image(8);profileRecovery=false;statsFail=false;}
 '''

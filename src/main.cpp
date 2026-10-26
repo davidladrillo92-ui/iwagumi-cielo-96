@@ -18,6 +18,7 @@
 #include <esp_err.h>
 #include "cielo_nvs_safe.h"
 #include "cielo_profile_transaction.h"
+#include "cielo_storage_policy.h"
 #include "cielo_profile_fs.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
@@ -62,7 +63,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.6-MAINTENANCE-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.6.1-STORAGE-AUDIT-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -300,6 +301,16 @@ static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin
 static size_t lastCurveNvsRequested=0,lastCurveNvsWritten=0;
 static const char* lastCurveNvsSlot="sin_intento";
 static uint32_t curveNvsFailedAttempts=0;
+static uint32_t curveUnchangedSavesSkipped=0,curveNvsSetAttempts=0;
+static bool lastCurveRequestUnchanged=false;
+struct StorageWriteCount {uint32_t attempts=0,accepted=0;size_t requested=0,acceptedBytes=0;};
+static StorageWriteCount restartWrites,diagnosticWrites;
+static size_t trackedJournalWrite(const char* key,const void* data,size_t bytes,StorageWriteCount& count){
+ ++count.attempts;count.requested+=bytes;
+ const size_t written=prefs.putBytes(key,data,bytes);
+ if(written==bytes){++count.accepted;count.acceptedBytes+=written;}
+ return written; // API acceptance, not a physical sector-write/erase counter.
+}
 static cielo96::nvssafe::Failure lastCurveNvsFailure=cielo96::nvssafe::Failure::None;
 static esp_err_t lastCurveNvsErr=ESP_OK;
 static esp_err_t lastCurveNvsStatsErr=ESP_OK;
@@ -352,7 +363,7 @@ static void flushRestartJournal(){
  // discard a pending restart journal merely because NVS is nearly full.
  restartJournalSavedAt=millis();
  cielo96::restarts::seal(restartJournal);
- if(prefs.putBytes("restart_v2",&restartJournal,sizeof(restartJournal))==sizeof(restartJournal))restartJournalDirty=false;
+ if(trackedJournalWrite("restart_v2",&restartJournal,sizeof(restartJournal),restartWrites)==sizeof(restartJournal))restartJournalDirty=false;
 }
 static uint32_t savedFailures=0;
 struct BootRecord {uint32_t id;uint8_t cause;uint8_t previous_clean;uint16_t reserved;};
@@ -371,7 +382,7 @@ static void flushJournal(){
   return; // RAM journal stays dirty; retry at most every five minutes.
  }
  journalHasFlushed=true;journalLastFlush=millis(); // Respetar límite incluso si NVS falla.
- if(prefs.putBytes("diag_journal",&journal,sizeof(journal))==sizeof(journal)){
+ if(trackedJournalWrite("diag_journal",&journal,sizeof(journal),diagnosticWrites)==sizeof(journal)){
   prefs.putUInt("fault_count",savedFailures);
   journalDirty=false;
  }
@@ -517,7 +528,7 @@ struct CurveNvsStore {
  static constexpr int Unsafe=ESP_ERR_INVALID_STATE,Corrupt=ESP_ERR_INVALID_CRC;
  nvs_handle_t handle;
  explicit CurveNvsStore(nvs_handle_t h):handle(h){}
- int write(const char*key,const cielo96::ProfileImage& value){return nvs_set_blob(handle,key,&value,sizeof(value));}
+ int write(const char*key,const cielo96::ProfileImage& value){++curveNvsSetAttempts;return nvs_set_blob(handle,key,&value,sizeof(value));}
  int erase(const char*key){return nvs_erase_key(handle,key);}
  int commit(){return nvs_commit(handle);}
  int read(const char*key,cielo96::ProfileImage& value){
@@ -645,7 +656,8 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  return true;
 }
 static bool positiveInt(const String&s,unsigned& n){
- if(!s.length())return false;uint32_t x=0;
+ if(!s.length())return false;
+ uint32_t x=0;
  for(size_t i=0;i<s.length();i++){char c=s[i];if(c<'0'||c>'9')return false;x=x*10+(c-'0');if(x>1440)return false;}
  n=x;return true;
 }
@@ -670,7 +682,8 @@ static bool parsePoints(const String&serialized,bool isPv,cielo96::ProfileImage&
    size_t e=line.indexOf(',',b);if(e==size_t(-1))e=line.length();
    if(k<cols-1 && e==line.length())return false;
    if(k==cols-1 && e!=line.length())return false;
-   if(!positiveInt(line.substring(b,e),nums[k]))return false;b=e+1;
+   if(!positiveInt(line.substring(b,e),nums[k]))return false;
+   b=e+1;
   }
   if(nums[0]>1440)return false;
   for(unsigned k=1;k<cols;k++)if(nums[k]>(isPv?(k==4?100:255):100))return false;
@@ -696,6 +709,7 @@ static bool uint32Strict(const String& s,uint32_t &v){
  v=(uint32_t)n;return true;
 }
 static void saveBothCurves(){
+ lastCurveRequestUnchanged=false;
  if(srv.arg("schema_version")!="2")return fail(400,"Formato incompatible: se requiere schema_version=2");
  uint32_t expected=0;
  if(!uint32Strict(srv.arg("generation"),expected))return fail(400,"Generacion no valida");
@@ -713,6 +727,14 @@ static void saveBothCurves(){
  candidate.generation=profile.generation+1;
  cielo96::profileSeal(candidate);
  if(!cielo96::curves::curveValid(candidate))return fail(400,"Perfil completo no valido");
+ const bool persisted=strcmp(loadedCurveBackend,"NVS_LEGACY")==0||strcmp(loadedCurveBackend,"SPIFFS_AB")==0;
+ const bool uncertain=(lastCurveTransaction.writeMayHavePersisted&&!lastCurveTransaction.verified)||
+  (curveFs.published()&&lastCurveNvsFailure!=cielo96::nvssafe::Failure::None);
+ if(cielo96::storage::canSkipSave(profile,candidate,persisted&&!profileRecovery,uncertain)){
+  ++curveUnchangedSavesSkipped;lastCurveRequestUnchanged=true;lastBackupError="ninguno";
+  return jsonSend(200,String("{\"ok\":true,\"unchanged\":true,\"generation\":")+String(profile.generation)+
+   ",\"pv\":"+String(profile.pvCount)+",\"chi\":"+String(profile.chCount)+"}");
+ }
  if(!saveProfile(candidate)){
   const bool space=lastCurveNvsFailure==cielo96::nvssafe::Failure::InsufficientEntries||
    lastCurveNvsErr==ESP_ERR_NVS_NOT_ENOUGH_SPACE;
@@ -1360,6 +1382,14 @@ static void diagnosticJson(){
  j+=",\"last_curve_stats_error\":"+String((int)lastCurveNvsStatsErr);
  j+=",\"last_curve_free_entries_before\":"+String(lastCurveNvsFreeBefore);
  j+=",\"last_curve_min_entries_required\":"+String(lastCurveNvsMinRequired);
+ j+=",\"last_curve_request_unchanged\":"+String(lastCurveRequestUnchanged?"true":"false");
+ j+=",\"unchanged_curve_saves_skipped\":"+String(curveUnchangedSavesSkipped);
+ j+=",\"curve_set_blob_api_attempts\":"+String(curveNvsSetAttempts);
+ j+=",\"restart_blob_api_attempts\":"+String(restartWrites.attempts)+",\"restart_blob_api_accepted\":"+String(restartWrites.accepted);
+ j+=",\"diagnostic_blob_api_attempts\":"+String(diagnosticWrites.attempts)+",\"diagnostic_blob_api_accepted\":"+String(diagnosticWrites.accepted);
+ j+=",\"journal_blob_bytes_requested\":"+String(restartWrites.requested+diagnosticWrites.requested);
+ j+=",\"journal_blob_bytes_accepted\":"+String(restartWrites.acceptedBytes+diagnosticWrites.acceptedBytes);
+ j+=",\"write_counter_scope\":\"CURRENT_BOOT_JOURNAL_AND_CURVE_API_NOT_PHYSICAL_FLASH_WRITES\"";
  j+=",\"space_preflight_note\":\"LOWER_BOUND_NOT_GUARANTEE\",\"inactive_slot_required\":true";
  j+=",\"gc_workspace_entries\":126";
  j+=",\"diagnostic_reserve_entries\":"+String(cielo96::nvssafe::diagnosticReserve(sizeof(cielo96::ProfileImage)));
@@ -1377,6 +1407,13 @@ static void diagnosticJson(){
  j+=",\"fs_available\":"+String(curveFs.ready()?"true":"false");
  j+=",\"fs_status\":"+jsonQuote(curveFs.status());
  j+=",\"fs_error\":"+jsonQuote(curveFs.error());
+ j+=",\"raw_probe_state\":"+jsonQuote(curveFs.rawState());
+ j+=",\"raw_read_error_code\":"+String(curveFs.rawError());
+ j+=",\"raw_bytes_read\":"+String(curveFs.rawBytesRead());
+ j+=",\"first_non_ff_offset\":"+(curveFs.hasFirstData()?String(curveFs.firstDataOffset()):String("null"));
+ j+=",\"partition_address\":"+String(curveFs.partitionAddress())+",\"partition_bytes\":"+String(curveFs.partitionSize());
+ j+=",\"partition_encrypted\":"+String(curveFs.partitionEncrypted()?"true":"false");
+ j+=",\"mount_error_code_available\":false,\"auto_format_allowed\":false";
  j+=",\"last_fs_slot\":"+jsonQuote(curveFs.slot());
  j+=",\"last_fs_publish_completed\":"+String(curveFs.published()?"true":"false");
  j+=",\"fs_initialized_verified_blank\":"+String(curveFs.initializedFromBlank()?"true":"false");
@@ -2550,7 +2587,7 @@ void setup(){
  if(bleRecoveryBoot){entry.bleRecovery=true;entry.phase=bleRecoveryRtc.phase;
   entry.device=bleRecoveryRtc.device;entry.stallMs=bleRecoveryRtc.age_ms;entry.stallEpoch=bleRecoveryRtc.epoch;}
  cielo96::restarts::append(restartJournal,entry);
- restartJournalDirty=prefs.putBytes("restart_v2",&restartJournal,sizeof(restartJournal))!=sizeof(restartJournal);
+ restartJournalDirty=trackedJournalWrite("restart_v2",&restartJournal,sizeof(restartJournal),restartWrites)!=sizeof(restartJournal);
  restartJournalSavedAt=millis();
  priorEvent=prefs.getString("fault_type","ninguno");
  priorEventDetail=prefs.getString("fault_text","ninguno");
