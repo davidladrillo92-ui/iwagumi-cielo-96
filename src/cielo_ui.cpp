@@ -199,10 +199,15 @@ async function api(path,data){
  const opt={cache:'no-store',credentials:'same-origin'};
  if(data){opt.method='POST';opt.headers={'Content-Type':'application/x-www-form-urlencoded'};opt.body=new URLSearchParams(data);}
  const controller=globalThis.AbortController?new AbortController():null;
- const timer=controller?setTimeout(()=>controller.abort(),5000):null;
+ const timer=controller?setTimeout(()=>controller.abort(),path==='/api/curves/commit'?15000:5000):null;
  if(controller)opt.signal=controller.signal;
  let r,body;try{r=await fetch(path,opt);body=await r.text()}finally{if(timer)clearTimeout(timer)}
- if(!r.ok)throw Error(body||('Error '+r.status));
+ if(!r.ok){
+  let detail=null;try{detail=JSON.parse(body)}catch{}
+  const error=Error(typeof detail?.error==='string'?detail.error:(body||('Error '+r.status)));
+  error.code=detail?.nvs_error_code;error.writeMayHavePersisted=detail?.write_may_have_persisted===true;
+  throw error;
+ }
  try{return JSON.parse(body)}catch{return body}
 }
 async function sync(){if(!isLive())return;try{const d=await api('/api/status');if(!d||!Array.isArray(d.rgb)||typeof d.ble!=='boolean')throw Error('Respuesta incompatible');state.connected=true;state.status=d;state.updated=Date.now();if(!state.dirty.pez&&!state.dirty.chi&&Number.isInteger(d.profileGeneration))state.profileGeneration=d.profileGeneration;setCadenceLabel(d.cadence);if(d.points&&!state.dirty.pez){let p=d.points.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===5&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.pez=p;}if(d.chiPoints&&!state.dirty.chi){let p=d.chiPoints.split(';').map(t=>t.split(',').map(Number));if(p.length>=2&&p.every((v,i)=>v.length===4&&v.every(Number.isFinite)&&(!i||v[0]>p[i-1][0])))state.chi=p;}if(!state.dirty.pez&&!state.dirty.chi){state.baseline={pez:state.pez.map(p=>p.slice()),chi:state.chi.map(p=>p.slice())};}render()}catch(e){state.connected=false;render()}}
@@ -318,7 +323,7 @@ function updateEditorStatus(){
  if(n){n.classList.toggle('unsaved',edited);n.textContent=edited?'CAMBIOS SIN GUARDAR · '+(state.dirty.pez?'Pez Verde':'')+(state.dirty.pez&&state.dirty.chi?' y ':'')+(state.dirty.chi?'Chihiros':'')+'. No se han enviado a las luces.':'Sin cambios pendientes de guardar en el ATOM.';}
  if($('undoCurve'))$('undoCurve').disabled=!state.undoStack.length;
  if($('redoCurve'))$('redoCurve').disabled=!state.redoStack.length;
- if($('saveCurve'))$('saveCurve').disabled=!edited||!state.connected;
+ if($('saveCurve'))$('saveCurve').disabled=!!state.saving||!edited||!state.connected;
  const sel=state.selectedPoint;
  if(sel&&!state[sel.which]?.[sel.index])state.selectedPoint=null;
  if($('editSelectedPoint'))$('editSelectedPoint').disabled=!sel;
@@ -593,18 +598,23 @@ function validCurve(which,a){
  return a.every(p=>p[4]>=0&&p[4]<=100)&&a[0][4]===0&&a.at(-1)[0]===1440&&a.at(-1)[4]===0;
 }
 async function saveProgram(){
+ if(state.saving)return;
  if(!state.connected)return toast('Conecta el ATOM para guardar');
  if(!validCurve('chi',state.chi)||!validCurve('pez',state.pez))return toast('Una curva contiene puntos inválidos; nada guardado');
  if(!confirm('Guardar ambas curvas de una vez (un único perfil CIELO). Si falla una validación, ninguna cambia. ¿Continuar?'))return;
+ state.saving=true;$('saveCurve').disabled=true;
+ const submittedPv=pointsWire(state.pez),submittedCh=pointsWire(state.chi);
  try{
   const checksum=wireChecksum(state.pez,state.chi);
-  const out=await api('/api/curves/commit',{schema_version:'2',generation:String(state.profileGeneration),checksum,pv:pointsWire(state.pez),ch:pointsWire(state.chi)});
+  const out=await api('/api/curves/commit',{schema_version:'2',generation:String(state.profileGeneration),checksum,pv:submittedPv,ch:submittedCh});
   if(!out?.ok||!Number.isInteger(out.generation))throw Error('El ATOM no confirmó el guardado completo');
-  state.profileGeneration=out.generation;state.dirty.chi=false;state.dirty.pez=false;
+  state.profileGeneration=out.generation;
+  if(pointsWire(state.pez)===submittedPv&&pointsWire(state.chi)===submittedCh){state.dirty.chi=false;state.dirty.pez=false;}
   state.undoStack=[];state.redoStack=[];
   toast('Guardado atómico: '+out.pv+' Pez Verde + '+out.chi+' Chihiros. Generación '+out.generation);
   await sync();
- }catch(e){toast(e.message+' · el perfil anterior continúa activo')}
+ }catch(e){toast(e.writeMayHavePersisted||e.name==='AbortError'?'Guardado no confirmado. Descarga el Informe Maestro antes de repetir.':e.message)}
+ finally{state.saving=false;$('saveCurve').disabled=false;}
 }
 async function restoreProgram(){
  if(!confirm('Restaurar en el EDITOR los valores originales de fábrica (no V5). No modifica el ATOM hasta pulsar Guardar. ¿Continuar?'))return;

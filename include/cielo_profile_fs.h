@@ -17,6 +17,7 @@ static constexpr const char* kTemp="/cielo_profile_tmp.bin";
 
 class Store {
  bool ready_=false;
+ bool published_=false;
  bool formatted_erased_=false;
  const char* status_="NOT_INITIALIZED";
  const char* error_="NONE";
@@ -35,7 +36,7 @@ class Store {
  }
 public:
  bool begin() {
-  ready_=false;formatted_erased_=false;slot_="NONE";error_="NONE";
+  ready_=false;formatted_erased_=false;slot_="NONE";error_="NONE";published_=false;
   // This layout was inspected from the original ATOMS3 Lite flash. Refuse
   // any different partition instead of touching an unknown filesystem.
   const esp_partition_t* part=esp_partition_find_first(
@@ -60,6 +61,7 @@ public:
  const char* status() const {return status_;}
  const char* error() const {return error_;}
  const char* slot() const {return slot_;}
+ bool published() const {return published_;}
  size_t total() const {return ready_?SPIFFS.totalBytes():0;}
  size_t used() const {return ready_?SPIFFS.usedBytes():0;}
  bool read(const char* path,ProfileImage& out) const {
@@ -79,11 +81,20 @@ public:
   out=*newer;return true;
  }
  bool save(const ProfileImage& candidate) {
-  error_="NONE";slot_="NONE";
+  error_="NONE";slot_="NONE";published_=false;
   if(!ready_){error_="NOT_MOUNTED";return false;}
   if(!curves::curveValid(candidate)){error_="INVALID_PROFILE";return false;}
   ProfileImage a{},b{},readback{};
+  const bool existsA=SPIFFS.exists(kA),existsB=SPIFFS.exists(kB);
   const bool va=read(kA,a),vb=read(kB,b);
+  // An existing unreadable file is not an absent slot. Never erase a
+  // potentially active snapshot after a transient I/O/CRC/read failure.
+  if((existsA&&!va)||(existsB&&!vb)){error_="EXISTING_SLOT_UNREADABLE";return false;}
+  const ProfileImage* active=curves::newestValid(va?&a:nullptr,vb?&b:nullptr);
+  if(active && static_cast<int32_t>(candidate.generation-active->generation)<=0){
+   error_="CANDIDATE_NOT_NEWER";return false;
+  }
+  const char* activePath=active==&a?kA:kB;
   const char* legacy=nvssafe::target(va,va?a.generation:0,vb,vb?b.generation:0);
   const char* destination=strcmp(legacy,"curvesA")==0?kA:kB;
   slot_=destination;
@@ -105,6 +116,13 @@ public:
   if(!read(kTemp,readback)||memcmp(&readback,&candidate,sizeof(candidate))!=0){
    error_="TEMP_VERIFY_FAILED";SPIFFS.remove(kTemp);return false;
   }
+  // Check the active bytes immediately before removing the inactive file.
+  if(active){
+   readback=ProfileImage{};
+   if(!read(activePath,readback)||memcmp(&readback,active,sizeof(readback))!=0){
+    error_="ACTIVE_RECHECK_FAILED";return false;
+   }
+  }
   // Remove ONLY the inactive or older destination. The latest FS copy
   // (or the preserved legacy NVS copy for the first migration) survives.
   if(SPIFFS.exists(destination)&&!SPIFFS.remove(destination)){
@@ -113,6 +131,7 @@ public:
   if(!SPIFFS.rename(kTemp,destination)){
    error_="RENAME_FAILED";return false;
   }
+  published_=true;
   readback=ProfileImage{};
   if(!read(destination,readback)||memcmp(&readback,&candidate,sizeof(candidate))!=0){
    error_="FINAL_VERIFY_FAILED";return false;

@@ -24,6 +24,8 @@ struct File {
 struct MockSPIFFS {
  bool formatted=false;
  bool fail_write=false, fail_rename=false;
+ bool fail_read_once=false;std::string fail_read_path;
+ size_t read_calls=0,fail_read_at=0;
  bool fail_mount=false;
  int format_count=0;
  std::map<std::string,std::vector<uint8_t>> files;
@@ -55,6 +57,9 @@ inline MockSPIFFS SPIFFS;
 inline size_t File::size() const {return fs?fs->files.at(path).size():0;}
 inline size_t File::read(uint8_t* data,size_t n){
  if(!fs||!readable)return 0;
+ ++fs->read_calls;
+ if(fs->fail_read_at==fs->read_calls)return 0;
+ if(fs->fail_read_once&&path==fs->fail_read_path){fs->fail_read_once=false;return 0;}
  const auto& v=fs->files.at(path);
  const size_t cnt=std::min(n,v.size()-std::min(offset,v.size()));
  if(cnt)memcpy(data,v.data()+offset,cnt);
