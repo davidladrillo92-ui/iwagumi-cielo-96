@@ -14,6 +14,7 @@
 #include <esp_wifi.h>
 #include <esp_attr.h>
 #include <esp_ota_ops.h>
+#include <nvs.h>
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
 #include "profiles_generated.h"
@@ -282,6 +283,10 @@ static mbedtls_sha256_context otaDigest;
 static bool otaDigestStarted=false;
 static uint8_t otaDigestOut[32]{};
 static String lastBleError="ninguno",lastBackupError="ninguno",lastOtaError="Sin actualizaciones";
+// Observabilidad NVS: diagnostico en RAM; nunca borra claves ni modifica particiones.
+static size_t lastCurveNvsRequested=0,lastCurveNvsWritten=0;
+static const char* lastCurveNvsSlot="sin_intento";
+static uint32_t curveNvsFailedAttempts=0;
 static String storedSSID,storedPass,apPassword;
 static uint32_t bootMs=0;
 static constexpr int ATOMS3_BUTTON_GPIO=41;
@@ -459,8 +464,14 @@ static void loadProfile(){
 static bool saveProfile(const cielo96::ProfileImage& candidate){
  if(!cielo96::curves::curveValid(candidate))return false;
  const char*key=(candidate.generation&1)?"curvesA":"curvesB";
- if(prefs.putBytes(key,&candidate,sizeof(candidate))!=sizeof(candidate)){
-  lastBackupError="NVS escritura incompleta";record("CURVA_ERROR",lastBackupError);return false;
+ lastCurveNvsSlot=key;
+ lastCurveNvsRequested=sizeof(candidate);
+ lastCurveNvsWritten=prefs.putBytes(key,&candidate,sizeof(candidate));
+ if(lastCurveNvsWritten!=sizeof(candidate)){
+  curveNvsFailedAttempts++;
+  lastBackupError="NVS escritura incompleta";
+  record("CURVA_ERROR",lastBackupError);
+  return false;
  }
  cielo96::ProfileImage readback{};
  if(prefs.getBytes(key,&readback,sizeof(readback))!=sizeof(readback)||!cielo96::profileValid(readback)
@@ -1062,6 +1073,22 @@ static void diagnosticJson(){
  j+=",\"optically_off\":null,\"reason\":\"Una escritura GATT no mide la luz real\"}}";
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
+ // nvs_get_stats consulta metadatos, sin escribir ni ejecutar limpieza.
+ nvs_stats_t nvsStats{};
+ const esp_err_t nvsStatsResult=nvs_get_stats("nvs",&nvsStats);
+ j+=",\"nvs_diagnostics\":{\"stats_error\":"+String((int)nvsStatsResult);
+ j+=",\"stats_available\":"+String(nvsStatsResult==ESP_OK?"true":"false");
+ if(nvsStatsResult==ESP_OK){
+  j+=",\"used_entries\":"+String(nvsStats.used_entries);
+  j+=",\"free_entries\":"+String(nvsStats.free_entries);
+  j+=",\"total_entries\":"+String(nvsStats.total_entries);
+  j+=",\"namespace_count\":"+String(nvsStats.namespace_count);
+ }
+ j+=",\"last_curve_slot\":"+jsonQuote(lastCurveNvsSlot);
+ j+=",\"last_curve_bytes_requested\":"+String(lastCurveNvsRequested);
+ j+=",\"last_curve_bytes_written\":"+String(lastCurveNvsWritten);
+ j+=",\"curve_write_failures_this_boot\":"+String(curveNvsFailedAttempts);
+ j+=",\"write_error_detail\":\"PREFERENCES_PUTBYTES_RETURNS_SIZE_ONLY\"}";
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"security\":{\"https_ready\":"+String("false")+",\"authentication\":\"NONE_LAN\",\"ota_signature\":\"NOT_REQUIRED_OWNER_REQUEST\"}";
  j+=",\"updates\":{\"ota_local_configured\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"ota_in_progress\":"+String(otaBusy?"true":"false");
