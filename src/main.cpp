@@ -507,12 +507,18 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  if(!cielo96::curves::curveValid(candidate))
   return failure(Failure::InvalidProfile,"validacion",ESP_ERR_INVALID_ARG);
  // Leer ambos slots antes de elegir. Nunca sobrescribir la unica copia valida.
- cielo96::ProfileImage a{},b{};
- const bool va=prefs.getBytesLength("curvesA")==sizeof(a)&&
-  prefs.getBytes("curvesA",&a,sizeof(a))==sizeof(a)&&cielo96::curves::curveValid(a);
- const bool vb=prefs.getBytesLength("curvesB")==sizeof(b)&&
-  prefs.getBytes("curvesB",&b,sizeof(b))==sizeof(b)&&cielo96::curves::curveValid(b);
- const char*key=cielo96::nvssafe::target(va,a.generation,vb,b.generation);
+ // Reutilizar un unico buffer estatico: no apilar tres perfiles de ~1 KB
+ // sobre la pila de 16 KB del servidor HTTP/loop.
+ static cielo96::ProfileImage scratch{};
+ scratch=cielo96::ProfileImage{};
+ const bool va=prefs.getBytesLength("curvesA")==sizeof(scratch)&&
+  prefs.getBytes("curvesA",&scratch,sizeof(scratch))==sizeof(scratch)&&cielo96::curves::curveValid(scratch);
+ const uint32_t genA=va?scratch.generation:0;
+ scratch=cielo96::ProfileImage{};
+ const bool vb=prefs.getBytesLength("curvesB")==sizeof(scratch)&&
+  prefs.getBytes("curvesB",&scratch,sizeof(scratch))==sizeof(scratch)&&cielo96::curves::curveValid(scratch);
+ const uint32_t genB=vb?scratch.generation:0;
+ const char*key=cielo96::nvssafe::target(va,genA,vb,genB);
  lastCurveNvsSlot=key;
  if(!cielo96::nvssafe::targetPreservesOnlyCopy(va,vb,key))
   return failure(Failure::InvalidProfile,"seleccion_slot",ESP_ERR_INVALID_STATE);
@@ -542,13 +548,13 @@ static bool saveProfile(const cielo96::ProfileImage& candidate){
  lastCurveNvsStage="releer";
  err=nvs_open("cielo96",NVS_READONLY,&verify);
  if(err!=ESP_OK)return failure(Failure::ReadFailed,"releer_abrir",err);
- cielo96::ProfileImage readback{};
- size_t bytes=sizeof(readback);
- err=nvs_get_blob(verify,key,&readback,&bytes);
+ scratch=cielo96::ProfileImage{};
+ size_t bytes=sizeof(scratch);
+ err=nvs_get_blob(verify,key,&scratch,&bytes);
  nvs_close(verify);
- if(err!=ESP_OK||bytes!=sizeof(readback))
+ if(err!=ESP_OK||bytes!=sizeof(scratch))
   return failure(Failure::ReadFailed,"releer",err==ESP_OK?ESP_ERR_INVALID_SIZE:err);
- if(!cielo96::profileValid(readback)||memcmp(&candidate,&readback,sizeof(readback))!=0)
+ if(!cielo96::curves::curveValid(scratch)||memcmp(&candidate,&scratch,sizeof(scratch))!=0)
   return failure(Failure::VerificationFailed,"verificar",ESP_ERR_INVALID_CRC);
  // RAM only changes after successful commit + byte-for-byte validation.
  profile=candidate;profileRecovery=false;
