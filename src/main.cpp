@@ -230,6 +230,8 @@ struct CieloTrendSample {uint32_t epoch=0,pv=0,ch=0,pvErrors=0,chErrors=0,heap=0
 static CieloTrendSample cieloTrend[96]{};
 static uint8_t cieloTrendCount=0,cieloTrendHead=0;
 static uint32_t cieloTrendLast=0;
+static uint32_t largestHeapBlockMin15m=UINT32_MAX;
+static uint32_t largestHeapBlockSamples15m=0;
 static void cieloTrendTick();
 static bool cieloChReturnPending=false,cieloChAwaitResponse=false;
 static bool cieloWatchdogTripped=false;
