@@ -1,0 +1,40 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const html=fs.readFileSync('web/interfaz_r4.html','utf8');
+const functions=html.slice(html.indexOf('function renderWorkLight(){'),html.indexOf('function render(){'));
+assert(html.indexOf('id="workLightTitle"')>html.indexOf('id="pezPct"'));
+assert(html.indexOf('id="workLightTitle"')<html.indexOf('id="viewCurves"'));
+const elements={};for(const id of ['workLightState','workLightProgress','workLightStart','workLightStop'])elements[id]={};
+const state={connected:true,updated:Date.now(),status:{},pez:[[0,0,0,0,0]],chi:[[0,0,0,0]],preview:120};
+let requests=[],finish;const toasts=[];
+const ctx={state,Date,Math,Number,String,console,$:id=>elements[id],toast:s=>toasts.push(s),
+ api:(path,data)=>{requests.push({path,data});return new Promise((resolve,reject)=>finish={resolve,reject});},
+ sync:async()=>{},render:()=>vm.runInContext('renderWorkLight()',ctx)};
+vm.createContext(ctx);vm.runInContext(functions,ctx);
+(async()=>{
+ vm.runInContext('renderWorkLight()',ctx);assert(elements.workLightStart.disabled);
+ state.status.work_light={active:false,phase:'idle',can_start:true};
+ vm.runInContext('renderWorkLight()',ctx);assert(!elements.workLightStart.disabled&&elements.workLightStop.disabled);
+ const before=JSON.stringify([state.pez,state.chi]);
+ let p=vm.runInContext('workLightAction(true)',ctx);
+ await vm.runInContext('workLightAction(true)',ctx);assert.equal(requests.length,1);
+ assert.equal(requests[0].path,'/api/work-light/start');assert.equal(requests[0].data.confirm,'INICIAR_MANTENIMIENTO');
+ finish.resolve({active:true,phase:'rising',remaining_sec:600,can_start:false});await p;
+ assert.equal(state.preview,null);assert(!elements.workLightStop.disabled&&elements.workLightStart.disabled);
+ assert(elements.workLightState.textContent.includes('10:00'));assert.equal(elements.workLightProgress.value,0);
+ state.status.work_light={active:true,phase:'holding',remaining_sec:0};
+ vm.runInContext('renderWorkLight()',ctx);assert.equal(elements.workLightProgress.value,600);
+ p=vm.runInContext('workLightAction(false)',ctx);
+ assert.equal(requests.at(-1).path,'/api/work-light/stop');
+ finish.resolve({active:true,phase:'returning',remaining_sec:120});await p;
+ assert(elements.workLightStop.disabled&&elements.workLightStart.disabled);
+ assert(elements.workLightState.textContent.includes('2:00'));
+ state.connected=false;vm.runInContext('renderWorkLight()',ctx);
+ assert(elements.workLightState.textContent.includes('sin confirmar'));
+ const count=requests.length;await vm.runInContext('workLightAction(true)',ctx);assert.equal(requests.length,count);
+ state.connected=true;state.status.work_light={active:false,phase:'idle',can_start:true};
+ p=vm.runInContext('workLightAction(true)',ctx);finish.reject(Error('Espera Bluetooth'));await p;
+ assert(toasts.includes('Espera Bluetooth'));assert(!state.workLightBusy);
+ assert.equal(JSON.stringify([state.pez,state.chi]),before);
+ console.log('PASS worklight UI: home placement, fresh/server state, actual paths, duplicate click, rise/hold/return, offline/error and unchanged editor');
+})().catch(e=>{console.error(e);process.exitCode=1});
