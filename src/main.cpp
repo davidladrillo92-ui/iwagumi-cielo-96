@@ -21,6 +21,7 @@
 #include "cielo_storage_policy.h"
 #include "cielo_profile_fs.h"
 #include "cielo_curve_storage.h"
+#include "cielo_wifi_nvs.h"
 #include "cielo_littlefs_readonly.h"
 #include <mbedtls/sha256.h>
 #include "cielo_engine.h"
@@ -65,7 +66,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.9-UI-AUDIT-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.10-WIFI-ATOMIC-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -329,6 +330,10 @@ static bool nvsPreserveCurveHeadroom(){
  return stats.free_entries<reserve;
 }
 static String storedSSID,storedPass,apPassword;
+static cielo96::wificfg::Selection wifiConfigSelection;
+static cielo96::wificfg::Result wifiConfigLastSave;
+static bool wifiRamStorageVerified=false;
+static uint32_t wifiConfigWriteAttempts=0,wifiConfigVerifiedSaves=0,wifiConfigUnchangedSaves=0;
 static uint32_t bootMs=0;
 static constexpr int ATOMS3_BUTTON_GPIO=41;
 static uint32_t buttonDownAt=0,otaPhysicalUntil=0;
@@ -894,6 +899,21 @@ static String cieloTrendJson(){
  }
  j+="]}";return j;
 }
+static String wifiConfigJson(){
+ using cielo96::wificfg::Origin;
+ String j="{\"backend\":"+jsonQuote(wifiConfigSelection.origin==Origin::Atomic?"NVS_WIFI_AB":wifiConfigSelection.origin==Origin::Blocked?"BLOCKED":"LEGACY_READ_ONLY");
+ j+=",\"stage\":"+jsonQuote(wifiConfigSelection.stage);
+ j+=",\"enabled\":"+String(storedSSID.length()?"true":"false");
+ j+=",\"generation\":"+String(wifiConfigSelection.origin==Origin::Atomic?wifiConfigSelection.image.generation:0);
+ j+=",\"degraded_copy\":"+String(wifiConfigSelection.degraded?"true":"false");
+ j+=",\"last_save_stage\":"+jsonQuote(wifiConfigLastSave.stage)+",\"last_save_error\":"+String(wifiConfigLastSave.error);
+ j+=",\"last_save_verified\":"+String(wifiConfigLastSave.verified?"true":"false");
+ j+=",\"write_may_have_persisted\":"+String(wifiConfigLastSave.mayHavePersisted?"true":"false");
+ j+=",\"write_attempts\":"+String(wifiConfigWriteAttempts)+",\"verified_saves\":"+String(wifiConfigVerifiedSaves);
+ j+=",\"unchanged_saves\":"+String(wifiConfigUnchangedSaves)+",\"record_bytes\":112";
+ j+=",\"sdk_storage_ram_verified\":"+String(wifiRamStorageVerified?"true":"false");
+ return j+",\"legacy_keys_preserved\":true,\"credentials_redacted\":true}";
+}
 static bool currentCritical(){
  const bool badReset=abnormalReset(esp_reset_reason()),wifi=WiFi.status()==WL_CONNECTED;
  const bool workerUnavailable=bleReady&&(cielo96::ble_worker_snapshot().heartbeat_age_ms>45000UL);
@@ -1020,6 +1040,7 @@ static void statusJson(){
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"cieloV4\":"+cieloModeJson();
  j+=",\"work_light\":"+workLightJson();
+ j+=",\"wifi_config\":"+wifiConfigJson();
  j+=",\"boot_id\":"+String(previousBootCount+1);
  j+=",\"health\":{\"boot_ready\":"+String(currentBootMarkedHealthy?"true":"false");
  j+=",\"current_critical\":"+String(currentCritical()?"true":"false");
@@ -1435,6 +1456,7 @@ static void diagnosticJson(){
  j+=",\"gatt_status\":"+jsonQuote(pvOffLastGatt?"GATT_ACEPTADO":"NO_PROBADO");
  j+=",\"optically_off\":null,\"reason\":\"Una escritura GATT no mide la luz real\"}}";
  j+=",\"work_light\":"+workLightJson();
+ j+=",\"wifi_config\":"+wifiConfigJson();
  j+=",\"curves\":{\"generation\":"+String(profile.generation)+",\"points_pv\":"+String(profile.pvCount);
  j+=",\"points_ch\":"+String(profile.chCount)+",\"recovery_defaults\":"+String(profileRecovery?"true":"false")+",\"last_error\":"+jsonQuote(lastBackupError)+"}";
  // nvs_get_stats consulta metadatos, sin escribir ni ejecutar limpieza.
@@ -1966,22 +1988,66 @@ static void otaUpload(){
   }
  }
 }
-static void configureWifi(){
- String ssid=srv.arg("ssid"),pass=srv.arg("password");
- for(size_t i=0;i<ssid.length();i++){
-  const unsigned char c=(unsigned char)ssid[i];
-  if(c<32||c==127)return fail(400,"Nombre Wi-Fi contiene caracteres de control");
+static void applyWifiImage(const cielo96::wificfg::Image& image){
+ char ssid[33]{},pass[65]{};
+ memcpy(ssid,image.ssid,image.ssidLength);memcpy(pass,image.password,image.passwordLength);
+ storedSSID=image.enabled?String(ssid):String("");storedPass=image.enabled?String(pass):String("");
+}
+static bool wifiChangeAllowed(){
+ if(otaBusy||otaTxn.phase!=OtaPhase::Idle){fail(423,"Termina la actualizacion antes de cambiar la Wi-Fi");return false;}
+ if(workLight.active()||workLightPreparing){fail(409,"Termina mantenimiento antes de cambiar la Wi-Fi");return false;}
+ return true;
+}
+static void saveWifiConfiguration(bool enabled){
+ using namespace cielo96::wificfg;
+ if(!wifiChangeAllowed())return;
+ const String ssid=enabled?srv.arg("ssid"):String(""),pass=enabled?srv.arg("password"):String("");
+ Image desired{},confirmed{};
+ if((enabled&&pass.length()<8)||!make(desired,ssid.c_str(),ssid.length(),pass.c_str(),pass.length(),enabled))
+  return fail(400,"SSID o clave WPA2 fuera de rango o con caracteres no validos");
+ NvsStore store;
+ wifiConfigLastSave=save(store,desired,confirmed);store.close();wifiConfigWriteAttempts+=store.writeAttempts;
+ if(!wifiConfigLastSave.verified){
+  const bool uncertain=wifiConfigLastSave.mayHavePersisted;
+  String j="{\"ok\":false,\"error\":"+jsonQuote(uncertain?
+   "Guardado Wi-Fi no confirmado. La conexion actual se mantiene en esta sesion; revisa el Informe Maestro antes de reiniciar.":
+   "No se pudo guardar la Wi-Fi completa. La conexion actual se mantiene.");
+  j+=",\"write_may_have_persisted\":"+String(uncertain?"true":"false")+"}";
+  record("WIFI_CONFIG_FALLO",wifiConfigLastSave.stage);
+  return jsonSend(wifiConfigLastSave.error==ESP_ERR_NVS_NOT_ENOUGH_SPACE?507:500,j);
  }
- if(ssid.length()<1||ssid.length()>32||pass.length()<8||pass.length()>63)
-  return fail(400,"SSID o clave WPA2 fuera de rango");
- if(prefs.putString("ssid",ssid)!=ssid.length() ||
-    prefs.putString("wifi_pw",pass)!=pass.length())
-  return fail(507,"No se pudo guardar la Wi-Fi completa");
- storedSSID=ssid;storedPass=pass;
- record("WIFI_NUEVA","Cambio solicitado; la clave no se expone en informes");
- lastWiFiAttempt=millis()-31000UL;
- WiFi.disconnect(false,false);
- ok();
+ const bool changed=storedSSID!=ssid||storedPass!=pass;
+ applyWifiImage(confirmed);
+ wifiConfigSelection.origin=Origin::Atomic;wifiConfigSelection.image=confirmed;wifiConfigSelection.active=wifiConfigLastSave.slot;
+ wifiConfigSelection.error=0;wifiConfigSelection.degraded=wifiConfigLastSave.degraded;wifiConfigSelection.stage=enabled?"ATOMIC_VERIFIED":"DISABLED_VERIFIED";
+ if(wifiConfigLastSave.unchanged)wifiConfigUnchangedSaves++;else wifiConfigVerifiedSaves++;
+ record(enabled?"WIFI_CONFIG_GUARDADA":"WIFI_CONFIG_DESACTIVADA",String("generacion=")+String(confirmed.generation));
+ // No disconnect or RAM switch before verified persistence; identical requests keep the live link.
+ if(changed){lastWiFiAttempt=millis()-31000UL;WiFi.disconnect(false,false);}
+ jsonSend(200,String("{\"ok\":true,\"wifi_generation\":")+String(confirmed.generation)+",\"unchanged\":"+String(wifiConfigLastSave.unchanged?"true":"false")+"}");
+}
+static void configureWifi(){saveWifiConfiguration(true);}
+static void disableWifi(){saveWifiConfiguration(false);}
+static void loadWifiConfiguration(){
+ using namespace cielo96::wificfg;
+ NvsStore store;wifiConfigSelection=inspect(store);
+ if(wifiConfigSelection.origin==Origin::Atomic){applyWifiImage(wifiConfigSelection.image);record("WIFI_CONFIG_LEIDA",wifiConfigSelection.stage);return;}
+ if(wifiConfigSelection.origin==Origin::Blocked){storedSSID="";storedPass="";record("WIFI_CONFIG_BLOQUEADA",wifiConfigSelection.stage);return;}
+ // Compatibility reads only. New config writes never split or migrate legacy credentials.
+ storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
+ if(storedSSID.isEmpty()){
+  Preferences legacy;
+  if(legacy.begin("iwagumi-rgb",true)){
+   const String ssid=legacy.getString("homeSsid",""),pass=legacy.getString("homePass","");legacy.end();
+   Image checked{};
+   if(make(checked,ssid.c_str(),ssid.length(),pass.c_str(),pass.length(),true)){storedSSID=ssid;storedPass=pass;wifiConfigSelection.stage="LEGACY_953_READ_ONLY";}
+  }
+ }
+ if(storedSSID.length()){
+  Image checked{};if(!make(checked,storedSSID.c_str(),storedSSID.length(),storedPass.c_str(),storedPass.length(),true)){
+   storedSSID="";storedPass="";wifiConfigSelection.origin=Origin::Blocked;wifiConfigSelection.stage="LEGACY_INVALID";
+  }
+ }
 }
 static void configureRoutes(){
  cielo96::monitor::attach(srv,prefs,requireAdminWrite,requirePrivateRead,monitorSnapshot);
@@ -2248,7 +2314,7 @@ static void configureRoutes(){
   j+="]}";jsonSend(200,j);
  });
  srv.on("/api/wifi",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");configureWifi();});
- srv.on("/api/wifi/forget",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");prefs.remove("ssid");prefs.remove("wifi_pw");storedSSID="";storedPass="";WiFi.disconnect(false,false);ok();});
+ srv.on("/api/wifi/forget",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");disableWifi();});
  srv.on("/api/ota/preflight",HTTP_GET,[]{if(requirePrivateRead())otaPreflight();});
  srv.on("/api/ota/prepare",HTTP_POST,otaPrepare);
  srv.on("/api/ota/prepare/status",HTTP_GET,[]{if(requirePrivateRead())otaPrepareStatus();});
@@ -2769,22 +2835,7 @@ void setup(){
   cieloReturnReason="Recuperacion preventiva tras reinicio del ATOM";
   record("V4_RECUPERACION_BOOT",cieloReturnReason);
  }
- storedSSID=prefs.getString("ssid",CIELO_WIFI_SSID);storedPass=prefs.getString("wifi_pw",CIELO_WIFI_PASSWORD);
- if(storedSSID.isEmpty()){
-  Preferences legacy;
-  if(legacy.begin("iwagumi-rgb",true)){
-   String oldSsid=legacy.getString("homeSsid","");
-   String oldPass=legacy.getString("homePass","");
-   legacy.end();
-   if(oldSsid.length()>0 && oldSsid.length()<=32 && oldPass.length()<=63){
-    if(prefs.putString("ssid",oldSsid)==oldSsid.length()){
-     prefs.putString("wifi_pw",oldPass);
-     storedSSID=oldSsid;storedPass=oldPass;
-     record("WIFI_MIGRADA","Configuracion local 9.5.3 reutilizada sin mostrar claves");
-    }
-   }
-  }
- }
+ loadWifiConfiguration();
  apPassword=prefs.getString("ap_secret","");
  if(apPassword.length()<12){
    static const char alphabet[]="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -2795,7 +2846,8 @@ void setup(){
  pinMode(ATOMS3_BUTTON_GPIO,INPUT_PULLUP);
  statusPixel.begin();statusPixel.setBrightness(32);statusPixel.clear();statusPixel.show();
  tracePhase(TracePhase::WifiInit);
- WiFi.mode(WIFI_AP_STA);
+ WiFi.persistent(false); // The verified application record is the only credentials writer.
+ wifiRamStorageVerified=WiFi.mode(WIFI_AP_STA);
  WiFi.setAutoReconnect(false);
  WiFi.setHostname("iwagumi-cielo96");
  wifiApOn=WiFi.softAP("CIELO96-CONFIG",apPassword.c_str());
