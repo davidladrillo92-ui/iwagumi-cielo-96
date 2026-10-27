@@ -37,6 +37,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 .hero-tint{position:absolute;inset:0;z-index:1;background:var(--ambient,#445a69);opacity:.18;mix-blend-mode:screen;pointer-events:none;transition:background 1.5s ease,opacity 1.5s ease}
 .conn-tick{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;font-size:12px;color:#aeb5ad;background:#ffffff17;margin-left:5px;vertical-align:middle}
 .conn-tick.ok{color:#112719;background:#8ddeaa;box-shadow:0 0 9px #56bd7775}
+.conn-tick.rest{color:#173a30;background:#a5d5c3;box-shadow:none;font-size:15px}
 .conn-tick.wait{color:#eacda2;background:#94714350}
 .lamp.information .lamp-copy strong{display:inline-flex;align-items:center}
 #momentSub:empty{display:none}
@@ -126,6 +127,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 .work-light h2{font-size:19px;letter-spacing:-.035em;margin:0 0 8px;font-weight:550}
 .work-light p{font-size:12px;line-height:1.6;color:var(--soft);margin:8px 0}
 .work-light progress{display:block;width:100%;height:6px;margin:15px 0;accent-color:#cbb799}
+.work-light progress[hidden]{display:none}
 .work-light .work-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}
 .work-actions button{flex:1;min-width:115px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--text);padding:13px 10px;font:inherit;font-size:13px}
 .work-actions button:disabled{opacity:.38;cursor:default}
@@ -140,12 +142,10 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 <div class="lamp information"><span class="lamp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#b5c5d4" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M6 15c4-3 7-3 12-6M5 11c5-3 8-2 14-2"/></svg></span><span class="lamp-copy"><strong>Pez Verde <i class="conn-tick" id="pezLed" title="Sin respuesta BLE reciente">·</i></strong><small id="pezSub">AUTO</small></span><span class="lamp-side"><b id="pezPct">—</b><small><i class="color-dot" id="pezColor"></i><span id="pezInfo">Según programa</span></small></span></div>
 </section>
 <section class="work-light" aria-labelledby="workLightTitle">
-<h2 id="workLightTitle">Luz de mantenimiento</h2>
-<p>Chihiros 50 / 50 / 50 · fondo azul suave al 15 %.</p>
+<h2 id="workLightTitle">Mantenimiento</h2>
 <p id="workLightState" role="status" aria-live="polite">Conectando con el ATOM…</p>
 <progress id="workLightProgress" max="600" value="0" aria-label="Progreso de la transición de mantenimiento"></progress>
-<p>Subida de 10 min. Se mantiene hasta pulsar Parar; vuelve al horario normal en 2 min. Por la mañana, se apaga.</p>
-<div class="work-actions"><button id="workLightStart" type="button" disabled>Iniciar mantenimiento</button><button id="workLightStop" type="button" disabled>Parar mantenimiento</button></div>
+<div class="work-actions"><button id="workLightStart" type="button" disabled>Iniciar</button><button id="workLightStop" type="button" disabled>Parar</button></div>
 </section></main>
 <main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><div class="chart-tools"><div class="zoom-control" role="group" aria-label="Escala de tiempo del gráfico"><button data-zoom="1">1 h</button><button data-zoom="3">3 h</button><button data-zoom="6">6 h</button><button data-zoom="24" class="active" aria-pressed="true">24 h</button></div><button id="compareCurves" type="button" aria-pressed="false" class="compare-control">Comparar</button></div><p id="chartZoomNote" class="chart-zoom-note">Vista de 24 horas · pulsa un punto para inspeccionarlo</p><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curvas de iluminación: horas y porcentajes" role="img" tabindex="0"></svg><div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div><div id="chartInspector" class="chart-inspector" aria-live="polite">Selecciona una hora para consultar las dos luces.</div><div class="color-preview"><span id="colorPreviewPv" class="color-preview-swatch" role="img" aria-label="Color calculado de Pez Verde"></span><span id="colorPreviewChi" class="color-preview-swatch" role="img" aria-label="Color calculado de Chihiros"></span><p id="previewDisclaimer">Vista calculada: respeta el brillo de Pez Verde; no equivale a intensidad ni color ópticos medidos.</p></div><div class="plot-foot" id="chartAxisTimes"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div><div class="chart-point-actions"><button id="editSelectedPoint" type="button">Editar punto seleccionado</button><span id="selectedPointNote" aria-live="polite">Pulsa un círculo para escoger un punto.</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p><p id="curvePending" class="pending-state" role="status" aria-live="polite">Sin cambios pendientes de guardar</p>
 <div class="editorActions" role="group" aria-label="Editar y guardar curvas">
@@ -231,16 +231,17 @@ async function sync(){if(!isLive())return;try{const d=await api('/api/status');i
 function hourLabel(t){return fmt(clamp(t,0,1440))}
 function renderWorkLight(){
  const fresh=state.connected&&Date.now()-state.updated<20000,m=state.status?.work_light;
- const active=m?.active===true,returning=m?.phase==='returning';
+ const active=m?.active===true,checking=m?.preparing===true,returning=m?.phase==='returning';
  const left=Math.max(0,Number(m?.remaining_sec)||0),clock=Math.floor(left/60)+':'+String(left%60).padStart(2,'0');
- $('workLightState').textContent=!fresh?'Sin conexión · estado de mantenimiento sin confirmar':!m?'Mantenimiento disponible al actualizar el ATOM':
-  returning?'Volviendo al horario normal · '+clock:active?(m.phase==='holding'?'Luz de trabajo activa · hasta que pulses Parar':'Preparando luz de trabajo · '+clock):
-  m.can_start?'Preparada para iniciar':m.unavailable_reason||'Esperando al ATOM';
+ $('workLightState').textContent=!fresh?'Sin conexión · sin confirmar':!m?'Esperando al ATOM':checking?'Comprobando luces…':
+  returning?'Volviendo · '+clock:active?(m.phase==='holding'?'Activa':'Subiendo · '+clock):
+  m.can_start?(m.last_end_reason==='No se ha confirmado la comunicacion de ambas luces'?'Sin respuesta · vuelve a intentar':'Preparada'):m.unavailable_reason||'Esperando al ATOM';
  const duration=returning?120:600;
+ $('workLightProgress').hidden=!fresh||!active||m.phase==='holding';
  $('workLightProgress').max=duration;
  $('workLightProgress').value=!fresh?0:active?(m.phase==='holding'?duration:Math.max(0,duration-left)):0;
- $('workLightStart').disabled=!!state.workLightBusy||!fresh||!m?.can_start||active;
- $('workLightStop').disabled=!!state.workLightBusy||!fresh||!active||returning;
+ $('workLightStart').disabled=!!state.workLightBusy||!fresh||!m?.can_start||active||checking;
+ $('workLightStop').disabled=!!state.workLightBusy||!fresh||(!active&&!checking)||returning;
 }
 async function workLightAction(start){
  if(state.workLightBusy)return;
@@ -249,7 +250,7 @@ async function workLightAction(start){
  try{
   const m=await api(start?'/api/work-light/start':'/api/work-light/stop',start?{confirm:'INICIAR_MANTENIMIENTO'}:{stop:'1'});
   state.status.work_light=m;state.preview=null;render();
-  toast(start?'Mantenimiento iniciado · subida de 10 min':'Retorno al horario normal · 2 min');
+  toast(start?'Comprobando luces…':m.active?'Volviendo a la programación':'Mantenimiento detenido');
  }catch(e){toast(e.name==='AbortError'?'Respuesta no confirmada. Comprueba el estado antes de repetir.':e.message);}
  finally{await sync();state.workLightBusy=false;renderWorkLight();}
 }
@@ -263,7 +264,9 @@ function render(){
  const pvRecent=fresh&&!preview&&(v4.pv_link_connected!==false||v4.pv_link_idle_released===true)&&v4.pez_verde_active&&v4.pv_online_recent&&Array.isArray(v4.pv_last_requested);
  const chi=chiRecent?v4.ch_last_requested:chiPlan;
  // POWER OFF is independent from RGB. Do not present the last RGB as live brightness.
- const pvOffConfirmed=!preview&&v4.pv_off_obligation===true&&v4.pv_safety_state==='APAGADO_GATT_OK';
+ const pvRest=fresh&&!preview&&v4.pv_waiting_off_check===true&&v4.pv_link_connected===true&&
+  v4.pv_off_obligation===true&&v4.pv_safety_state==='APAGADO_GATT_OK'&&!(v4.pv_consecutive_errors>0)&&!(v4.pv_off_failures>0);
+ const pvOffConfirmed=fresh&&!preview&&v4.pv_off_obligation===true&&v4.pv_safety_state==='APAGADO_GATT_OK';
  const pvOffPending=!preview&&v4.pv_off_obligation===true&&!pvOffConfirmed;
  const pez=pvOffConfirmed?[0,0,0,0]:pvOffPending?[0,0,0,0]:pvRecent?v4.pv_last_requested:pvPlan;
  const moment=scene(when);
@@ -299,11 +302,13 @@ function render(){
   !fresh?'Sin comunicación':linked===false&&active?'Sin enlace BLE':reconnecting||errors>0?'Reconectando…':
   recent?'Conectado':active?'Sin verificar':v4.always_on?'Preparando…':'En pausa';
  $('chiSub').textContent=lampState(v4.chihiros_active,chiRecent,v4.ch_consecutive_errors||0,v4.ch_reconnect_pending,v4.ch_link_idle_released?undefined:v4.ch_link_connected);
- $('pezSub').textContent=lampState(v4.pez_verde_active,pvRecent,Math.max(v4.pv_consecutive_errors||0,v4.pv_off_failures||0),false,v4.pv_link_idle_released?undefined:v4.pv_link_connected);
+ $('pezSub').textContent=pvRest?'Conectado · en reposo':lampState(v4.pez_verde_active,pvRecent,Math.max(v4.pv_consecutive_errors||0,v4.pv_off_failures||0),false,v4.pv_link_idle_released?undefined:v4.pv_link_connected);
  for(const [id,up] of [['chiLed',chiRecent&&!v4.ch_reconnect_pending&&!(v4.ch_consecutive_errors>0)],['pezLed',pvRecent&&!(v4.pv_consecutive_errors>0)&&!(v4.pv_off_failures>0)]]){
-  const el=$(id);el.className='conn-tick'+(state.connected&&up&&!preview?' ok':' wait');
-  el.textContent=state.connected&&up&&!preview?'✓':'·';
-  el.title=up?'Conectado: comunicación GATT reciente; enlace BLE liberado entre envíos. Luz real no verificada.':'Esperando comunicación Bluetooth';
+  const rest=id==='pezLed'&&pvRest,el=$(id);
+  el.className='conn-tick'+(rest?' rest':state.connected&&up&&!preview?' ok':' wait');
+  el.textContent=rest?'☾':state.connected&&up&&!preview?'✓':'·';
+  el.title=rest?'Enlace BLE conectado. Último apagado aceptado; comprobación cada 5 min. Luz real no verificada.':up?'Comunicación GATT reciente. Luz real no verificada.':'Esperando comunicación Bluetooth';
+  el.setAttribute('aria-label',rest?'Enlace Bluetooth conectado, luz en reposo':up?'Comunicación Bluetooth reciente':'Esperando comunicación Bluetooth');
  }
  $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+' · no cambia las luces.':'Vista del momento actual.';
  const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
@@ -863,9 +868,12 @@ function diagRender(d){
    const released=key==='pez_verde'?v.pv_link_idle_released===true:v.ch_link_idle_released===true;
    const linked=key==='pez_verde'?v.pv_link_connected===true:v.ch_link_connected===true;
    $(id).textContent=paused?'En pausa':retrying?'Reconectando…':
+    key==='pez_verde'&&linked&&v.pv_waiting_off_check===true&&v.pv_off_obligation===true&&v.pv_safety_state==='APAGADO_GATT_OK'?'Conectado · en reposo':
     level==='CORRECTO'&&recent&&(linked||released)?'Conectado':
     level==='FALLO'?'Sin respuesta':level==='CORRECTO'?'Sin comunicación reciente':'Sin verificar';
-   $(id).title='Conectado significa comunicación BLE/GATT reciente, no enlace permanente ni confirmación óptica.';
+   $(id).title=key==='pez_verde'&&linked&&v.pv_waiting_off_check===true?
+    'Enlace BLE conectado; último apagado aceptado, pendiente de la comprobación programada. Luz real no verificada.':
+    'Conectado significa comunicación BLE/GATT reciente, no enlace permanente ni confirmación óptica.';
  }
 }
 async function diagLoad(){

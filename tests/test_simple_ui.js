@@ -40,6 +40,24 @@ vm.createContext(ctx);vm.runInContext(js,ctx);
  assert.equal(elements.pezSub.textContent,'Conectado');
  vm.runInContext('state.status.cieloV4.pv_link_idle_released=false;state.status.cieloV4.pv_link_connected=true;state.status.cieloV4.pv_online_recent=false;render()',ctx);
  assert.equal(elements.pezSub.textContent,'Sin verificar');
+ // Report89: OFF acknowledged126s ago, next check300s, not 'connected' nor unknown.
+ vm.runInContext("Object.assign(state.status.cieloV4,{pv_waiting_off_check:true,pv_off_obligation:true,pv_safety_state:'APAGADO_GATT_OK'});render()",ctx);
+ assert.equal(elements.pezSub.textContent,'Conectado · en reposo');assert.equal(elements.pezPct.textContent,'0%');
+ assert.equal(elements.pezLed.textContent,'☾');assert.equal(elements.pezLed.className,'conn-tick rest');assert(elements.pezLed.title.includes('Último apagado'));assert(!elements.pezLed.title.includes('GATT reciente'));
+ sample.lighting.natural_v4.pv_waiting_off_check=true;sample.lighting.natural_v4.pv_link_connected=true;
+ sample.lighting.natural_v4.pv_off_obligation=true;sample.lighting.natural_v4.pv_safety_state='APAGADO_GATT_OK';
+ ctx.sample=sample;vm.runInContext('diagRender(sample)',ctx);assert.equal(elements.diagPvStatus.textContent,'Conectado · en reposo');
+ vm.runInContext('state.status.cieloV4.pv_link_connected=false;render()',ctx);
+ assert.equal(elements.pezSub.textContent,'Sin enlace BLE');
+ vm.runInContext('state.status.cieloV4.pv_waiting_off_check=false;render()',ctx);
+ sample.lighting.natural_v4.pv_waiting_off_check=false;
+ vm.runInContext('state.status.cieloV4.pv_waiting_off_check=true;state.status.cieloV4.pv_link_connected=true;state.status.cieloV4.pv_off_failures=1;render()',ctx);
+ assert.equal(elements.pezSub.textContent,'Reconectando…');assert.notEqual(elements.pezLed.className,'conn-tick rest');
+ vm.runInContext('state.status.cieloV4.pv_off_failures=0;state.connected=false;render()',ctx);
+ assert.equal(elements.pezSub.textContent,'Sin comunicación');assert.notEqual(elements.pezLed.textContent,'☾');
+ vm.runInContext('state.connected=true;state.preview=0;render()',ctx);assert.equal(elements.pezSub.textContent,'Simulación');
+ vm.runInContext('state.preview=null;state.status.cieloV4.pv_waiting_off_check=false;render()',ctx);
+
  // Regression 00:20: POWER OFF GATT wins over stale RGB 58/78/132 at 6%.
  vm.runInContext("Object.assign(state.status.cieloV4,{pv_link_idle_released:true,pv_link_connected:false,pv_online_recent:true,pv_last_requested:[58,78,132,6],pv_off_obligation:true,pv_safety_state:'APAGADO_GATT_OK'});render()",ctx);
  assert.equal(elements.pezPct.textContent,'0%');
