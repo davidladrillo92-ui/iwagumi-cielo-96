@@ -4,7 +4,7 @@
 
 ## Qué se corrige
 
-El código3.9 guardaba `ssid` y `wifi_pw` con dos `Preferences.putString` independientes y no comprobaba sus resultados. Después sustituía las variables de conexión y desconectaba aunque una escritura hubiera fallado. Eso permitía una configuración dividida o una confirmación incorrecta. Además, el SDK Arduino-ESP32 puede mantener su propia configuración persistente, aparte de Preferences.
+El código3.9 guardaba `ssid` y `wifi_pw` con dos `Preferences.putString` independientes. Sí comprobaba la longitud devuelta y rechazaba el cambio en RAM si una fallaba; sin embargo, la primera clave podía haber quedado persistida antes del fallo de la segunda. El siguiente arranque podía leer una pareja dividida. La migración antigua comprobaba solo la escritura del SSID y no el resultado de la contraseña. Además, el SDK Arduino-ESP32 puede mantener su propia configuración persistente, aparte de Preferences.
 
 La antigua acción Olvidar eliminaba dos claves. Si quedaban `homeSsid/homePass` en `iwagumi-rgb`, el siguiente arranque podía volver a migrarlas.3.10 guarda una desactivación explícita y llama al botón **Desactivar red guardada**. No promete borrar físicamente las credenciales antiguas.
 
