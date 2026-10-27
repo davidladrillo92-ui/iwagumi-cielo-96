@@ -65,7 +65,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.8.1-MAINTENANCE-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.9-UI-AUDIT-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -894,6 +894,13 @@ static String cieloTrendJson(){
  }
  j+="]}";return j;
 }
+static bool currentCritical(){
+ const bool badReset=abnormalReset(esp_reset_reason()),wifi=WiFi.status()==WL_CONNECTED;
+ const bool workerUnavailable=bleReady&&(cielo96::ble_worker_snapshot().heartbeat_age_ms>45000UL);
+ return (badReset&&!currentBootMarkedHealthy)||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
+  workerUnavailable||profileRecovery||otaError||!timeOK()||
+  (pvOffObligation&&pvOffFailures>=3);
+}
 // A start request verifies BOTH current program commands before raising either lamp.
 // Verification is asynchronous through the existing single-owner BLE scheduler.
 static bool workLightPreparing=false;
@@ -1013,6 +1020,10 @@ static void statusJson(){
  j+=",\"cadence\":"+cadenceJson();
  j+=",\"cieloV4\":"+cieloModeJson();
  j+=",\"work_light\":"+workLightJson();
+ j+=",\"boot_id\":"+String(previousBootCount+1);
+ j+=",\"health\":{\"boot_ready\":"+String(currentBootMarkedHealthy?"true":"false");
+ j+=",\"current_critical\":"+String(currentCritical()?"true":"false");
+ j+=",\"worker_unresponsive\":"+String(bleReady&&cielo96::ble_worker_snapshot().heartbeat_age_ms>45000UL?"true":"false")+"}";
  j+=",\"chActive\":"+String(cieloChRun?"true":"false")+",\"chEvening\":"+String(cieloChRun?"true":"false")+",\"chContinuous\":"+String(cieloChRun?"true":"false");
  j+=",\"chStatus\":"+jsonQuote(cieloChRun?"Natural V4: control por CIELO":cieloChReturnPending||cieloChAwaitResponse?"Restaurando curva de My Chihiros":"My Chihiros: curva personalizada");
  j+=",\"chEveningStatus\":"+jsonQuote(cieloChRun?"NATURAL_V4_ACTIVA":"MY_CHIHIROS")+",\"bleFailures\":"+String(bleResultErrors);
@@ -1266,9 +1277,7 @@ static void diagnosticJson(){
  uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
  bool badReset=abnormalReset(esp_reset_reason());
  bool workerUnavailable=bleReady && (cielo96::ble_worker_snapshot().heartbeat_age_ms>45000UL);
- bool critical=(badReset&&!currentBootMarkedHealthy)||(!bleReady&&blePilotAttempted)||(!wifi&&!wifiApOn)||
-  workerUnavailable||profileRecovery||otaError||!timeOK()||
-  (pvOffObligation&&pvOffFailures>=3); // Los errores BLE ya recuperados son historicos.
+ bool critical=currentCritical(); // Los errores BLE ya recuperados son historicos.
  bool historical=badReset||m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
  String j;j.reserve(22000);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(clockEvidenceTrusted()?dateTime():String("Hora pendiente de sincronizacion"));
