@@ -42,7 +42,6 @@
 .chart-legend{display:flex;flex-wrap:wrap;gap:7px 15px;color:#bdc5c4;font-size:12px;padding:9px 0 5px}
 .chart-legend span{display:inline-flex;align-items:center;gap:6px}
 .chart-legend i{width:11px;height:3px;display:inline-block;border-radius:3px}
-.chart-inspector{font-size:12px;line-height:1.55;color:#dce2dc;background:#ffffff0b;border:1px solid #ffffff14;border-radius:12px;padding:9px 12px;margin:8px 0 6px}
 .health-head{display:flex;justify-content:space-between;align-items:start;gap:14px}
 .health-head strong{font-size:17px;letter-spacing:-.025em}
 .health-head-note{font-size:11px;color:#8d9697;margin:5px 0}
@@ -79,19 +78,38 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 .measurement-disclaimer{margin-top:12px;color:#aeb7b7;font-size:11px;line-height:1.55}
 .chart-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:-6px 0 7px}
 .zoom-control{display:flex;gap:3px;background:#272b2e;border:1px solid #ffffff17;border-radius:11px;padding:3px;flex:1;max-width:290px}
-.zoom-control button{min-width:45px;min-height:40px;flex:1;border:0;border-radius:8px;background:none;color:#c5cccd;font-size:13px;font-weight:600}
+.zoom-control button{padding:0 3px;white-space:nowrap;min-width:45px;min-height:40px;flex:1;border:0;border-radius:8px;background:none;color:#c5cccd;font-size:13px;font-weight:600}
 .zoom-control button.active{background:#d9c7b4;color:#11191b}
 .compare-control,.chart-point-actions button{border:1px solid #ffffff32;background:#303638;color:#eaf1ee;border-radius:10px;padding:9px 11px;font-size:12px}
 .compare-control[aria-pressed=true]{background:#314d49;border-color:#89c8b9}
-.chart-zoom-note{color:#b7c0c0;font-size:11px;line-height:1.4;margin:2px 0 6px}
-.chart-point-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 0 2px}
-.chart-point-actions span{font-size:11px;color:#a7b3b6;flex:1;min-width:115px;line-height:1.5}
-.chart-point-actions button:disabled{opacity:.5}
-.color-preview{display:flex;align-items:center;gap:9px;padding-top:8px;flex-wrap:wrap}
-.color-preview-swatch{width:34px;height:27px;border:1px solid #ffffff30;border-radius:9px;display:inline-block;box-shadow:inset 0 0 7px #0006}
-.color-preview p{font-size:11px;color:#afbaba;line-height:1.4;flex:1;min-width:160px;margin:0}
-.pending-state{border:1px solid #ffffff25;background:#ffffff08;border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.5;color:#dee4e1}
-.pending-state.unsaved{border-color:#e4bd7d80;background:#a87c3820;color:#ffe2b2}
+.curve-workspace{margin-top:15px;padding-bottom:8px}
+.curve-workspace .plot{height:auto;aspect-ratio:338/180}
+.curve-workspace .plot-foot{margin:0 4px 4px 26px;font-variant-numeric:tabular-nums}
+.curve-workspace .chart-legend{gap:6px 15px;padding:5px 1px 15px;font-size:11px;color:var(--soft)}
+.curve-preview{border-top:1px solid var(--line);padding-top:14px}
+.preview-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.preview-heading .time-control{margin:0;gap:12px;justify-content:flex-start;flex-wrap:wrap}
+.preview-heading .time-control strong{font-size:30px;line-height:1.15}
+.preview-heading .time-control small{font-size:11px;color:var(--soft)}
+.preview-heading .minor{min-width:50px;padding:9px 4px;color:#d5c5b4}
+.curve-preview input[type=range]{margin:13px 0 12px;display:block;height:22px}
+.curve-lamps{background:none;border:0;border-radius:0}
+.curve-lamps .lamp{gap:10px;padding:12px 0;min-height:71px}
+.curve-lamps .lamp-copy strong{font-size:14px}
+.curve-lamps .lamp-copy small{font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--soft)}
+.curve-lamps .lamp-side b{font-size:23px}
+.curve-lamps .color-preview-swatch{width:34px;height:38px;border:1px solid #ffffff26;border-radius:11px;box-shadow:inset 0 1px #ffffff15;flex-shrink:0}
+.preview-caption{font-size:10px;line-height:1.5;color:var(--dim);text-align:center;margin:9px 0 3px}
+.chart-point-actions{display:flex;gap:10px;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding:12px 0 3px;margin-top:12px}
+.chart-point-actions[hidden]{display:none}
+.chart-point-actions span{font-size:11px;color:var(--soft);line-height:1.5;min-width:0}
+.chart-point-actions button{flex-shrink:0}
+#viewCurves>.sectionhead{gap:12px;align-items:baseline;flex-wrap:wrap;margin:23px 0 10px}
+.pending-state{font-size:10px;line-height:1.5;color:var(--dim);margin:0;text-align:right}
+.pending-state.unsaved{width:100%;text-align:left;border:1px solid #e4bd7d50;background:#a87c3815;border-radius:12px;padding:10px 12px;font-size:12px;color:#edcea1}
+#viewCurves>.editorActions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+#viewCurves>.editorActions button{padding:11px 5px;font-size:12px}
+#viewCurves>.curveHelper{margin-top:15px}
 .access-summary{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#20272a;border:1px solid #ffffff23;border-radius:16px;padding:14px;margin:11px 0 16px}
 .access-summary strong{font-size:14px}.access-summary p{font-size:12px;line-height:1.45;color:#bac5c3;margin:5px 0 0}
 .access-summary button{flex-shrink:0;border:1px solid #ffffff4d;border-radius:10px;background:#31433d;color:#e9eee9;padding:8px 12px}
@@ -145,18 +163,38 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 <progress id="workLightProgress" max="600" value="0" aria-label="Progreso de la transición de mantenimiento"></progress>
 <div class="work-actions"><button id="workLightStart" type="button" disabled>Iniciar</button><button id="workLightStop" type="button" disabled>Parar</button></div>
 </section></main>
-<main id="viewCurves" class="page"><div class="heading"><div><div class="eyebrow">24 HORAS</div><h1 class="h1">Curvas.</h1></div></div><div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div><div class="plot-wrap" style="margin-top:15px"><div class="chart-tools"><div class="zoom-control" role="group" aria-label="Escala de tiempo del gráfico"><button data-zoom="1">1 h</button><button data-zoom="3">3 h</button><button data-zoom="6">6 h</button><button data-zoom="24" class="active" aria-pressed="true">24 h</button></div><button id="compareCurves" type="button" aria-pressed="false" class="compare-control">Comparar</button></div><p id="chartZoomNote" class="chart-zoom-note">Vista de 24 horas · pulsa un punto para inspeccionarlo</p><svg id="chart" class="plot" viewBox="0 0 338 195" aria-label="Curvas de iluminación: horas y porcentajes" role="img" tabindex="0"></svg><div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div><div id="chartInspector" class="chart-inspector" aria-live="polite">Selecciona una hora para consultar las dos luces.</div><div class="color-preview"><span id="colorPreviewPv" class="color-preview-swatch" role="img" aria-label="Color calculado de Pez Verde"></span><span id="colorPreviewChi" class="color-preview-swatch" role="img" aria-label="Color calculado de Chihiros"></span><p id="previewDisclaimer">Vista calculada: respeta el brillo de Pez Verde; no equivale a intensidad ni color ópticos medidos.</p></div><div class="plot-foot" id="chartAxisTimes"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div><div class="chart-point-actions"><button id="editSelectedPoint" type="button">Editar punto seleccionado</button><span id="selectedPointNote" aria-live="polite">Pulsa un círculo para escoger un punto.</span></div></div><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Simulación de la curva</small></div><input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de simulación"><div class="sectionhead"><h2>Programación</h2><button id="resetTime" class="minor">Volver a ahora</button></div><p class="note" id="scrubHint">Mover la hora cambia la vista previa de Luz, no envía órdenes a las pantallas.</p><p id="curvePending" class="pending-state" role="status" aria-live="polite">Sin cambios pendientes de guardar</p>
+<main id="viewCurves" class="page">
+<div class="heading"><div><h1 class="h1">Curvas.</h1></div></div>
+<div class="seg" id="curveSeg"><button data-curve="both" class="active">Juntas</button><button data-curve="chi">Chihiros</button><button data-curve="pez">Pez Verde</button></div>
+<section class="plot-wrap curve-workspace" aria-label="Gráfica y vista previa de las luces">
+<div class="chart-tools"><div class="zoom-control" role="group" aria-label="Escala de tiempo del gráfico"><button data-zoom="1">1 h</button><button data-zoom="3">3 h</button><button data-zoom="6">6 h</button><button data-zoom="24" class="active" aria-pressed="true">24 h</button></div><button id="compareCurves" type="button" aria-pressed="false" class="compare-control">Comparar</button></div>
+<p id="chartZoomNote" class="sr-only">Vista de 24 horas. Selecciona un punto para editarlo.</p>
+<svg id="chart" class="plot" viewBox="0 0 338 180" aria-label="Curvas de iluminación: horas y porcentajes" aria-describedby="chartZoomNote" role="img" tabindex="0"></svg>
+<div class="plot-foot" id="chartAxisTimes"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+<div id="chartLegend" class="chart-legend" aria-label="Leyenda de las curvas"></div>
+<section class="curve-preview" aria-label="Luces a la hora seleccionada" aria-describedby="scrubHint">
+<div class="preview-heading"><div class="time-control"><strong id="scrubTime">22:20</strong><small id="scrubScene">Atardecer</small></div><button id="resetTime" class="minor" aria-label="Volver a la hora actual">Ahora</button></div>
+<input id="scrub" type="range" min="0" max="1440" value="1340" step="1" aria-label="Hora de la vista previa" aria-describedby="scrubHint">
+<div class="lamps curve-lamps">
+<button class="lamp" data-lamp="chi"><span class="lamp-icon color-preview-swatch" id="colorPreviewChi" role="img" aria-label="Color calculado de Chihiros"></span><span class="lamp-copy"><strong>Chihiros</strong><small id="curveChiRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curveChiPct">0%</b></span><span class="chevron" aria-hidden="true">›</span></button>
+<button class="lamp" data-lamp="pez"><span class="lamp-icon color-preview-swatch" id="colorPreviewPv" role="img" aria-label="Color calculado de Pez Verde"></span><span class="lamp-copy"><strong>Pez Verde</strong><small id="curvePezRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curvePezPct">0%</b></span><span class="chevron" aria-hidden="true">›</span></button>
+</div>
+<p class="preview-caption" id="scrubHint">Vista previa · no cambia las luces.</p>
+</section>
+<div class="chart-point-actions" id="chartPointActions" hidden><span id="selectedPointNote" aria-live="polite"></span><button id="editSelectedPoint" type="button">Editar punto</button></div>
+</section>
+<div class="sectionhead"><h2>Programación</h2><p id="curvePending" class="pending-state" role="status" aria-live="polite">Sin cambios pendientes</p></div>
 <div class="editorActions" role="group" aria-label="Editar y guardar curvas">
 <button id="editCurve">Editar puntos</button><button id="undoCurve">Deshacer</button><button id="redoCurve">Rehacer</button><button id="saveCurve">Guardar</button><button id="loadProfile">Importar</button><button id="exportProfile">Exportar</button>
 </div>
 <details class="curveHelper" id="curvesAdvanced">
-<summary style="cursor:pointer">Opciones avanzadas de curvas</summary>
+<summary style="cursor:pointer">Más opciones</summary>
 <div class="editorActions minorActions"><button id="resetCurve">Restaurar originales</button></div>
+<p class="note">Los colores muestran valores programados, no una medición de la luz. Chihiros usa RGB de 0 a 100; Pez Verde, RGB de 0 a 255 y brillo independiente. Comparar superpone con línea discontinua la última curva guardada.</p>
 </details>
-
 <input type="file" accept=".json,application/json" id="importFile" hidden>
-<div class="curveHelper" id="editMessage">Selecciona Chihiros o Pez Verde para editar.</div>
-<div class="lamps"><button class="lamp" data-lamp="chi"><span class="lamp-icon">☀</span><span class="lamp-copy"><strong>Chihiros</strong><small id="curveChiRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curveChiPct">0%</b></span><span class="chevron">›</span></button><button class="lamp" data-lamp="pez"><span class="lamp-icon">◐</span><span class="lamp-copy"><strong>Pez Verde</strong><small id="curvePezRgb">R 0 · G 0 · B 0</small></span><span class="lamp-side"><b id="curvePezPct">0%</b></span><span class="chevron">›</span></button></div></main>
+<div class="sr-only" id="editMessage">Selecciona Chihiros o Pez Verde para editar.</div>
+</main>
 <main id="viewLab" class="page">
 <div class="heading"><div><h1 class="h1">Centro.</h1></div></div>
 <section class="livePanel" id="cielo95Diagnostics" aria-label="Estado de las pantallas">
@@ -398,14 +436,6 @@ function render(){
  $('pezColor').style.background=rgb(...pvRgb);
  $('chiInfo').textContent=chiIsKnown?chi.join(' / '):'—';
  $('pezInfo').textContent=pvOffPending?'Apagado pendiente':pvIsKnown?pvRgb.join(' / '):'—';
- $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+' · no cambia las luces.':'Vista del momento actual.';
- const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
- $('scrubTime').textContent=hourLabel(state.scrub);
- $('scrubScene').textContent=scene(state.scrub)[0];
- $('curveChiRgb').textContent='R '+vv[0]+' · G '+vv[1]+' · B '+vv[2];
- $('curveChiPct').textContent=Math.max(...vv)+'%';
- $('curvePezRgb').textContent='R '+pp[0]+' · G '+pp[1]+' · B '+pp[2];
- $('curvePezPct').textContent=pp[3]+'%';
  $('editMessage').textContent=state.curve==='both'?'Selecciona una luz. Añade o edita puntos y pulsa Guardar.':state.curve==='chi'?'Chihiros · Al guardar, CIELO aplicará los nuevos puntos durante su control 24 h.':'Pez Verde · Al guardar, CIELO aplicará los nuevos puntos en los siguientes envíos.';
  if($('chNightOn'))$('chNightOn').disabled=$('chNightOn').dataset.pending==='1'||state.otaBusy||!fresh||!d?.clockValid||!d?.ble||(v4.chihiros_active&&v4.pez_verde_active)||v4.return_pending;
  if($('chNightOff'))$('chNightOff').disabled=$('chNightOff').dataset.pending==='1'||state.otaBusy||!fresh||!!v4.return_pending;
@@ -429,12 +459,13 @@ function selectZoom(hours){
 }
 function updateEditorStatus(){
  const edited=!!(state.dirty.pez||state.dirty.chi),n=$('curvePending');
- if(n){n.classList.toggle('unsaved',edited);n.textContent=edited?'CAMBIOS SIN GUARDAR · '+(state.dirty.pez?'Pez Verde':'')+(state.dirty.pez&&state.dirty.chi?' y ':'')+(state.dirty.chi?'Chihiros':'')+'. No se han enviado a las luces.':'Sin cambios pendientes de guardar en el ATOM.';}
+ if(n){n.classList.toggle('unsaved',edited);n.textContent=edited?'Cambios sin guardar · '+(state.dirty.pez?'Pez Verde':'')+(state.dirty.pez&&state.dirty.chi?' y ':'')+(state.dirty.chi?'Chihiros':'')+'. No se han enviado a las luces.':'Sin cambios pendientes';}
  if($('undoCurve'))$('undoCurve').disabled=!state.undoStack.length;
  if($('redoCurve'))$('redoCurve').disabled=!state.redoStack.length;
  if($('saveCurve'))$('saveCurve').disabled=!!state.saving||!edited||!state.connected||Date.now()-state.updated>=20000||!!state.status?.work_light?.active||!!state.status?.work_light?.preparing||!!state.otaBusy;
+ if(state.selectedPoint&&!state[state.selectedPoint.which]?.[state.selectedPoint.index])state.selectedPoint=null;
  const sel=state.selectedPoint;
- if(sel&&!state[sel.which]?.[sel.index])state.selectedPoint=null;
+ if($('chartPointActions'))$('chartPointActions').hidden=!sel;
  if($('editSelectedPoint'))$('editSelectedPoint').disabled=!sel;
  if($('selectedPointNote'))$('selectedPointNote').textContent=sel?`${sel.which==='chi'?'Chihiros':'Pez Verde'} · punto ${sel.index+1} · ${fmt(state[sel.which][sel.index]?.[0]??0)}`:'Pulsa un círculo para seleccionar un punto.';
 
@@ -447,7 +478,7 @@ function chartPointSelect(which,index){
 }
 function drawChart(){
  const svg=$('chart'),{begin,end,span}=chartWindow();
- const left=29,right=331,top=24,bottom=174;
+ const left=29,right=331,top=10,bottom=160;
  const x=t=>left+(t-begin)/span*(right-left);
  const y=pct=>bottom-clamp(pct,0,100)/100*(bottom-top);
  const build=(points,channel,scale)=>{
@@ -467,7 +498,7 @@ function drawChart(){
  for(const pct of [0,25,50,75,100]){
   const at=y(pct);
   content+='<path d="M'+left+' '+at+'H'+right+'" stroke="#ffffff20" stroke-dasharray="2 4"/>';
-  content+='<text x="'+(left-5)+'" y="'+(at+3)+'" fill="#b6bdbf" font-size="9" text-anchor="end">'+pct+'</text>';
+  content+='<text x="'+(left-5)+'" y="'+(at+3)+'" fill="#b6bdbf" font-size="10" text-anchor="end">'+pct+'</text>';
  }
  const legend=[];
  const pvShown=state.curve!=='chi',chShown=state.curve!=='pez';
@@ -475,13 +506,11 @@ function drawChart(){
   if(state.compare&&state.baseline){content+=path(build(state.baseline.pez,3,100),'#e5b5a0',1.6,.43,'5 5');}
   content+=path(build(state.pez,3,100),'#e5b5a0',2.7,1);
   legend.push('<span><i style="background:#e5b5a0"></i>Pez Verde · brillo %</span>');
-  if(state.curve==='pez')content+=path(build(state.pez,2,255),'#758ac0',1.4,.68);
  }
  if(chShown){
   if(state.compare&&state.baseline){content+=path(build(state.baseline.chi,-1,100),'#d6ded6',1.6,.42,'5 5');}
   content+=path(build(state.chi,-1,100),'#d6ded6',2.7,1);
-  legend.push('<span><i style="background:#d6ded6"></i>Chihiros · intensidad RGB programada %</span>');
-  if(state.curve==='chi')content+=path(build(state.chi,2,100),'#7694bc',1.4,.68);
+  legend.unshift('<span><i style="background:#d6ded6"></i>Chihiros · RGB %</span>');
  }
  if(state.compare&&state.baseline)legend.push('<span>Discontinuo: guardado · continuo: edición</span>');
  // Círculos interactivos para selección táctil y ratón. No envían BLE.
@@ -500,9 +529,18 @@ function drawChart(){
  $('chartLegend').innerHTML=legend.join('');
  const labels=[0,.25,.5,.75,1].map(f=>fmt(Math.round(begin+f*span)));
  $('chartAxisTimes').innerHTML=labels.map(t=>'<span>'+t+'</span>').join('');
- $('chartZoomNote').textContent='Zoom '+state.zoomHours+' h · '+fmt(begin)+' — '+fmt(end)+' · puntos visibles seleccionables';
+ $('chartZoomNote').textContent=state.zoomHours+' horas, de '+fmt(begin)+' a '+fmt(end)+'. Toca un punto para editarlo; usa las flechas para mover la hora.';
+ renderCurvePreview();
+}
+function renderCurvePreview(){
  const pv=vAt(state.pez,state.scrub),ch=vAt(state.chi,state.scrub);
- $('chartInspector').textContent='HORA SIMULADA '+hourLabel(state.scrub)+' · PV RGB '+pv.slice(0,3).join('/')+' · brillo '+pv[3]+' % · CH RGB '+ch.join('/')+' % · Sin órdenes BLE';
+ $('scrubTime').textContent=hourLabel(state.scrub);
+ $('scrubScene').textContent=scene(state.scrub)[0];
+ $('scrub').setAttribute('aria-valuetext',hourLabel(state.scrub));
+ $('curveChiRgb').textContent='R '+ch[0]+' · G '+ch[1]+' · B '+ch[2];
+ $('curveChiPct').textContent=Math.max(...ch)+'%';
+ $('curvePezRgb').textContent='R '+pv[0]+' · G '+pv[1]+' · B '+pv[2];
+ $('curvePezPct').textContent=pv[3]+'%';
  const scaledPv=pv.slice(0,3).map(c=>Math.round(c*pv[3]/100));
  $('colorPreviewPv').style.background=rgb(...scaledPv);
  $('colorPreviewPv').setAttribute('aria-label','Pez Verde: color RGB '+scaledPv.join(', ')+' calculado al brillo '+pv[3]+' %, no medido');
