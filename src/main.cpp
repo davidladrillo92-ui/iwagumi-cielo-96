@@ -65,7 +65,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.7-LITTLEFS-AB-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.8-MAINTENANCE-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -824,6 +824,14 @@ static bool bleCommunicationRecent(uint8_t device){
  const uint32_t errors=device?cieloChConsecutiveFailures:(cieloPvConsecutiveFailures+pvOffFailures);
  return cielo96::presence::recent(link.connected||link.idle_released,last,millis(),errors);
 }
+static bool pvWaitingOffCheck(){
+ const auto link=cielo96::ble_link_status(0);
+ return cieloPvRun && pvControlDesired && pvOffObligation && !pvDisconnectInterlock &&
+  !cieloWatchdogTripped && !bleRecoveryBootPvSafe && bleReady &&
+  cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL &&
+  cielo96::presence::plannedOff(link.connected,pvSafety==PvSafetyState::OffGattOk,
+   pvOffLastGatt,cieloLastSuccessfulPvAt,millis(),cieloPvConsecutiveFailures+pvOffFailures);
+}
 static String cieloModeJson(){
  String j="{\"pez_verde_active\":"+String(cieloPvRun?"true":"false");
  j+=",\"chihiros_active\":"+String(cieloChRun?"true":"false");
@@ -865,6 +873,8 @@ static String cieloModeJson(){
  j+=",\"pv_link_connected\":"+String(cielo96::ble_link_status(0).connected?"true":"false");
  j+=",\"ch_link_connected\":"+String(cielo96::ble_link_status(1).connected?"true":"false");
  j+=",\"communication_fresh_limit_sec\":90";
+ j+=",\"pv_waiting_off_check\":"+String(pvWaitingOffCheck()?"true":"false");
+ j+=",\"pv_off_check_interval_sec\":300";
  j+=",\"pv_online_recent\":"+String(cieloPvRun&&bleCommunicationRecent(0)?"true":"false");
  j+=",\"ch_online_recent\":"+String(cieloChRun&&bleCommunicationRecent(1)?"true":"false");
  j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
@@ -884,6 +894,11 @@ static String cieloTrendJson(){
  }
  j+="]}";return j;
 }
+// A start request verifies BOTH current program commands before raising either lamp.
+// Verification is asynchronous through the existing single-owner BLE scheduler.
+static bool workLightPreparing=false;
+static uint32_t workLightPreparingAt=0,workLightVerifyPv=0,workLightVerifyCh=0;
+static constexpr uint32_t WorkLightVerifyMs=45000UL;
 // Temporary lighting uses the serial scheduler and existing safety interlocks.
 static const char* workLightBlockReason(bool starting){
  if(rescueOpen)return "Rescate de solo lectura";
@@ -900,8 +915,6 @@ static const char* workLightBlockReason(bool starting){
   return "Termina la prueba o el retorno pendiente antes del mantenimiento";
  if(pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk&&(starting||desiredPv().brightness>0))
   return "Apagado de seguridad pendiente: espera su confirmacion";
- if(starting&&(!bleCommunicationRecent(0)||!bleCommunicationRecent(1)))
-  return "Espera comunicacion reciente con las dos pantallas";
  return nullptr;
 }
 static void workLightRefreshSchedule(){
@@ -910,13 +923,34 @@ static void workLightRefreshSchedule(){
  lastPvDesired=false;lastChDesired=false;lastScheduleAt=millis()-30000UL;
 }
 static void workLightCancel(const char* reason){
- if(!workLight.active())return;
- workLight.cancel();workLightEndReason=reason;workLightRefreshSchedule();
+ if(!workLight.active()&&!workLightPreparing)return;
+ workLightPreparing=false;workLight.cancel();workLightEndReason=reason;workLightRefreshSchedule();
  record("MANTENIMIENTO_CANCELADO",reason);
 }
+static void workLightBegin(){
+ auto current=programLevels();
+ if(lastPvDesired&&lastPvDesiredAt)current.pv=prevPv;
+ if(pvOffObligation)current.pv={0,0,0,0};
+ if(lastChDesired&&lastChDesiredAt)current.ch=prevCh;
+ workLightPreparing=false;
+ workLight.start(millis(),current);workLightEndReason="Sesion en curso";workLightRefreshSchedule();
+ record("MANTENIMIENTO_INICIO","Comunicacion de ambas luces confirmada; subida 10 min");
+}
 static void workLightTick(){
- if(!workLight.active())return;
+ if(!workLight.active()&&!workLightPreparing)return;
  if(const char* reason=workLightBlockReason(false)){workLightCancel(reason);return;}
+ if(workLightPreparing){
+  if(uint32_t(millis()-workLightPreparingAt)>=WorkLightVerifyMs){
+   workLightCancel("No se ha confirmado la comunicacion de ambas luces");return;
+  }
+  // A connected flag or an old GATT result cannot unlock the ramp.
+  if(cieloPvConfirmed!=workLightVerifyPv && cieloChConfirmed!=workLightVerifyCh &&
+     bleCommunicationRecent(0)&&bleCommunicationRecent(1)&&!queue.busy()){
+   if(const char* reason=workLightBlockReason(true)){workLightCancel(reason);return;}
+   workLightBegin();
+  }
+  return;
+ }
  if(workLight.advance(millis())){
   workLightRefreshSchedule();
   if(workLight.active())record("MANTENIMIENTO_LISTO","Consigna de trabajo 50/50/50 y fondo azul 15%; optica no medida");
@@ -926,8 +960,10 @@ static void workLightTick(){
 static String workLightJson(){
  const uint32_t now=millis();const auto levels=workLight.output(now,programLevels());
  const char* reason=workLightBlockReason(true);
- String j="{\"active\":"+String(workLight.active()?"true":"false")+",\"phase\":"+jsonQuote(workLight.phaseName());
- j+=",\"can_start\":"+String(!workLight.active()&&!reason?"true":"false")+",\"unavailable_reason\":"+jsonQuote(reason?reason:"");
+ String j="{\"active\":"+String(workLight.active()?"true":"false")+",\"phase\":"+jsonQuote(workLightPreparing?"checking":workLight.phaseName());
+ j+=",\"can_start\":"+String(!workLight.active()&&!workLightPreparing&&!reason?"true":"false")+",\"unavailable_reason\":"+jsonQuote(reason?reason:"");
+ j+=",\"preparing\":"+String(workLightPreparing?"true":"false");
+ j+=",\"verification_timeout_sec\":45";
  j+=",\"elapsed_sec\":"+String(workLight.elapsed(now)/1000UL)+",\"remaining_sec\":"+String((workLight.remaining(now)+999UL)/1000UL);
  j+=",\"rise_sec\":600,\"return_sec\":120,\"interval_ms\":10000,\"ticks\":"+String(workLightTicks);
  j+=",\"target_ch\":[50,50,50],\"target_pv\":[96,150,210,15]";
@@ -942,17 +978,19 @@ static void workLightStart(){
   if(workLight.phase()==cielo96::worklight::Phase::Returning)return fail(409,"Espera a que termine el retorno de mantenimiento");
   return jsonSend(200,workLightJson()); // duplicate request never restarts ramp
  }
+ if(workLightPreparing)return jsonSend(200,workLightJson()); // duplicate clicks do not extend the deadline
  if(const char* reason=workLightBlockReason(true))return fail(423,reason);
- if(queue.busy())return fail(409,"Una orden Bluetooth esta terminando. Espera unos segundos y repite");
- auto current=programLevels();
- if(lastPvDesired&&lastPvDesiredAt)current.pv=prevPv;
- if(pvOffObligation)current.pv={0,0,0,0};
- if(lastChDesired&&lastChDesiredAt)current.ch=prevCh;
- workLight.start(millis(),current);workLightEndReason="Sesion en curso";workLightRefreshSchedule();
- record("MANTENIMIENTO_INICIO","Rampa 10 min; CH 50/50/50; PV azul 15%; hasta pulsar Parar");
+ workLightPreparing=true;workLightPreparingAt=millis();
+ workLightVerifyPv=cieloPvConfirmed;workLightVerifyCh=cieloChConfirmed;
+ workLightEndReason="Comprobando luces";
+ workLightRefreshSchedule();
+ // Re-send only the CURRENT program. At night this is an OFF, never a test flash.
+ if(pvOffObligation)pvOffNextTry=millis();
+ record("MANTENIMIENTO_COMPROBANDO","Confirmar ambas consignas actuales antes de subir la luz");
  jsonSend(200,workLightJson());
 }
 static void workLightStop(){
+ if(workLightPreparing){workLightCancel("Inicio cancelado");return jsonSend(200,workLightJson());}
  if(workLight.stop(millis(),programLevels())){
   workLightRefreshSchedule();record("MANTENIMIENTO_RETORNO","Transicion 2 min hacia la programacion actual");
  }
@@ -1368,7 +1406,7 @@ static void diagnosticJson(){
  j+=",\"note\":\"La escritura GATT completada no garantiza recepcion optica\"}";
  const bool bleAlive=bleReady&&!workerUnavailable;
  auto pvLevel=cielo96::diag::link(bleReady,bleAlive,devices[0].completed>0,
-   bleCommunicationRecent(0),pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk);
+   bleCommunicationRecent(0)||pvWaitingOffCheck(),pvOffObligation&&pvSafety!=PvSafetyState::OffGattOk);
  auto chLevel=cielo96::diag::link(bleReady,bleAlive,devices[1].completed>0,
    bleCommunicationRecent(1),cieloChReturnPending||cieloChAwaitResponse);
  if(pvOffObligation&&pvOffFailures>=3)pvLevel=cielo96::diag::Level::Error;
@@ -1750,7 +1788,7 @@ static void otaPreparationTick(){
  record("OTA_PREPARADA","Worker libre; Chihiros curva personalizada GATT OK, no verificacion optica");
 }
 static void otaPrepare(){
- if(workLight.active())return fail(409,"Para la luz de mantenimiento antes de preparar la actualizacion");
+ if(workLight.active()||workLightPreparing)return fail(409,"Para la luz de mantenimiento antes de preparar la actualizacion");
  if(!CIELO_ENABLE_OTA)return fail(503,"OTA desactivada");
  if(rescueOpen)return fail(403,"Rescate solo lectura");
  if(!requireAdminWrite())return;
@@ -2088,7 +2126,7 @@ static void configureRoutes(){
   ok();
  });
  srv.on("/api/ble/release",HTTP_POST,[]{if(!requireAdminWrite())return;
-  if(workLight.active())return fail(409,"Para mantenimiento antes de ceder una pantalla");
+  if(workLight.active()||workLightPreparing)return fail(409,"Para mantenimiento antes de ceder una pantalla");
   if(rescueOpen)return fail(403,"Rescate solo lectura");
   if(!bleReady)return fail(423,"Bluetooth aun no inicializado");
   if(queue.busy()||lab.probePending||lab.scanPending)return fail(409,"Espera a que termine la operacion Bluetooth");
@@ -2155,12 +2193,12 @@ static void configureRoutes(){
    struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
   }return fail(400,"Epoch demasiado corto");});
   srv.on("/api/curves/commit",HTTP_POST,[]{if(!requireAdminWrite())return;
-  if(workLight.active())return fail(409,"Termina mantenimiento antes de guardar curvas");
+  if(workLight.active()||workLightPreparing)return fail(409,"Termina mantenimiento antes de guardar curvas");
    if(rescueOpen||otaBusy||otaTxn.phase!=OtaPhase::Idle)return fail(423,"Cambios bloqueados durante rescate o OTA");
    saveBothCurves();
   });
   srv.on("/api/cielo/cadence",HTTP_POST,[]{if(!requireAdminWrite())return;
-  if(workLight.active())return fail(409,"Termina mantenimiento antes del ensayo de cadencia");
+  if(workLight.active()||workLightPreparing)return fail(409,"Termina mantenimiento antes del ensayo de cadencia");
    if(rescueOpen)return fail(423,"Rescate de solo lectura");cadenceSet();
   });
   srv.on("/api/cielo/cadence",HTTP_GET,[]{if(requirePrivateRead())jsonSend(200,cadenceJson());});

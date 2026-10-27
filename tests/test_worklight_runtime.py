@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess,tempfile,json
 src=Path('src/main.cpp').read_text()
 wrappers=src[src.index('static cielo96::worklight::Levels programLevels()'):src.index('static void loadProfile(){')]
-handlers=src[src.index('static const char* workLightBlockReason'):src.index('static void statusJson(){')]
+handlers=src[src.index('static bool workLightPreparing=false;'):src.index('static void statusJson(){')]
 fixture=r'''
 #include "cielo_worklight.h"
 #include "cielo_curve_policy.h"
@@ -34,6 +34,7 @@ enum class PvSafetyState{OffPending,OffGattOk};PvSafetyState pvSafety=PvSafetySt
 cielo96::ProfileImage profile;
 namespace cielo96 {struct Worker{uint32_t heartbeat_age_ms=0;};Worker worker;Worker ble_worker_snapshot(){return worker;}}
 bool timeOK(){return clockOk;}bool wifiCoexistReady(){return coex;}
+uint32_t cieloPvConfirmed=0,cieloChConfirmed=0,pvOffNextTry=0;
 bool recent[2]={true,true};bool bleCommunicationRecent(int i){return recent[i];}
 cielo96::worklight::Session workLight;uint32_t workLightTicks=0;String workLightEndReason="Sin sesion previa";
 cielo::ble::Scheduler queue;
@@ -49,10 +50,12 @@ void jsonSend(int code,const String& s){http=code;body=s;}
 void fail(int code,const char*s){http=code;body=s;}
 '''
 checks=r'''
+void confirmBoth(){cieloPvConfirmed++;cieloChConfirmed++;recent[0]=recent[1]=true;workLightTick();}
+void startVerified(){workLightStart();assert(http==200&&workLightPreparing&&!workLight.active());confirmBoth();assert(workLight.active());}
 int main(){
  profile.pvCount=profile.chCount=2;profile.pv[1].minute=profile.ch[1].minute=1440;cielo96::profileSeal(profile);
  assert(!workLightBlockReason(true));auto saved=profile;
- workLightStart();assert(http==200&&workLight.active());
+ startVerified();
  assert(!lastPvDesired&&!lastChDesired);auto begun=workLight.elapsed(now);
  now+=60000;workLightStart();assert(http==200&&workLight.elapsed(now)==begun+60000);
  now+=540000;workLightTick();assert(workLight.phase()==cielo96::worklight::Phase::Holding);
@@ -71,22 +74,38 @@ int main(){
  for(auto f:{&currentBootMarkedHealthy,&bleReady,&clockOk,&coex,&cieloAlwaysOn,&cieloPvRun,&cieloChRun,&pvControlDesired}){
   *f=false;assert(workLightBlockReason(true));*f=true;
  }
- for(int i=0;i<2;i++){recent[i]=false;assert(workLightBlockReason(true));recent[i]=true;}
+ // Stale communication must permit a request, never an unverified ramp.
+ recent[0]=false;recent[1]=false;workLightStart();assert(http==200&&workLightPreparing&&!workLight.active());
+ assert(pvOffNextTry==now);assert(!lastPvDesired&&!lastChDesired);
+ const auto deadline=workLightPreparingAt;now+=1000;workLightStart();assert(workLightPreparingAt==deadline);
+ workLightTick();assert(!workLight.active()); // old counters are insufficient, even if flags are fresh
+ recent[0]=recent[1]=true;workLightTick();assert(!workLight.active());
+ cieloPvConfirmed++;workLightTick();assert(!workLight.active()); // one lamp alone is insufficient
+ cieloChConfirmed++;recent[1]=false;workLightTick();assert(!workLight.active());
+ recent[1]=true;workLightTick();assert(workLight.active()&&!workLightPreparing);workLightCancel("test");
+ // Stop, timeout, failure callback and unsafe transitions cannot lead to a late start.
+ workLightStart();workLightStop();confirmBoth();assert(!workLight.active()&&!workLightPreparing);
+ workLightStart();now+=WorkLightVerifyMs;workLightTick();confirmBoth();assert(!workLight.active());
+ workLightStart();workLightCancel("Fallo Bluetooth: mantenimiento cancelado");confirmBoth();assert(!workLight.active());
+ for(auto f:flags){workLightStart();assert(workLightPreparing);*f=true;workLightTick();*f=false;confirmBoth();assert(!workLight.active()&&!workLightPreparing);}
+ now=0xfffffff0U;workLightStart();now=uint32_t(now+WorkLightVerifyMs-1);workLightTick();assert(workLightPreparing);
+ now++;workLightTick();confirmBoth();assert(!workLightPreparing&&!workLight.active());
+ assert(memcmp(&saved,&profile,sizeof(profile))==0);
  cielo96::worker.heartbeat_age_ms=15000;assert(workLightBlockReason(true));cielo96::worker.heartbeat_age_ms=0;
  pvSafety=PvSafetyState::OffPending;assert(workLightBlockReason(true));pvSafety=PvSafetyState::OffGattOk;
  for(unsigned stage:{1u,2u,4u}){contrastStage=stage;assert(workLightBlockReason(true));}contrastStage=0;
  otaTxn.phase=OtaPhase::Ready;assert(workLightBlockReason(true));otaTxn.phase=OtaPhase::Idle;
  profile.checksum^=1;assert(workLightBlockReason(true));profile=saved;
  // Cancel on unsafe runtime conditions; old queued maintenance values removed.
- workLightStart();assert(workLight.active());
+ startVerified();
  queue.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,96,150,210,15,now);
  clockOk=false;workLightTick();assert(!workLight.active()&&!queue.pending(cielo::ble::Device::PezVerde));clockOk=true;
  // Existing unconfirmed OFF can finish during the final dark ramp without aborting it.
- workLightStart();now+=600000;workLightTick();workLightStop();now+=119000;
+ startVerified();now+=600000;workLightTick();workLightStop();now+=119000;
  pvSafety=PvSafetyState::OffPending;assert(desiredPv().brightness==0);workLightTick();assert(workLight.active());
  now+=1000;workLightTick();assert(!workLight.active());pvSafety=PvSafetyState::OffGattOk;
  base={{240,238,230,25},{70,65,60}};pvOffObligation=false;
- workLightStart();now+=600000;workLightTick();workLightStop();now+=120000;workLightTick();
+ startVerified();now+=600000;workLightTick();workLightStop();now+=120000;workLightTick();
  assert(!workLight.active()&&desiredCh().r==70&&desiredPv().brightness==25);
  std::cout<<workLightJson().v<<"\n";
 }
