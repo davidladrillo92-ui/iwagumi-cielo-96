@@ -313,7 +313,7 @@ function renderLampStates(lamps,fresh){
  const waiting=Object.values(lamps).some(l=>l.tone==='wait'&&l.label!=='En pausa');
  const paused=!v.pez_verde_active&&!v.chihiros_active&&v.always_on===false;
  $('diagIndicator').className='health-indicator '+(!fresh?'warning':bad?'error':wifiMissing||waiting?'warning':'good');
- $('diagState').textContent=!fresh?'Sin comunicación con el ATOM':bad?'Revisar conexión':wifiMissing?'Revisar Wi-Fi':state.status?.clockValid===false?'Esperando la hora':paused?'Control en pausa':waiting?'Comprobando luces…':'Todo en orden';
+ $('diagState').textContent=!fresh?'Sin comunicación con el ATOM':state.status?.clockValid===false?'Esperando la hora':wifiMissing?'Revisar Wi-Fi':bad?'Revisar CIELO':paused?'Control en pausa':waiting?'Comprobando luces…':'Todo en orden';
 }
 function refreshLiveDisplay(){
  const fresh=state.connected&&Date.now()-state.updated<20000,v=state.status?.cieloV4||{};
