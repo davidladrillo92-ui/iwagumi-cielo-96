@@ -540,7 +540,7 @@ function wifiSetup(){
  <label>Nombre de red<input id="wifiSsid" type="text" autocapitalize="none" autocomplete="off" placeholder="SSID"></label>
  <label>Contraseña<input id="wifiPass" type="password" autocomplete="new-password" placeholder="WPA2 de la nueva red"></label>
  <button class="wifiPrimary" id="wifiTry">Guardar y conectar</button>
- <button class="wifiSecondary" id="wifiForget">Olvidar red configurada</button></div>
+ <button class="wifiSecondary" id="wifiForget">Desactivar red guardada</button></div>
  <details class="curveHelper"><summary>Más información de conexión</summary>
  <p class="note">El ATOM admite redes de 2,4 GHz y mantiene su punto de acceso privado de rescate. Al cambiar la red, la IP puede variar. Consulta el router o entra al AP CIELO96-CONFIG por 192.168.4.1.</p></details>`);
  $('wifiSsid').value=d.homeSsid||'';
@@ -577,8 +577,8 @@ function wifiSetup(){
   catch(e){toast(e.message)}
  });
  onAction('wifiForget',async()=>{
-  if(!confirm('¿Olvidar la red actual? El AP CIELO96-CONFIG seguirá disponible.'))return;
-  try{await api('/api/wifi/forget',{});toast('Red olvidada');close();await sync()}
+  if(!confirm('¿Desactivar la red guardada? El AP CIELO96-CONFIG seguirá disponible.'))return;
+  try{await api('/api/wifi/forget',{});toast('Red guardada desactivada');close();await sync()}
   catch(e){toast(e.message)}
  });
 }

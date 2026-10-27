@@ -6,7 +6,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
  const browser=await chromium.launch({headless:true,...(process.env.CIELO_CHROMIUM?{executablePath:process.env.CIELO_CHROMIUM,args:['--no-sandbox','--disable-gpu','--disable-dev-shm-usage']}: {})});
  const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[],requests=[],buttons=new Set();
  const html=fs.readFileSync('web/interfaz_r4.html','utf8'),fixture=JSON.parse(fs.readFileSync('tests/fixtures/v5_nvs_regression.json','utf8'));
- let generation=10,boot=140,canUpdate=true,failSave=false,phase='idle',scanning=false;
+ let generation=10,boot=140,canUpdate=true,failSave=false,phase='idle',scanning=false,failWifi=false;
  const points=structuredClone(fixture.lights);
  const v={always_on:true,chihiros_active:true,pez_verde_active:true,ch_link_connected:true,pv_link_connected:true,ch_online_recent:true,pv_online_recent:false,pv_waiting_off_check:true,pv_off_obligation:true,pv_safety_state:'APAGADO_GATT_OK',ch_last_requested:[0,0,0],pv_last_requested:[7,11,16,1]};
  const work=()=>({active:!['idle','checking'].includes(phase),preparing:phase==='checking',phase,can_start:phase==='idle',remaining_sec:phase==='rising'?600:phase==='returning'?120:0});
@@ -28,6 +28,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
   else if(path==='/api/maintenance')data={flash_backup:'USB_REQUIRED_NOT_PERFORMED'};
   else if(path==='/api/wifi/scan'){scanning=true;await new Promise(r=>setTimeout(r,50));}
   else if(path==='/api/wifi/networks')data={pending:false,networks:[{ssid:'Casa <script>error()</script>',rssi:-40}]};
+  else if(path==='/api/wifi'&&failWifi){code=507;data={ok:false,error:'No se pudo guardar la Wi-Fi completa. La conexion actual se mantiene.'};}
   else if(path==='/api/ota/preflight')data={ready:canUpdate,reason:canUpdate?'':'Arranque pendiente'};
   else if(path==='/api/ota/prepare/status')data={phase:'ready'};
   else if(path==='/api/ota/upload'){assert.match(req.headers()['x-cielo-sha256'],/^[0-9a-f]{64}$/);boot++;}
@@ -71,7 +72,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
  await settings();await page.locator('#wifiHome').click();await auditButtons();await page.locator('#wifiScan').click();await page.locator('#sheetClose').click();await page.waitForTimeout(900);assert(scanning);
  await settings();await page.locator('#wifiHome').click();await page.locator('#wifiScan').click();await page.waitForFunction(()=>document.getElementById('wifiNetworks').options.length===2);
  assert.equal(await page.locator('#wifiNetworks option').last().textContent(),'Casa <script>error()</script> · -40 dBm');
- await page.locator('#wifiSsid').fill('Casa');await page.locator('#wifiPass').fill('test-password');await page.locator('#wifiTry').click();await page.waitForFunction(()=>!document.getElementById('modal').classList.contains('open'));
+ await page.locator('#wifiSsid').fill('Casa');await page.locator('#wifiPass').fill('test-password');failWifi=true;await page.locator('#wifiTry').click();await page.waitForFunction(()=>!api.pending.has('/api/wifi'));assert(await page.locator('#wifiTry').isVisible());assert.equal(await page.locator('#wifiSsid').inputValue(),'Casa');failWifi=false;await page.locator('#wifiTry').click();await page.waitForFunction(()=>!document.getElementById('modal').classList.contains('open'));
  await settings();await page.locator('#wifiHome').click();await page.locator('#wifiForget').click();await page.waitForFunction(()=>!document.getElementById('modal').classList.contains('open'));
  await settings();await page.locator('#syncClock').click();await page.waitForFunction(()=>!document.getElementById('modal').classList.contains('open'));
  await settings();await more();await page.locator('#monitorSettings').click();await page.locator('#monitorToggle').waitFor();await auditButtons();await page.locator('#monitorToggle').click();await page.locator('#sheetClose').click();
