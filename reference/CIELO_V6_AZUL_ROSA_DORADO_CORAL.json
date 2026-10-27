@@ -263,16 +263,34 @@
           1
         ],
         [
-          872,
+          871,
           2,
           2,
           2
         ],
         [
-          874,
+          872,
+          3,
+          3,
+          3
+        ],
+        [
+          873,
           4,
           4,
           4
+        ],
+        [
+          874,
+          5,
+          5,
+          5
+        ],
+        [
+          875,
+          6,
+          6,
+          6
         ],
         [
           876,
@@ -281,7 +299,19 @@
           7
         ],
         [
+          877,
+          8,
+          8,
+          8
+        ],
+        [
           878,
+          9,
+          9,
+          9
+        ],
+        [
+          879,
           10,
           10,
           10
@@ -408,15 +438,51 @@
         ],
         [
           1370,
-          14,
-          14,
-          14
+          10,
+          10,
+          10
         ],
         [
-          1376,
+          1371,
+          9,
+          9,
+          9
+        ],
+        [
+          1372,
+          8,
+          8,
+          8
+        ],
+        [
+          1373,
+          7,
+          7,
+          7
+        ],
+        [
+          1374,
+          6,
+          6,
+          6
+        ],
+        [
+          1375,
           5,
           5,
           5
+        ],
+        [
+          1376,
+          4,
+          4,
+          4
+        ],
+        [
+          1377,
+          3,
+          3,
+          3
         ],
         [
           1378,
@@ -454,7 +520,7 @@
   },
   "integrity": {
     "algorithm": "fnv1a32",
-    "checksum": "293f05de"
+    "checksum": "38d595bb"
   },
-  "note": "Perfil propuesto el 27/10/2026 para importar en CIELO 3.11. Pez Verde: picos 40% amanecer y 60% atardecer, final 6-5-4-3-2-1-0%. Chihiros: inicio 1/1/1, 2/2/2, 4/4/4, 7/7/7, 10/10/10; pico 70/65/60; ambos inician dorado a las 21:10. Luna 1/1/2 desde 23:00 y apagado de ambas a las 24:00. Sin prueba fisica de este perfil. Importar solo carga el editor; Guardar aplica las dos curvas."
+  "note": "Revisión del 27/10/2026 para CIELO 3.11. Pez Verde conserva amanecer azul/rosa y atardecer dorado/coral, picos 40%/60% y final 1% antes de apagarse. Chihiros: puntos editables 1/1/1 a 10/10/10 cada minuto de 14:30 a 14:39; bajada neutra 10/10/10 a 1/1/1 cada minuto de 22:50 a 22:59. Luna 1/1/2 desde 23:00 a 23:59 y apagado de ambas a 24:00. Sin prueba física de este perfil. Importar solo carga el editor; Guardar aplica las dos curvas."
 }
