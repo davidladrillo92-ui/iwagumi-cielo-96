@@ -37,6 +37,7 @@ const char CIELO_UI[] PROGMEM = R"CIELOUI_96(<!DOCTYPE html>
 .hero-tint{position:absolute;inset:0;z-index:1;background:var(--ambient,#445a69);opacity:.18;mix-blend-mode:screen;pointer-events:none;transition:background 1.5s ease,opacity 1.5s ease}
 .conn-tick{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;font-size:12px;color:#aeb5ad;background:#ffffff17;margin-left:5px;vertical-align:middle}
 .conn-tick.ok{color:#112719;background:#8ddeaa;box-shadow:0 0 9px #56bd7775}
+.conn-tick.rest{color:#173a30;background:#a5d5c3;box-shadow:none;font-size:15px}
 .conn-tick.wait{color:#eacda2;background:#94714350}
 .lamp.information .lamp-copy strong{display:inline-flex;align-items:center}
 #momentSub:empty{display:none}
@@ -301,11 +302,13 @@ function render(){
   !fresh?'Sin comunicación':linked===false&&active?'Sin enlace BLE':reconnecting||errors>0?'Reconectando…':
   recent?'Conectado':active?'Sin verificar':v4.always_on?'Preparando…':'En pausa';
  $('chiSub').textContent=lampState(v4.chihiros_active,chiRecent,v4.ch_consecutive_errors||0,v4.ch_reconnect_pending,v4.ch_link_idle_released?undefined:v4.ch_link_connected);
- $('pezSub').textContent=pvRest?'En reposo':lampState(v4.pez_verde_active,pvRecent,Math.max(v4.pv_consecutive_errors||0,v4.pv_off_failures||0),false,v4.pv_link_idle_released?undefined:v4.pv_link_connected);
+ $('pezSub').textContent=pvRest?'Conectado · en reposo':lampState(v4.pez_verde_active,pvRecent,Math.max(v4.pv_consecutive_errors||0,v4.pv_off_failures||0),false,v4.pv_link_idle_released?undefined:v4.pv_link_connected);
  for(const [id,up] of [['chiLed',chiRecent&&!v4.ch_reconnect_pending&&!(v4.ch_consecutive_errors>0)],['pezLed',pvRecent&&!(v4.pv_consecutive_errors>0)&&!(v4.pv_off_failures>0)]]){
-  const el=$(id);el.className='conn-tick'+(state.connected&&up&&!preview?' ok':' wait');
-  el.textContent=state.connected&&up&&!preview?'✓':'·';
-  el.title=id==='pezLed'&&pvRest?'Último apagado aceptado; próxima comprobación programada.':up?'Comunicación GATT reciente. Luz real no verificada.':'Esperando comunicación Bluetooth';
+  const rest=id==='pezLed'&&pvRest,el=$(id);
+  el.className='conn-tick'+(rest?' rest':state.connected&&up&&!preview?' ok':' wait');
+  el.textContent=rest?'☾':state.connected&&up&&!preview?'✓':'·';
+  el.title=rest?'Enlace BLE conectado. Último apagado aceptado; comprobación cada 5 min. Luz real no verificada.':up?'Comunicación GATT reciente. Luz real no verificada.':'Esperando comunicación Bluetooth';
+  el.setAttribute('aria-label',rest?'Enlace Bluetooth conectado, luz en reposo':up?'Comunicación Bluetooth reciente':'Esperando comunicación Bluetooth');
  }
  $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+' · no cambia las luces.':'Vista del momento actual.';
  const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
@@ -865,10 +868,12 @@ function diagRender(d){
    const released=key==='pez_verde'?v.pv_link_idle_released===true:v.ch_link_idle_released===true;
    const linked=key==='pez_verde'?v.pv_link_connected===true:v.ch_link_connected===true;
    $(id).textContent=paused?'En pausa':retrying?'Reconectando…':
-    key==='pez_verde'&&linked&&v.pv_waiting_off_check===true&&v.pv_off_obligation===true&&v.pv_safety_state==='APAGADO_GATT_OK'?'En reposo':
+    key==='pez_verde'&&linked&&v.pv_waiting_off_check===true&&v.pv_off_obligation===true&&v.pv_safety_state==='APAGADO_GATT_OK'?'Conectado · en reposo':
     level==='CORRECTO'&&recent&&(linked||released)?'Conectado':
     level==='FALLO'?'Sin respuesta':level==='CORRECTO'?'Sin comunicación reciente':'Sin verificar';
-   $(id).title='Conectado significa comunicación BLE/GATT reciente, no enlace permanente ni confirmación óptica.';
+   $(id).title=key==='pez_verde'&&linked&&v.pv_waiting_off_check===true?
+    'Enlace BLE conectado; último apagado aceptado, pendiente de la comprobación programada. Luz real no verificada.':
+    'Conectado significa comunicación BLE/GATT reciente, no enlace permanente ni confirmación óptica.';
  }
 }
 async function diagLoad(){

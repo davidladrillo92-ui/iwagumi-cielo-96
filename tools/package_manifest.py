@@ -21,7 +21,7 @@ m={'schema':'cielo-build-v1','commit':subprocess.check_output(['git','rev-parse'
    'application_bytes':len(raw),'application_sha256':hashlib.sha256(raw).hexdigest(),
    'littlefs_probe_policy':{'read_only':True,'format_if_mount_failed':False,'grow_on_mount':False,'curve_writes_enabled':False},
    'littlefs_write_policy':{'enabled_after_ro_probe':True,'format_if_mount_failed':False,'grow_on_mount':False,'preserve_nvs_slots':True,'max_preserved_stages':64,'reserve_bytes':32768,'unknown_files_never_removed':True},
-   'ota_signature':'NOT_REQUIRED_LAN_OWNER_REQUEST','hardware_validation':'PENDING','installed_confirmed':'11.1.0-RC5-RECOVERY3.7-LITTLEFS-AB-CANDIDATE (informes84-89; FS gen10; 38PV/32CH; migracion, guardado, recarga, no-op y mantenimiento comprobados)',
+   'ota_signature':'NOT_REQUIRED_LAN_OWNER_REQUEST','hardware_validation':'PENDING','installed_confirmed':'11.1.0-RC5-RECOVERY3.8-MAINTENANCE-CANDIDATE (informe90; boot139 saludable; FS gen10/38PV/32CH; reposo y admision disponibles; nueva sesion pendiente)',
    'v5_reference':{'pv':34,'ch':31,'fnv1a32':'5814359c'},
    'stack_report':json.loads(Path('dist/STACK_REPORT.json').read_text()),
    'evidence_issue':'https://github.com/davidladrillo92-ui/iwagumi-cielo-96/issues/35',
