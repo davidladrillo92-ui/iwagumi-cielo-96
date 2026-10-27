@@ -305,7 +305,7 @@ function render(){
  for(const [id,up] of [['chiLed',chiRecent&&!v4.ch_reconnect_pending&&!(v4.ch_consecutive_errors>0)],['pezLed',pvRecent&&!(v4.pv_consecutive_errors>0)&&!(v4.pv_off_failures>0)]]){
   const el=$(id);el.className='conn-tick'+(state.connected&&up&&!preview?' ok':' wait');
   el.textContent=state.connected&&up&&!preview?'✓':'·';
-  el.title=id==='pezLed'&&pvRest?'Último apagado aceptado; próxima comprobación programada.':up?'Comunicación GATT reciente. Luz física sin medir.':'Esperando comunicación Bluetooth';
+  el.title=id==='pezLed'&&pvRest?'Último apagado aceptado; próxima comprobación programada.':up?'Comunicación GATT reciente. Luz real no verificada.':'Esperando comunicación Bluetooth';
  }
  $('scrubHint').textContent=preview?'Simulación '+hourLabel(when)+' · no cambia las luces.':'Vista del momento actual.';
  const vv=vAt(state.chi,state.scrub),pp=vAt(state.pez,state.scrub);
