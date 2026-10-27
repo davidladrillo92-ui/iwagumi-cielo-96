@@ -139,11 +139,11 @@ for identifier in ('heroTint','chiLed','pezLed','scrubHint','otaProgress','diagD
 for removed in ('labStart','labScan','labBrowser','labArm','labProbePv','labProbeCh','labCh10','labCh20','labCh35','labReport','labMetrics'):
  assert ('id="'+removed+'"') not in actual,removed
 # Causa R4 GET/POST: metodo POST se envia con {}.
-assert "await api('/api/lab/start',{});" in actual
-assert "await api('/api/lab/scan',{});" in actual
-assert "await api('/api/lab/stop',{});" in actual
+assert "await api('/api/lab/start',{});" not in actual
+assert "await api('/api/lab/scan',{});" not in actual
+assert "await api('/api/lab/stop',{});" not in actual
 assert "$('labState')" not in actual
-assert "function labPretty(d)" in actual and "$('cieloLinks')" not in actual
+assert "function labPretty(d)" not in actual and "$('cieloLinks')" not in actual
 assert "id=\"cielo95Diagnostics\"" in actual
 assert actual.count('id="cielo95Diagnostics"')==1
 assert actual.count('id="diagDownload"')==1
@@ -154,8 +154,8 @@ assert 'id="viewService"' not in actual and 'data-view="service"' not in actual
 assert 'id="cieloLinks"' not in actual and 'id="labGuided"' not in actual
 assert 'id="releaseCh"' not in actual and 'id="releasePv"' not in actual
 assert 'id="curveChEvening"' not in actual
-assert 'function labGuided()' in actual and 'function previewNatural' not in actual
-assert 'function releaseLight' in actual
+assert 'function labGuided()' not in actual and 'function previewNatural' not in actual
+assert 'function releaseLight' not in actual
 assert "fetch('/api/diagnostico/maestro?download=1'" in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
 import tempfile
@@ -200,17 +200,17 @@ assert 'otaBleHealthy()' in code
 assert "await api('/api/cielo/v4/start',{confirm:'ACTIVAR_NATURAL_V4'})" in actual
 assert "await api('/api/cielo/v4/return',{confirm:'VOLVER_MY_CHIHIROS'})" in actual
 assert "await api('/api/cielo/v4/pause',{confirm:'PAUSAR_TODO'})" in actual
-assert "await api('/api/chihiros/contrast/start',{confirm:'ENSAYO_30_30_30'})" in actual
-assert "await api('/api/chihiros/my-curve-test',{confirm:'PROBAR_CURVA_MY_CHIHIROS'})" in actual
+assert "/api/chihiros/contrast/start" not in actual and "/api/chihiros/contrast/start" in code
+assert "/api/chihiros/my-curve-test" not in actual and "/api/chihiros/my-curve-test" in code
 assert 'id="restoreCustomTest"' not in actual
 assert 'id="contrast30"' not in actual
 assert 'id="releaseCh"' not in actual
-assert 'function testMyChihirosCurve()' in actual
-assert 'async function contrast30()' in actual
+assert 'function testMyChihirosCurve()' not in actual
+assert 'async function contrast30()' not in actual
 
-assert 'function testMyChihirosCurve()' in actual
-assert '/api/chihiros/my-curve-test' in actual and '/api/chihiros/my-curve-test' in code
-assert 'PROBAR_CURVA_MY_CHIHIROS' in actual and 'PROBAR_CURVA_MY_CHIHIROS' in code
+assert 'function testMyChihirosCurve()' not in actual
+assert '/api/chihiros/my-curve-test' not in actual and '/api/chihiros/my-curve-test' in code
+assert 'PROBAR_CURVA_MY_CHIHIROS' not in actual and 'PROBAR_CURVA_MY_CHIHIROS' in code
 assert 'ble_custom_resume_result' in code and 'ch_custom_curve_resume' in bleworker
 assert 'customResumeLast' in code and 'chihiros_my_curve' in code
 assert 'ota_enabled\\":false' not in code
@@ -235,10 +235,11 @@ console.log('SHA256 UI verificado con Node');
 """
 subprocess.run(['node','-e',sha_code+'\n'+vectors],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 
-for route in ('/api/status','/api/curves/commit','/api/cielo/cadence','/api/manual',
-              '/api/chihiros/manual','/api/ble/release','/api/chihiros/my-curve-test','/api/ota/upload',
-              '/api/diagnostico/maestro','/api/service/status'):
- assert route in actual and route in (r/'src/main.cpp').read_text(),route
+for route in ('/api/status','/api/curves/commit','/api/work-light/start','/api/work-light/stop',
+              '/api/ota/upload','/api/diagnostico/maestro','/api/service/status'):
+ assert route in actual and route in code,route
+for route in ('/api/cielo/cadence','/api/manual','/api/chihiros/manual','/api/ble/release','/api/chihiros/my-curve-test'):
+ assert route not in actual and route in code,route
 flash=Path('/mnt/data/FLASH_ATOM_8MB_COMPLETA_PRIVADA.bin')
 if flash.exists():
  d=flash.read_bytes();assert len(d)==8388608
@@ -279,6 +280,6 @@ assert 'canReportP95' in code and 'fragmentationPct' in code
 assert 'diagnostic_v3' not in code  # name actually uses hyphens
 assert 'id="serviceRefresh"' not in actual
 assert 'id="diagShare"' not in actual and 'id="diagDownload"' in actual
-assert 'diagReportFetchedAt' not in actual and 'if(state.view===\'lab\')diagLoad()' in actual
+assert 'diagLoad()' not in actual and 'function refreshLiveDisplay()' in actual
 assert 'ble_request_queue_depth()' in (r/'src/cielo_ble_worker.cpp').read_text()
 assert 'metricTime(metrics.write_last' in (r/'src/cielo_ble_worker.cpp').read_text()
