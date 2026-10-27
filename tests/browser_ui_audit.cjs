@@ -10,14 +10,14 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
  const points=structuredClone(fixture.lights);
  const v={always_on:true,chihiros_active:true,pez_verde_active:true,ch_link_connected:true,pv_link_connected:true,ch_online_recent:true,pv_online_recent:false,pv_waiting_off_check:true,pv_off_obligation:true,pv_safety_state:'APAGADO_GATT_OK',ch_last_requested:[0,0,0],pv_last_requested:[7,11,16,1]};
  const work=()=>({active:!['idle','checking'].includes(phase),preparing:phase==='checking',phase,can_start:phase==='idle',remaining_sec:phase==='rising'?600:phase==='returning'?120:0});
- const status=()=>({rgb:[0,0,0],ble:true,clockValid:true,clock:'27/10/2026 12:19:00',firmware:'MOCK3.9',boot_id:boot,health:{boot_ready:true,current_critical:false},cieloV4:v,work_light:work(),profileGeneration:generation,points:points.pezverde.points.map(p=>p.join(',')).join(';'),chiPoints:points.chihiros.points.map(p=>p.join(',')).join(';')});
+ const status=()=>({rgb:[0,0,0],ble:true,clockValid:true,clock:'27/10/2026 12:19:00',firmware:'MOCK3.11',boot_id:boot,health:{boot_ready:true,current_critical:false},cieloV4:v,work_light:work(),profileGeneration:generation,points:points.pezverde.points.map(p=>p.join(',')).join(';'),chiPoints:points.chihiros.points.map(p=>p.join(',')).join(';')});
  page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  await page.route('http://cielo.test/**',async route=>{
   const req=route.request(),u=new URL(req.url()),path=u.pathname;requests.push({path,method:req.method()});
   if(path==='/')return route.fulfill({contentType:'text/html',body:html});
   let data={ok:true};let code=200;
   if(path==='/api/status')data=status();
-  else if(path==='/api/service/status')data={otaEnabled:true,version:'MOCK3.9'};
+  else if(path==='/api/service/status')data={otaEnabled:true,version:'MOCK3.11'};
   else if(path==='/api/diagnostico/maestro')return route.fulfill({contentType:'application/json',body:JSON.stringify({schema:'mock-report'})});
   else if(path==='/api/work-light/start'){phase='checking';data=work();}
   else if(path==='/api/work-light/stop'){phase=phase==='checking'?'idle':'returning';data=work();}
@@ -35,7 +35,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
   return route.fulfill({status:code,contentType:'application/json',body:JSON.stringify(data)});
  });
  async function auditButtons(){
-  const snapshot=await page.evaluate(()=>Array.from(document.querySelectorAll('button')).filter(e=>e.getClientRects().length).map(e=>({id:e.id,label:e.textContent.trim(),bound:typeof e.onclick==='function'})));
+  const snapshot=await page.evaluate(()=>Array.from(document.querySelectorAll('button')).filter(e=>e.getClientRects().length).map(e=>{const key=['view','curve','lamp','zoom'].find(k=>e.dataset[k]!==undefined);return {id:e.id||(key?key+':'+e.dataset[key]:''),label:e.textContent.trim(),bound:typeof e.onclick==='function'}}));
   for(const info of snapshot){assert(info.bound,JSON.stringify(info));buttons.add(info.id||info.label);}
  }
  async function sync(){await page.evaluate(()=>sync());}
@@ -60,6 +60,40 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
  await page.locator('#workLightStart').click();phase='rising';await sync();assert(await page.locator('#workLightProgress').isVisible());
  phase='holding';await sync();assert(!await page.locator('#workLightProgress').isVisible());await page.locator('#workLightStop').click();assert.equal(phase,'returning');phase='idle';await sync();
  await page.locator('[data-view="curves"]').click();await auditButtons();
+ await page.waitForFunction(()=>getComputedStyle(document.getElementById('toast')).opacity==='0');
+ const previewPosts=requests.filter(r=>r.method==='POST').length;
+ for(const width of [320,390,768]){
+  await page.setViewportSize({width,height:844});await page.locator('#scrub').fill('901');
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  assert.equal(await page.locator('#scrubTime').textContent(),'15:01');
+  assert.equal(await page.locator('#scrub').getAttribute('aria-valuetext'),'15:01');
+  assert.equal(await page.locator('.curve-preview [data-lamp]').count(),2);
+  assert.equal(await page.locator('#chartInspector').count(),0);
+  assert.equal(await page.locator('#viewCurves').getByText('HORA SIMULADA',{exact:false}).count(),0);
+  assert(await page.evaluate(()=>{
+   const ch=vAt(state.chi,901),pv=vAt(state.pez,901);
+   return $('curveChiPct').textContent===Math.max(...ch)+'%'&&$('curvePezPct').textContent===pv[3]+'%'&&
+    $('curveChiRgb').textContent==='R '+ch[0]+' · G '+ch[1]+' · B '+ch[2]&&
+    $('curvePezRgb').textContent==='R '+pv[0]+' · G '+pv[1]+' · B '+pv[2];
+  }));
+  const chart=await page.locator('#chart').boundingBox(),axis=await page.locator('#chartAxisTimes').boundingBox(),preview=await page.locator('.curve-preview').boundingBox();
+  assert(axis.y>=chart.y+chart.height-1&&preview.y>axis.y);
+  if(process.env.CIELO_SHOTS){
+   await page.screenshot({path:process.env.CIELO_SHOTS+'/curvas-'+width+'.png',fullPage:true});
+   if(width===390){await page.locator('.curve-workspace').evaluate(e=>e.scrollIntoView({block:'start'}));await page.locator('.curve-workspace').screenshot({path:process.env.CIELO_SHOTS+'/detalle-curvas-390.png'});}
+  }
+ }
+ await page.setViewportSize({width:390,height:844});
+ for(const t of [0,1380,1440]){
+  await page.locator('#scrub').fill(String(t));
+  assert(await page.evaluate(t=>$('scrubTime').textContent===hourLabel(t)&&$('curvePezPct').textContent===vAt(state.pez,t)[3]+'%',t));
+ }
+ await page.locator('[data-curve="chi"]').click();await page.locator('[data-curve="pez"]').click();await page.locator('[data-curve="both"]').click();
+ await page.locator('#chart circle[data-which="chi"][data-index="10"]').click();await auditButtons();
+ assert(await page.locator('#editSelectedPoint').isVisible());await page.locator('#editSelectedPoint').click();await page.locator('#pointR').waitFor();await page.locator('#sheetClose').click();
+ await page.locator('.curve-preview [data-lamp="pez"]').click();await page.locator('#pointR').waitFor();await page.locator('#sheetClose').click();
+ assert.equal(requests.filter(r=>r.method==='POST').length,previewPosts); // Time, graph, rows and editor opening never transmit.
+ await page.locator('[data-curve="both"]').click();
  await page.locator('[data-zoom="1"]').click();await page.locator('[data-zoom="3"]').click();await page.locator('[data-zoom="6"]').click();await page.locator('[data-zoom="24"]').click();await page.locator('#compareCurves').click();
  await page.locator('#scrub').fill('1100');await page.locator('#resetTime').click();
  await page.locator('#editCurve').click();await auditButtons();await page.locator('#pointBack').click();await page.locator('#pointForward').click();await page.locator('#pointR').fill('2');await page.locator('#pointApply').click();await page.locator('#pointAdd').click();await auditButtons();await page.locator('#confirmNewPoint').click();await page.locator('#pointRemove').click();await page.locator('#sheetClose').click();

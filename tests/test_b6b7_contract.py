@@ -16,7 +16,8 @@ assert 'function chartWindow(' in ui and 'function chartPointSelect(' in ui
 assert 'function nudgePoint(' in ui and 'function updateEditorStatus(' in ui
 assert 'function dialogKeydown(' in ui and 'aria-label="Cerrar panel"' in ui
 assert 'id="authBadge"' not in ui and 'function settings(' in ui
-assert 'HORA SIMULADA' in ui and 'no medido' in ui
+assert 'HORA SIMULADA' not in ui and 'no medido' in ui
+assert 'class="lamps curve-lamps"' in ui and 'aria-describedby="scrubHint"' in ui
 assert 'dimmedPv[k]*pezWeight' in ui
 assert 'role="img"' in ui and 'prefers-reduced-motion' in ui
 assert 'function wireChecksum(' in ui and '/api/curves/commit' in ui

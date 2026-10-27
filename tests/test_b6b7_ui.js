@@ -18,16 +18,20 @@ assert.equal(evalj('state.dirty.chi'),false);
 evalj('state.curve="pez";state.scrub=1380;state.zoomHours=1;state.baseline={pez:state.pez.map(p=>p.slice()),chi:state.chi.map(p=>p.slice())};state.compare=true;drawChart()');
 assert.match(element('chart').innerHTML,/chart-point/);
 assert.match(element('chart').innerHTML,/stroke-dasharray="5 5"/);
-assert.match(element('chartInspector').textContent,/HORA SIMULADA/);
+assert.equal(element('scrubTime').textContent,'23:00');
+assert.ok(!html.includes('chartInspector')&&!html.includes('HORA SIMULADA'));
 assert.equal(element('chartAxisTimes').innerHTML.match(/<span>/g).length,5);
 assert.ok(element('colorPreviewPv').style.background.startsWith('#'));
 assert.match(element('colorPreviewPv')['aria-label'],/no medido/);
 assert.match(element('colorPreviewChi')['aria-label'],/no medido/);
 // Las ediciones permanecen en RAM del navegador y se marcan como pendientes.
 evalj('state.dirty.pez=true;state.undoStack.push(snapshotCurves());updateEditorStatus()');
-assert.match(element('curvePending').textContent,/SIN GUARDAR/);
+assert.match(element('curvePending').textContent,/sin guardar/i);
 assert.equal(element('saveCurve').disabled,true); // desconectado del ATOM
 assert.equal(element('undoCurve').disabled,false);
+evalj('state.selectedPoint={which:"chi",index:99999};updateEditorStatus()');
+assert.equal(element('chartPointActions').hidden,true);
+assert.equal(element('editSelectedPoint').disabled,true);
 // Invitado y admin informan del rol; guardar exige sesión API externa.
 assert.ok(!html.includes('id="authBadge"'));
 assert.ok(!html.includes('id="accessAction"'));
