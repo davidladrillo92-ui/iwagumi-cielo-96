@@ -9,12 +9,14 @@ Esta revisión cierra comprobaciones automáticas que faltaban en0.2. No cambia 
 - La demostración estática se actualiza al abrir, guardar o usar sus controles, sin reconstrucciones periódicas. Las consultas periódicas y su límite de frescura se mantienen para el ATOM real.
 - Accesos directos de vista previa a00:00 y24:00 para elegir los extremos con precisión. El arrastre del deslizador se prueba como desplazamiento, sin asumir que la automatización nativa llega exactamente al minuto extremo en todos los dispositivos.
 - Edición de horas limitada al intervalo entre vecinos. El punto final permanece a24:00; la Chihiros conserva sus canales finales a cero y Pez Verde conserva el brillo inicial/final a cero. Sigue existiendo la validación completa antes de guardar.
-- Títulos de sección con tipografía semántica y contenedores adaptativos que conservan sus vistas al cambiar el tamaño de texto. La configuración de conexión se inicializa una vez al abrirla para mantener la edición durante las consultas de estado.
+- Títulos dentro del contenido de cada sección, con tipografía semántica y rasgo de encabezado para VoiceOver, y contenedores adaptativos que conservan sus vistas al cambiar el tamaño de texto. La configuración de conexión se inicializa una vez al abrirla para mantener la edición durante las consultas de estado.
 - Confirmaciones con identificadores independientes para probar diálogos y ventanas emergentes en iPhone/iPad.
 
 ## Comprobaciones incluidas
 
 La CI ejecuta seis recorridos por familia en dos Mac independientes: navegación/vista previa/informe; edición y guardado en demo; IP pública rechazada; inicio/parada de mantenimiento en demo; auditoría de accesibilidad seleccionada; orientación horizontal y retorno del segundo plano.
+
+Cada incidencia conserva pantalla, descripción y referencia al elemento; el recorrido continúa por las tres pestañas y todas las incidencias siguen contando como fallos.
 
 La auditoría automática usa los tipos Dynamic Type, texto recortado y descripción suficiente de elementos de Apple sobre las vistas principales visibles. No sustituye una revisión manual con VoiceOver, no cubre todos los elementos fuera de pantalla ni certifica accesibilidad completa. Contraste, interacción manual y uso físico siguen pendientes.
 

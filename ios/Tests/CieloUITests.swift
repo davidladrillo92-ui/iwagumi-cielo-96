@@ -123,13 +123,24 @@ final class CieloUITests: XCTestCase {
         XCTAssertTrue(address.exists)
         capture("05_Conexion_direccion_rechazada")
     }
+    @MainActor private func audit(_ screen:String) throws {
+        try app.performAccessibilityAudit(for:[.dynamicType,.textClipped,.sufficientElementDescription]) { issue in
+            let detail="\(screen): \(issue.compactDescription)\n\(issue.detailedDescription)\nElement: \(String(describing:issue.element))"
+            print("CIELO_ACCESSIBILITY: \(detail)")
+            let attachment=XCTAttachment(string:detail)
+            attachment.name="Auditoria_\(screen)";attachment.lifetime = .keepAlways;self.add(attachment)
+            return false // Retain every issue as a test failure; never filter it out.
+        }
+    }
     @MainActor func testAccessibilityTextAndDescriptions() throws {
-        try app.performAccessibilityAudit(for:[.dynamicType,.textClipped,.sufficientElementDescription])
+        continueAfterFailure = true
+        defer { continueAfterFailure = false }
+        try audit("Luz")
         selectTab("Curvas")
         XCTAssertTrue(app.sliders["preview.slider"].waitForExistence(timeout:5))
-        try app.performAccessibilityAudit(for:[.dynamicType,.textClipped,.sufficientElementDescription])
+        try audit("Curvas")
         selectTab("Centro")
-        try app.performAccessibilityAudit(for:[.dynamicType,.textClipped,.sufficientElementDescription])
+        try audit("Centro")
         capture("06_Accesibilidad_Centro")
     }
     func testLandscapeAndForegroundReturn() {
