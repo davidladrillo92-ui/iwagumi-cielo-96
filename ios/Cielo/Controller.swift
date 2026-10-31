@@ -36,7 +36,10 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }()
 
-    var fresh: Bool { foreground && (updated.map { Date().timeIntervalSince($0) < 20 } ?? false) }
+    var fresh: Bool {
+        guard foreground, let updated else { return false }
+        return demo || Date().timeIntervalSince(updated) < 20
+    }
     var canSave: Bool { fresh && dirty && !busy && status?.work_light?.active != true && status?.work_light?.preparing != true && generation != nil && draftBoot != nil && status?.boot_id == draftBoot && status?.profileGeneration == generation }
     var draftConflict: Bool { fresh && dirty && (status?.boot_id != draftBoot || status?.profileGeneration != generation) }
     func setForeground(_ value: Bool) { foreground = value; invalidate() }

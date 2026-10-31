@@ -30,7 +30,7 @@ struct RootView: View {
             await model.refresh()
             while !Task.isCancelled {
                 do { try await Task.sleep(for:.seconds(6)) } catch { break }
-                guard !Task.isCancelled else { break }; await model.refresh()
+                guard !Task.isCancelled else { break }; if !model.demo { await model.refresh() }
             }
         }
     }
@@ -44,8 +44,8 @@ struct DemoBanner: View {
 }
 
 struct CieloSectionTitle:View {
-    let title:String; let size:DynamicTypeSize
-    var body:some View { Text(title).font(.headline).foregroundStyle(.secondary).textCase(nil).dynamicTypeSize(size) }
+    let title:String
+    var body:some View { Text(title).font(.headline).foregroundStyle(.secondary).textCase(nil) }
 }
 
 struct HomeView: View {
@@ -65,7 +65,7 @@ struct HomeView: View {
             Section {
                 LampRow(model:model,name:"Chihiros",pv:false)
                 LampRow(model:model,name:"Pez Verde",pv:true)
-            } header: { CieloSectionTitle(title:"Luces",size:typeSize) }
+            } header: { CieloSectionTitle(title:"Luces") }
             Section {
                 Text(maintenanceLabel).foregroundStyle(.secondary)
                 if let remaining = model.status?.work_light?.remaining_sec, remaining > 0 { Text("Transición: \(remaining / 60) min \(remaining % 60) s").monospacedDigit() }
@@ -73,7 +73,7 @@ struct HomeView: View {
                     startButton.frame(maxWidth:.infinity,alignment:.leading)
                     stopButton.frame(maxWidth:.infinity,alignment:typeSize.isAccessibilitySize ? .leading : .trailing)
                 }
-            } header: { CieloSectionTitle(title:"Mantenimiento",size:typeSize) }
+            } header: { CieloSectionTitle(title:"Mantenimiento") }
             Section { Text("Los valores son consignas. La comunicación BLE no mide la luz física. Las curvas continúan en el ATOM al cerrar la app.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("CIELO").refreshable { await model.refresh() }
         .confirmationDialog("Iniciar luz de mantenimiento",isPresented:$confirmStart,titleVisibility:.visible) {
@@ -283,15 +283,15 @@ struct CentreView:View {
                 LampRow(model:model,name:"Chihiros",pv:false); LampRow(model:model,name:"Pez Verde",pv:true)
                 LabeledContent("Firmware",value:model.status?.firmware ?? "Sin confirmar")
                 LabeledContent("Arranque",value:model.status?.boot_id.map(String.init) ?? "—")
-            } header: { CieloSectionTitle(title:"Estado",size:typeSize) }
+            } header: { CieloSectionTitle(title:"Estado") }
             Section {
                 Button("Preparar informe para compartir") { Task { await model.downloadReport() } }.accessibilityIdentifier("report.prepare").disabled(!model.fresh || model.busy)
                 if let url=model.reportURL { ShareLink("Compartir informe",item:url).accessibilityIdentifier("report.share") }
-            } header: { CieloSectionTitle(title:"Informe",size:typeSize) }
+            } header: { CieloSectionTitle(title:"Informe") }
             Section {
                 Text("CIELO se comunica con tu ATOM por la red local. No crea cuentas ni incorpora publicidad o analítica. Los perfiles e informes solo se comparten cuando tú lo eliges.")
                 Text("Telegram depende del vigilante externo. La app no vigila las luces cuando está cerrada.")
-            } header: { CieloSectionTitle(title:"Privacidad",size:typeSize) }
+            } header: { CieloSectionTitle(title:"Privacidad") }
             .font(.footnote).foregroundStyle(.secondary)
         }.navigationTitle("Centro").refreshable { await model.refresh() }
     }

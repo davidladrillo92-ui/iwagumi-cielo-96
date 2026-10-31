@@ -6,6 +6,7 @@ Esta revisión cierra comprobaciones automáticas que faltaban en0.2. No cambia 
 
 - Botones de mantenimiento con superficie mínima de44puntos y estado deshabilitado visible. Con los tamaños de texto de accesibilidad se colocan en vertical.
 - Filas de luces y vista previa adaptadas a texto grande; gráfico con altura escalable y menos marcas horarias en ese tamaño. Símbolos decorativos excluidos de la lectura accesible.
+- La demostración estática se actualiza al abrir, guardar o usar sus controles, sin reconstrucciones periódicas. Las consultas periódicas y su límite de frescura se mantienen para el ATOM real.
 - Accesos directos de vista previa a00:00 y24:00 para elegir los extremos con precisión. El arrastre del deslizador se prueba como desplazamiento, sin asumir que la automatización nativa llega exactamente al minuto extremo en todos los dispositivos.
 - Edición de horas limitada al intervalo entre vecinos. El punto final permanece a24:00; la Chihiros conserva sus canales finales a cero y Pez Verde conserva el brillo inicial/final a cero. Sigue existiendo la validación completa antes de guardar.
 - Títulos de sección con tipografía semántica y contenedores adaptativos que conservan sus vistas al cambiar el tamaño de texto. La configuración de conexión se inicializa una vez al abrirla para mantener la edición durante las consultas de estado.
