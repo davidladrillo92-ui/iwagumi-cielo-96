@@ -31,7 +31,15 @@ final class CieloUITests: XCTestCase {
     private func tappable(_ element:XCUIElement) -> Bool {
         guard element.exists else { return false }
         let frame=element.frame
-        guard !frame.isEmpty && !frame.isNull && frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite && frame.height.isFinite && app.frame.intersects(frame) else { return false }
+        guard !frame.isEmpty && !frame.isNull && frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite && frame.height.isFinite else { return false }
+        let center=CGPoint(x:frame.midX,y:frame.midY)
+        guard app.frame.contains(center) else { return false }
+        // A partially visible tall row can report isHittable while its centre lies
+        // under the native tab bar. Keep the actual tap point inside content.
+        let bars=app.tabBars.allElementsBoundByIndex+app.navigationBars.allElementsBoundByIndex
+        guard !bars.contains(where:{ $0.exists && $0.isHittable && $0.frame.contains(center) }) else { return false }
+        let demo=app.staticTexts["Modo demostración. No controla las luces."].firstMatch
+        guard !(demo.exists && demo.isHittable && demo.frame.contains(center)) else { return false }
         return element.isHittable
     }
     private func scroll(towardTop:Bool = false) {
@@ -68,7 +76,8 @@ final class CieloUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["preview.time"].label,"24:00")
         selectTab("Centro")
         let report=app.buttons["report.prepare"];reveal(report);report.tap()
-        XCTAssertTrue(app.buttons["report.share"].waitForExistence(timeout:10))
+        let share=app.buttons["report.share"];reveal(share)
+        XCTAssertTrue(share.exists)
         capture("03_Centro_demo")
     }
     func testEditAndSaveDemo() {
@@ -161,7 +170,8 @@ final class CieloUITests: XCTestCase {
         capture("10_Texto_maximo_Curvas")
         selectTab("Centro")
         let report=app.buttons["report.prepare"];reveal(report);report.tap()
-        XCTAssertTrue(app.buttons["report.share"].waitForExistence(timeout:10))
+        let share=app.buttons["report.share"];reveal(share)
+        XCTAssertTrue(share.exists)
         capture("11_Texto_maximo_Centro")
         try app.performAccessibilityAudit(for:[.textClipped,.sufficientElementDescription])
     }
