@@ -1,0 +1,194 @@
+{
+  "scope": "SANITIZED_SELECTED_TECHNICAL_FIELDS_ONLY",
+  "raw_reports_not_published": true,
+  "reports": [
+    {
+      "report": 92,
+      "generated_at": "27/10/2026 16:29:58",
+      "boot_id": 142,
+      "uptime_sec": 5064,
+      "current_critical": false,
+      "historical_soft_timeouts": 2,
+      "historical_persistent_faults": 184,
+      "ble": {
+        "pez_verde": {
+          "operations": 83,
+          "gatt_ok": 83,
+          "errors": 0
+        },
+        "chihiros": {
+          "operations": 82,
+          "gatt_ok": 82,
+          "errors": 0
+        }
+      },
+      "curves": {
+        "generation": 10,
+        "points_pv": 38,
+        "points_ch": 32,
+        "recovery_defaults": false,
+        "last_error": "ninguno"
+      },
+      "curve_save": {
+        "save_attempts": 0,
+        "verified_saves": 0,
+        "publication_uncertain": false
+      },
+      "nvs_legacy_save_verified": false,
+      "nvs_free_entries": 156,
+      "cadence": {
+        "due_ticks": 169,
+        "evaluated_ticks": 168,
+        "skipped_busy": 0,
+        "long_phase_ticks": 0,
+        "inhibited_ticks": 1
+      },
+      "work_light": {
+        "ticks": 0,
+        "last_end_reason": "Sin sesion previa",
+        "saved_profile_unchanged": true
+      }
+    },
+    {
+      "report": 93,
+      "generated_at": "28/10/2026 08:32:52",
+      "boot_id": 142,
+      "uptime_sec": 62838,
+      "current_critical": false,
+      "historical_soft_timeouts": 2,
+      "historical_persistent_faults": 184,
+      "ble": {
+        "pez_verde": {
+          "operations": 637,
+          "gatt_ok": 637,
+          "errors": 0
+        },
+        "chihiros": {
+          "operations": 1046,
+          "gatt_ok": 1046,
+          "errors": 0
+        }
+      },
+      "curves": {
+        "generation": 12,
+        "points_pv": 35,
+        "points_ch": 43,
+        "recovery_defaults": false,
+        "last_error": "ninguno"
+      },
+      "curve_save": {
+        "save_attempts": 2,
+        "verified_saves": 2,
+        "publication_uncertain": false
+      },
+      "nvs_legacy_save_verified": false,
+      "nvs_free_entries": 156,
+      "cadence": {
+        "due_ticks": 2095,
+        "evaluated_ticks": 2094,
+        "skipped_busy": 0,
+        "long_phase_ticks": 0,
+        "inhibited_ticks": 1
+      },
+      "work_light": {
+        "ticks": 0,
+        "last_end_reason": "Sin sesion previa",
+        "saved_profile_unchanged": true
+      }
+    },
+    {
+      "report": 94,
+      "generated_at": "29/10/2026 16:07:14",
+      "boot_id": 142,
+      "uptime_sec": 176499,
+      "current_critical": false,
+      "historical_soft_timeouts": 2,
+      "historical_persistent_faults": 184,
+      "ble": {
+        "pez_verde": {
+          "operations": 1597,
+          "gatt_ok": 1597,
+          "errors": 0
+        },
+        "chihiros": {
+          "operations": 2940,
+          "gatt_ok": 2940,
+          "errors": 0
+        }
+      },
+      "curves": {
+        "generation": 13,
+        "points_pv": 35,
+        "points_ch": 44,
+        "recovery_defaults": false,
+        "last_error": "ninguno"
+      },
+      "curve_save": {
+        "save_attempts": 3,
+        "verified_saves": 3,
+        "publication_uncertain": false
+      },
+      "nvs_legacy_save_verified": false,
+      "nvs_free_entries": 156,
+      "cadence": {
+        "due_ticks": 5883,
+        "evaluated_ticks": 5882,
+        "skipped_busy": 110,
+        "long_phase_ticks": 0,
+        "inhibited_ticks": 1
+      },
+      "work_light": {
+        "ticks": 0,
+        "last_end_reason": "Sin sesion previa",
+        "saved_profile_unchanged": true
+      }
+    },
+    {
+      "report": 95,
+      "generated_at": "31/10/2026 14:08:12",
+      "boot_id": 142,
+      "uptime_sec": 342157,
+      "current_critical": false,
+      "historical_soft_timeouts": 2,
+      "historical_persistent_faults": 184,
+      "ble": {
+        "pez_verde": {
+          "operations": 3127,
+          "gatt_ok": 3127,
+          "errors": 0
+        },
+        "chihiros": {
+          "operations": 5753,
+          "gatt_ok": 5753,
+          "errors": 0
+        }
+      },
+      "curves": {
+        "generation": 14,
+        "points_pv": 37,
+        "points_ch": 44,
+        "recovery_defaults": false,
+        "last_error": "ninguno"
+      },
+      "curve_save": {
+        "save_attempts": 4,
+        "verified_saves": 4,
+        "publication_uncertain": false
+      },
+      "nvs_legacy_save_verified": false,
+      "nvs_free_entries": 156,
+      "cadence": {
+        "due_ticks": 11694,
+        "evaluated_ticks": 11693,
+        "skipped_busy": 355,
+        "long_phase_ticks": 0,
+        "inhibited_ticks": 1
+      },
+      "work_light": {
+        "ticks": 431,
+        "last_end_reason": "Retorno a la programacion completado",
+        "saved_profile_unchanged": true
+      }
+    }
+  ]
+}
