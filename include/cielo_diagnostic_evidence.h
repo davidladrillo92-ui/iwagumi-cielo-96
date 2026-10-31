@@ -58,7 +58,8 @@ struct OperationalHistory {
  Entry entries[Capacity]{};uint8_t head=0,count=0;
  void capture(const char* name,uint32_t uptime,uint32_t trustedEpoch){
   const uint8_t code=eventCode(name);if(!code)return;
-  entries[head]={uptime,trustedEpoch,code};head=(head+1)%Capacity;
+  entries[head].uptime_ms=uptime;entries[head].epoch=trustedEpoch;entries[head].code=code;
+  head=(head+1)%Capacity;
   if(count<Capacity)count++;
  }
  const Entry& at(uint8_t index)const{return entries[(head+Capacity-count+index)%Capacity];}

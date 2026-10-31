@@ -80,6 +80,8 @@ jobs:
           python tools/check_littlefs_migration_lab.py
       - name: Probar clasificador BLE independiente
         run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_diagnostic_evidence.cpp -o /tmp/cielo_diagnostic_evidence_test
+          /tmp/cielo_diagnostic_evidence_test
           g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_ble_blockage.cpp -o /tmp/cielo_ble_blockage_test
           /tmp/cielo_ble_blockage_test
           g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_ble_selective.cpp -o /tmp/cielo_ble_selective_test
