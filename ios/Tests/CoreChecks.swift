@@ -2,6 +2,13 @@ import Foundation
 
 @main struct CoreChecks {
     static func main() throws {
+        struct LampFixture:Decodable { let name:String;let pv:Bool;let fresh:Bool;let state:ModeState;let expected:LampPresentation }
+        let fixturesURL=URL(fileURLWithPath:CommandLine.arguments[1]).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Tests/LampPresentationFixtures.json")
+        let fixtures=try JSONDecoder().decode([LampFixture].self,from:Data(contentsOf:fixturesURL))
+        for fixture in fixtures {
+            precondition(fixture.state.presentation(pv:fixture.pv,fresh:fixture.fresh) == fixture.expected,"Lamp state differs: \(fixture.name)")
+        }
+        print("PASS \(fixtures.count) native lamp-state fixtures shared with the web contract")
         var profile = try JSONDecoder().decode(CieloProfile.self,from:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1])))
         try profile.validate(); precondition(profile.computedChecksum == "dd129bb7")
         let encoded = try JSONEncoder().encode(profile)

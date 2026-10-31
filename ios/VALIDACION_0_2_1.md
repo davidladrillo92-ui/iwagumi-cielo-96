@@ -4,6 +4,8 @@ Esta revisión cierra comprobaciones automáticas que faltaban en0.2. No cambia 
 
 ## Cambios
 
+- Estados de luces con la misma precedencia y evidencia que la web del firmware: control activo, liberación prevista en reposo, reconexión, retorno a su app y apagado GATT confirmado. Las consignas se muestran cuando hay evidencia de comunicación o una comprobación de apagado prevista; se distinguen del objetivo actual y de la luz física. Sin esa evidencia, quedan sin confirmar. Se contrastan 17 escenarios con el formateador web real y con el core Swift.
+
 - Botones de mantenimiento con superficie mínima de44puntos y estado deshabilitado visible. Con los tamaños de texto de accesibilidad se colocan en vertical.
 - Filas de luces y vista previa adaptadas a texto grande; gráfico con altura escalable y menos marcas horarias en ese tamaño. Símbolos decorativos excluidos de la lectura accesible.
 - La demostración estática se actualiza al abrir, guardar o usar sus controles, sin reconstrucciones periódicas. Las consultas periódicas y su límite de frescura se mantienen para el ATOM real.

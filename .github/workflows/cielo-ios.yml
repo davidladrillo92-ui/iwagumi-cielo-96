@@ -23,6 +23,7 @@ jobs:
           bash -n ios/run_ui_tests.sh
       - name: Comprobar contrato nativo sin hardware
         run: |
+          node ios/Tests/LampPresentationParity.cjs
           swiftc ios/Cielo/Core.swift ios/Tests/CoreChecks.swift -o /tmp/cielo-core-check
           /tmp/cielo-core-check ios/Cielo/DemoProfile.json
       - name: Comprobar órdenes y errores con transporte simulado

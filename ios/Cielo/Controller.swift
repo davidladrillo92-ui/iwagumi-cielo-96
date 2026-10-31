@@ -79,7 +79,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         let obj: [String:Any] = ["firmware":"DEMOSTRACIÓN", "boot_id":1,"profileGeneration":1,
             "clockValid":true,"clock":"Demostración", "rgb":[240,238,230],"brightness":20,"chLiveRgb":[65,60,56],
             "points":CieloProfile.wire(p.lights.pezverde.points),"chiPoints":CieloProfile.wire(p.lights.chihiros.points),
-            "cieloV4":["pv_link_connected":true,"ch_link_connected":true,"pv_online_recent":true,"ch_online_recent":true],
+            "cieloV4":["pez_verde_active":true,"chihiros_active":true,"always_on":true,"pv_link_connected":true,"ch_link_connected":true,"pv_online_recent":true,"ch_online_recent":true,"pv_last_requested":[240,238,230,20],"ch_last_requested":[65,60,56]],
             "health":["boot_ready":true,"current_critical":false],
             "work_light":["active":demoPhase != "idle","preparing":false,"can_start":demoPhase == "idle","phase":demoPhase,"remaining_sec":0]]
         return try JSONDecoder().decode(AtomStatus.self,from:JSONSerialization.data(withJSONObject:obj))

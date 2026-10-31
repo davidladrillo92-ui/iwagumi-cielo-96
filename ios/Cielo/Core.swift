@@ -106,12 +106,42 @@ struct WorkLight: Decodable {
     var active: Bool?; var preparing: Bool?; var can_start: Bool?; var phase: String?
     var remaining_sec: Int?; var unavailable_reason: String?
 }
+struct LampPresentation: Decodable, Equatable { let label:String; let values:[Int]? }
+
 struct ModeState: Decodable {
+    var pez_verde_active: Bool?; var chihiros_active: Bool?; var always_on: Bool?
     var pv_link_connected: Bool?; var ch_link_connected: Bool?
+    var pv_link_idle_released: Bool?; var ch_link_idle_released: Bool?
+    var ch_reconnect_pending: Bool?; var return_pending: Bool?
+    var pv_safety_state: String?; var pv_last_requested:[Int]?; var ch_last_requested:[Int]?
     var pv_waiting_off_check: Bool?; var pv_off_obligation: Bool?
     var pv_consecutive_errors: Int?; var ch_consecutive_errors: Int?
     var pv_online_recent: Bool?; var ch_online_recent: Bool?
     var pv_effective_requested: [Int]?; var pv_off_failures: Int?
+    // Same evidence and precedence as lampPresentation in src/cielo_ui.cpp.
+    // Releasing an idle link deliberately is different from losing communication.
+    func presentation(pv:Bool, fresh:Bool) -> LampPresentation {
+        func result(_ label:String,_ values:[Int]? = nil) -> LampPresentation { LampPresentation(label:label,values:values) }
+        guard fresh else { return result("Sin comunicación") }
+        let active=(pv ? pez_verde_active : chihiros_active) == true
+        let errors=pv ? max(pv_consecutive_errors ?? 0,pv_off_failures ?? 0) : ch_consecutive_errors ?? 0
+        let linked=pv ? pv_link_connected : ch_link_connected
+        let released=(pv ? pv_link_idle_released : ch_link_idle_released) == true
+        if errors > 0 || (!pv && ch_reconnect_pending == true) { return result("Reconectando…") }
+        if !pv && return_pending == true { return result("Volviendo a su app") }
+        if linked == false && !released && active { return result("Sin enlace BLE") }
+        let off=pv && pv_off_obligation == true
+        let offOK=off && pv_safety_state == "APAGADO_GATT_OK"
+        if off && !offOK { return result("Comprobando apagado") }
+        let recent=active && (pv ? pv_online_recent : ch_online_recent) == true && (linked != false || released)
+        let planned=pv && active && linked == true && offOK && pv_waiting_off_check == true
+        let values=offOK && (recent || planned) ? [0,0,0,0] : (pv ? pv_last_requested : ch_last_requested)
+        if recent || planned, let values, values.count == (pv ? 4 : 3) {
+            let dark=pv ? values[3] == 0 : values.allSatisfy({ $0 == 0 })
+            return result(dark ? "Conectado · en reposo" : "Conectado",values)
+        }
+        return result(active ? "Comprobando conexión" : always_on == true ? "Preparando…" : "En pausa")
+    }
 }
 struct AtomHealth: Decodable { var boot_ready: Bool?; var current_critical: Bool?; var worker_unresponsive: Bool? }
 struct AtomStatus: Decodable {

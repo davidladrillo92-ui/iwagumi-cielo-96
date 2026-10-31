@@ -119,23 +119,16 @@ struct LampRow: View {
             Text(model.fresh && values.count == 3 ? "R \(values[0]) · G \(values[1]) · B \(values[2])" : "RGB sin confirmar").font(.caption).foregroundStyle(.secondary)
         }
     }
-    private var percentLabel: String {
-        guard model.fresh else { return "—" }
-        if pv { return (model.status?.effectivePv?.last ?? model.status?.brightness).map { "\($0)%" } ?? "—" }
-        return values.count == 3 ? "\(values.max() ?? 0)%" : "—"
+    private var presentation:LampPresentation {
+        model.status?.cieloV4?.presentation(pv:pv,fresh:model.fresh) ?? LampPresentation(label:model.fresh ? "Comprobando conexión" : "Sin comunicación",values:nil)
     }
-    private var values: [Int] { (pv ? (model.status?.effectivePv.map { Array($0.prefix(3)) } ?? model.status?.rgb) : model.status?.chLiveRgb) ?? [] }
-    private var label: String {
-        guard model.fresh else { return "Sin confirmar" }
-        let m = model.status?.cieloV4
-        let errors = pv ? m?.pv_consecutive_errors : m?.ch_consecutive_errors
-        if (errors ?? 0) > 0 || (pv && (m?.pv_off_failures ?? 0) > 0) { return "Revisar comunicación" }
-        let connected = pv ? m?.pv_link_connected : m?.ch_link_connected
-        if connected == false { return "Sin enlace BLE" }
-        if pv && m?.pv_waiting_off_check == true { return "Conectado · en reposo" }
-        if (pv ? m?.pv_online_recent : m?.ch_online_recent) == true { return (values.count == 3 && values.allSatisfy({ $0 == 0 })) || (pv && model.status?.brightness == 0) ? "Conectado · en reposo" : "Conectado" }
-        return "Comprobando comunicación"
+    private var percentLabel:String {
+        guard let values=presentation.values else { return "—" }
+        return "\(pv ? values[3] : values.max() ?? 0)%"
     }
+    private var values:[Int] { Array((presentation.values ?? []).prefix(3)) }
+    private var label:String { presentation.label }
+
 }
 
 struct PlotPoint: Identifiable { var id:String; var minute:Int; var value:Int; var light:String }
