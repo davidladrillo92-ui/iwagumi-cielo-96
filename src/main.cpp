@@ -1518,8 +1518,8 @@ static void diagnosticJson(){
  j+=",\"initial_write_error\":"+String(lastCurveTransaction.initialWriteError);
  j+=",\"write_accepted\":"+String(lastCurveTransaction.writeAccepted?"true":"false");
  j+=",\"write_may_have_persisted\":"+String(lastCurveTransaction.writeMayHavePersisted?"true":"false");
- j+=",\"transaction_backend\":\"NVS_LEGACY\",\"save_verification_applicable\":"+String(curveFs.ready()?"false":"true");
- j+=",\"save_verified\":"+(curveFs.ready()?String("null"):String(lastCurveTransaction.verified?"true":"false"));
+ j+=",\"transaction_backend\":\"NVS_LEGACY\",\"save_verification_applicable\":"+String(!curveFs.ready()&&curveFs.allowNvsWrites()?"true":"false");
+ j+=",\"save_verified\":"+(!curveFs.ready()&&curveFs.allowNvsWrites()?String(lastCurveTransaction.verified?"true":"false"):String("null"));
  j+=",\"curve_slots\":"+curveNvsSlotsJson();
  j+=",\"diag_writes_skipped_low_space\":"+String(diagWritesSkippedForSpace);
  j+=",\"restart_writes_skipped_low_space\":"+String(restartWritesSkippedForSpace)+"}";

@@ -1,6 +1,8 @@
 // Included once, after statusJson; all values are read-only session evidence.
 static String diagnosticEvidenceJson(){
  const bool fs=curveFs.ready();
+ const bool nvsAllowed=curveFs.allowNvsWrites();
+ const char* saveBackend=fs?curveFs.backend():nvsAllowed?"NVS_LEGACY":"NONE_WRITES_BLOCKED";
  const bool failed=lastCurveNvsErr!=ESP_OK;
  const bool verified=fs?strcmp(lastCurveNvsStage,"FS_VERIFICADO")==0:lastCurveTransaction.verified;
  const bool uncertain=fs?(curveFs.uncertain()||(failed&&curveFs.published())):(lastCurveTransaction.writeMayHavePersisted&&!lastCurveTransaction.verified);
@@ -10,7 +12,7 @@ static String diagnosticEvidenceJson(){
  j+=",\"scope\":\"CURRENT_BOOT\",\"optically_verified\":false";
  j+=",\"profile\":{\"generation\":"+String(profile.generation)+",\"backend\":"+jsonQuote(loadedCurveBackend);
  j+=",\"content_valid\":"+String(cielo96::curves::curveValid(profile)?"true":"false")+",\"wire_checksum\":"+jsonQuote(profileWireChecksum())+",\"algorithm\":\"fnv1a32\"}";
- j+=",\"curve_save\":{\"backend\":"+jsonQuote(fs?curveFs.backend():"NVS_LEGACY")+",\"last_result\":"+jsonQuote(cielo96::evidence::saveName(result));
+ j+=",\"curve_save\":{\"backend\":"+jsonQuote(saveBackend)+",\"last_result\":"+jsonQuote(cielo96::evidence::saveName(result));
  j+=",\"verified\":"+(result==cielo96::evidence::Save::NotAttempted?String("null"):String(result==cielo96::evidence::Save::Verified||result==cielo96::evidence::Save::Unchanged?"true":"false"));
  j+=",\"unchanged\":"+String(lastCurveRequestUnchanged?"true":"false")+",\"uncertain\":"+String(result==cielo96::evidence::Save::Uncertain?"true":"false");
  j+=",\"error_code\":"+(result==cielo96::evidence::Save::NotAttempted?String("null"):String(result==cielo96::evidence::Save::Unchanged?0:(int)lastCurveNvsErr))+",\"failure_count_this_boot\":"+String(curveNvsFailedAttempts)+"}";

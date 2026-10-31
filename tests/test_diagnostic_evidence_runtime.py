@@ -27,7 +27,7 @@ int lastCurveNvsErr=0;
 uint32_t lastCurveNvsRequested=788,curveNvsFailedAttempts=0,cadenceSkippedBusy=355;
 bool lastCurveRequestUnchanged=false;
 struct {bool verified=false,writeMayHavePersisted=false;}lastCurveTransaction;
-struct {bool mounted=true,pub=true,unsure=false;bool ready(){return mounted;}bool published(){return pub;}bool uncertain(){return unsure;}const char*backend(){return "LITTLEFS_AB";}}curveFs;
+struct {bool mounted=true,pub=true,unsure=false,nvsAllowed=true;bool allowNvsWrites(){return nvsAllowed;}bool ready(){return mounted;}bool published(){return pub;}bool uncertain(){return unsure;}const char*backend(){return "LITTLEFS_AB";}}curveFs;
 cielo96::cadence::Diagnostics cadenceDiagnostics;
 cielo96::evidence::OperationalHistory operationalHistory;
 bool pvOffObligation=true,pvControlDesired=true;
@@ -48,6 +48,8 @@ int main(){
  std::cout<<diagnosticEvidenceJson().v<<"\n";
  curveFs.pub=curveFs.unsure=false;std::cout<<diagnosticEvidenceJson().v<<"\n";
  curveFs.mounted=false;loadedCurveBackend="NVS_LEGACY";lastCurveNvsErr=0;lastCurveTransaction.verified=true;lastCurveTransaction.writeMayHavePersisted=true;
+ std::cout<<diagnosticEvidenceJson().v<<"\n";
+ curveFs.nvsAllowed=false;lastCurveNvsErr=-1;lastCurveTransaction.verified=false;lastCurveTransaction.writeMayHavePersisted=false;
  std::cout<<diagnosticEvidenceJson().v<<"\n";
  for(bool off:{true,false}){pvOffObligation=off;String j="{";
 '''+effective+r'''
@@ -71,8 +73,9 @@ assert data[2]['curve_save']['last_result']=='UNCHANGED' and data[2]['curve_save
 assert data[3]['curve_save']['last_result']=='UNCERTAIN' and not data[3]['curve_save']['verified']
 assert data[4]['curve_save']['last_result']=='FAILED'
 assert data[5]['curve_save']['backend']=='NVS_LEGACY' and data[5]['curve_save']['verified']
-assert data[6]['pv_effective_requested']==[0,0,0,0]
-assert data[7]['pv_effective_requested']==[58,78,132,1]
+assert data[6]['curve_save']['backend']=='NONE_WRITES_BLOCKED' and data[6]['curve_save']['last_result']=='FAILED'
+assert data[7]['pv_effective_requested']==[0,0,0,0]
+assert data[8]['pv_effective_requested']==[58,78,132,1]
 assert source.count('"diagnostic_evidence"')==0  # C++ keys are escaped.
 assert source.count('\\"diagnostic_evidence\\"')==2
 assert '"MANTENIMIENTO_COMPROBANDO"' in Path('include/cielo_diagnostic_evidence.h').read_text()
