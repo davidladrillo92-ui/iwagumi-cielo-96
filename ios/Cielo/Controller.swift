@@ -20,6 +20,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private var draftBoot: Int?
     private var revision = UUID()
     private var loading = false
+    private var foreground = true
     private var demoPhase = "idle"
     private var demoSaved: CieloProfile?
     private let delegate = NoRedirects()
@@ -34,8 +35,9 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }()
 
-    var fresh: Bool { updated.map { Date().timeIntervalSince($0) < 20 } ?? false }
-    var canSave: Bool { fresh && dirty && !busy && status?.work_light?.active != true && status?.work_light?.preparing != true && generation != nil }
+    var fresh: Bool { foreground && (updated.map { Date().timeIntervalSince($0) < 20 } ?? false) }
+    var canSave: Bool { fresh && dirty && !busy && status?.work_light?.active != true && status?.work_light?.preparing != true && generation != nil && draftBoot != nil && status?.boot_id == draftBoot && status?.profileGeneration == generation }
+    func setForeground(_ value: Bool) { foreground = value; invalidate() }
     func invalidate() { revision = UUID(); loading = false; updated = nil }
     func connect(host: String, demo: Bool) async {
         guard !busy else { return }
@@ -60,7 +62,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse, data.count <= 131072 else { throw CieloError.unavailable }
         guard (200...299).contains(response.statusCode) else {
-            if response.statusCode == 409 { throw CieloError.changed }
+            if response.statusCode == 409 && path == "/api/curves/commit" { throw CieloError.changed }
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String:Any]
             throw CieloError.server(obj?["error"] as? String ?? "El ATOM ha rechazado la operación.")
         }
@@ -78,7 +80,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         return try JSONDecoder().decode(AtomStatus.self,from:JSONSerialization.data(withJSONObject:obj))
     }
     func refresh() async {
-        guard !loading && !busy else { return }
+        guard foreground && !loading && !busy else { return }
         let token = revision; loading = true
         defer { if token == revision { loading = false } }
         do {
@@ -91,12 +93,14 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         } catch { if token == revision { updated = nil; connectionError = error.localizedDescription } }
     }
     func replaceProfile(_ value: CieloProfile) {
+        guard !busy else { return }
         do { try value.validate(); profile = value; dirty = true }
         catch { message = error.localizedDescription }
     }
-    func discard() { dirty = false; Task { await refresh() } }
+    func discard() { guard !busy else { return }; dirty = false; Task { await refresh() } }
     func save() async {
-        guard canSave, var value = profile, let expected = generation else { return }
+        guard fresh && dirty && !busy else { return }
+        guard canSave, var value = profile, let expected = generation else { message = CieloError.changed.localizedDescription; return }
         guard status?.boot_id == draftBoot, status?.profileGeneration == generation else { message = CieloError.changed.localizedDescription; return }
         revision = UUID(); loading = false; busy = true
         do {
@@ -114,6 +118,11 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
     func maintenance(start: Bool) async {
         guard fresh && !busy else { return }
+        if start && status?.work_light?.can_start != true {
+            message = (status?.work_light?.unavailable_reason).flatMap { $0.isEmpty ? nil : $0 } ?? "El mantenimiento no está preparado. Consulta el estado."
+            return
+        }
+        if !start && status?.work_light?.active != true && status?.work_light?.preparing != true { return }
         revision = UUID(); loading = false; busy = true
         do {
             if demo { demoPhase = start ? "holding" : "idle" }

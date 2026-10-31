@@ -18,7 +18,7 @@ final class MockTransport: URLProtocol {
 @main struct ControllerChecks {
     @MainActor static func main() async throws {
         let initial = try JSONDecoder().decode(CieloProfile.self,from:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1])))
-        var remote = initial; var generation = 14; var postCount = 0; var failure: Int?; var lastBody = ""; var lastPath = ""
+        var remote = initial; var generation = 14; var postCount = 0; var failure: Int?; var lastBody = ""; var lastPath = ""; var workActive = false; var allowMaintenance = true
         MockTransport.handler = { request in
             if request.httpMethod == "POST" {
                 postCount += 1;lastPath = request.url!.path
@@ -44,10 +44,12 @@ final class MockTransport: URLProtocol {
                     remote.seal();try remote.validate();precondition(remote.computedChecksum == form["checksum"])
                     generation += 1
                 }
+                if lastPath == "/api/work-light/start" { workActive = true }
+                if lastPath == "/api/work-light/stop" { workActive = false }
                 return (200,try JSONSerialization.data(withJSONObject:["ok":true,"generation":generation]))
             }
             precondition(request.url!.path == "/api/status")
-            return (200,try JSONSerialization.data(withJSONObject:["firmware":"TEST","boot_id":142,"profileGeneration":generation,"points":CieloProfile.wire(remote.lights.pezverde.points),"chiPoints":CieloProfile.wire(remote.lights.chihiros.points),"work_light":["active":false,"preparing":false,"can_start":true,"phase":"idle"]]))
+            return (200,try JSONSerialization.data(withJSONObject:["firmware":"TEST","boot_id":142,"profileGeneration":generation,"points":CieloProfile.wire(remote.lights.pezverde.points),"chiPoints":CieloProfile.wire(remote.lights.chihiros.points),"work_light":["active":workActive,"preparing":false,"can_start":allowMaintenance && !workActive,"phase":workActive ? "holding" : "idle","unavailable_reason":"Luces pendientes de verificar"]]))
         }
         let config=URLSessionConfiguration.ephemeral;config.protocolClasses=[MockTransport.self]
         let model=CieloController(session:URLSession(configuration:config))
@@ -67,7 +69,24 @@ final class MockTransport: URLProtocol {
         precondition(postCount == 4 && lastPath == "/api/work-light/start" && lastBody.contains("confirm=INICIAR_MANTENIMIENTO"))
         await model.maintenance(start:false)
         precondition(postCount == 5 && lastPath == "/api/work-light/stop")
-        model.invalidate();precondition(!model.fresh && !model.canSave)
+        allowMaintenance = false; await model.refresh();await model.maintenance(start:true)
+        precondition(postCount == 5 && model.message?.contains("pendientes de verificar") == true)
+        allowMaintenance = true; await model.refresh(); failure = 409; await model.maintenance(start:true)
+        precondition(postCount == 6 && model.message?.contains("conflict") == true && model.message?.contains("perfil") != true)
+        failure = nil
+        model.setForeground(false);await model.refresh();await model.maintenance(start:true)
+        precondition(!model.fresh && !model.canSave && postCount == 6)
+        model.setForeground(true);await model.refresh();precondition(model.fresh)
+        let original = MockTransport.handler!
+        var pending: Task<Void,Never>!
+        await withCheckedContinuation { (started: CheckedContinuation<Void,Never>) in
+            MockTransport.handler = { request in started.resume();Thread.sleep(forTimeInterval:0.2);return try original(request) }
+            pending = Task { await model.refresh() }
+        }
+        model.setForeground(false);await pending.value
+        precondition(!model.fresh && model.updated == nil)
+        MockTransport.handler = original
+        model.setForeground(true);await model.refresh();model.invalidate();precondition(!model.fresh && !model.canSave)
         print("PASS native controller: read-only connection, remote-generation conflict, atomic form, preserved drafts, no POST retries, maintenance commands and stale-state guard")
     }
 }

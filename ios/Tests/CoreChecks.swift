@@ -11,6 +11,18 @@ import Foundation
         for host in ["192.168.0.25","10.0.0.1","172.16.0.1"] { _ = try LocalAddress.url(host) }
         for host in ["8.8.8.8","127.0.0.1","192.168.0.25/api/save","user@192.168.0.25","192.168.0.25:80","example.com","192.168.00.25"] {
             do { _ = try LocalAddress.url(host); fatalError("Accepted public/malformed host") } catch CieloError.invalidHost {} }
+        // At every stored keyframe, preview must equal that exact keyframe.
+        for pv in [false,true] {
+            for row in (pv ? profile.lights.pezverde.points : profile.lights.chihiros.points) {
+                precondition(profile.preview(minute:row[0],pv:pv) == Array(row.dropFirst()))
+            }
+        }
+        var sample=profile
+        sample.lights.chihiros.points=[[10,0,100,2],[20,5,95,1],[1440,0,0,0]]
+        precondition(sample.preview(minute:0,pv:false) == [0,0,0])
+        precondition(sample.preview(minute:15,pv:false) == [3,97,1])
+        precondition(sample.preview(minute:1440,pv:false) == [0,0,0])
+        precondition(sample.preview(minute:1441,pv:false) == [0,0,0])
         profile.lights.chihiros.points[1][0] = profile.lights.chihiros.points[0][0];profile.seal()
         do { try profile.validate();fatalError("Accepted duplicate time") } catch CieloError.invalidProfile {}
         print("PASS native core: import/export/checksum/generation, invalid profiles and private IPv4 boundaries")

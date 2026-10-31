@@ -10,5 +10,5 @@ xcode=run('xcodebuild','-version')
 sdk=run('xcrun','--sdk','iphoneos','--show-sdk-version')
 major=int(re.search(r'Xcode (\d+)',xcode).group(1))
 files={p.name:{'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(Path('dist').glob('CIELO_*')) if p.is_file()}
-manifest={'app':'CIELO','version':'0.1.0','signed':False,'published':False,'installable_on_user_iphone':False,'ci_commit':run('git','rev-parse','HEAD'),'source_commit':os.environ.get('CIELO_SOURCE_SHA',''),'run':os.environ.get('GITHUB_RUN_ID'),'xcode':xcode,'iphoneos_sdk':sdk,'meets_sdk_minimum_as_of_2026_10_31':major>=26 and int(sdk.split('.')[0])>=26,'tests':'CoreChecks + ControllerChecks + simulator launch; real hardware pending','files':files}
+manifest={'app':'CIELO','version':'0.2.0','signed':False,'published':False,'installable_on_user_iphone':False,'ci_commit':run('git','rev-parse','HEAD'),'source_commit':os.environ.get('CIELO_SOURCE_SHA',''),'run':os.environ.get('GITHUB_RUN_ID'),'xcode':xcode,'iphoneos_sdk':sdk,'meets_sdk_minimum_as_of_2026_10_31':major>=26 and int(sdk.split('.')[0])>=26,'tests':'CoreChecks + ControllerChecks + iPhone XCUITest + iPad simulator launch; real hardware pending','files':files}
 Path('dist/BUILD_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')

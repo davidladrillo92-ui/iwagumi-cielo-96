@@ -68,6 +68,23 @@ struct CieloProfile: Codable, Equatable {
         var profile = Self(lights: ProfileLights(pezverde: LightCurve(points: try parseWire(pv), unit: "rgb255-plus-brightness"), chihiros: LightCurve(points: try parseWire(ch), unit: "percent")), integrity: Integrity(algorithm: "fnv1a32", checksum: ""))
         profile.seal(); try profile.validate(); return profile
     }
+    // Integer-minute preview matches cielo::at and its signed rounding in cielo_engine.h.
+    func preview(minute: Int, pv: Bool) -> [Int] {
+        let rows = pv ? lights.pezverde.points : lights.chihiros.points
+        let channels = pv ? 4 : 3
+        guard (0...1440).contains(minute), let first = rows.first, let last = rows.last else { return Array(repeating: 0, count: channels) }
+        if minute < first[0] { return Array(repeating: 0, count: channels) }
+        if minute >= last[0] { return Array(last.dropFirst()) }
+        for (a,b) in zip(rows,rows.dropFirst()) where a[0] <= minute && minute < b[0] {
+            let position = minute-a[0], interval = b[0]-a[0]
+            return (1...channels).map { i in
+                let delta = b[i]-a[i]
+                let offset = (abs(delta)*position+interval/2)/interval
+                return a[i]+(delta >= 0 ? offset : -offset)
+            }
+        }
+        return Array(repeating: 0, count: channels)
+    }
     func form(generation: Int) -> [String: String] {
         ["schema_version":"2", "generation":String(generation), "checksum":computedChecksum,
          "pv":Self.wire(lights.pezverde.points), "ch":Self.wire(lights.chihiros.points)]

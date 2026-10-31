@@ -16,7 +16,7 @@ struct RootView: View {
     @State private var settings = false
     var body: some View {
         TabView {
-            NavigationStack { HomeView(model:model).toolbar { Button("Conexión",systemImage:"network") { settings = true } } }.tabItem { Label("Luz",systemImage:"lightbulb") }
+            NavigationStack { HomeView(model:model).toolbar { Button("Conexión",systemImage:"network") { settings = true }.accessibilityIdentifier("connection.open") } }.tabItem { Label("Luz",systemImage:"lightbulb") }
             NavigationStack { CurvesView(model:model) }.tabItem { Label("Curvas",systemImage:"chart.xyaxis.line") }
             NavigationStack { CentreView(model:model) }.tabItem { Label("Centro",systemImage:"flask") }
         }
@@ -26,9 +26,10 @@ struct RootView: View {
         }
         .sheet(isPresented:$settings) { SettingsView(model:model) }
         .alert("CIELO",isPresented:Binding(get:{model.message != nil},set:{if !$0 { model.message = nil }})) { Button("Aceptar") { model.message = nil } } message: { Text(model.message ?? "") }
-        .onChange(of:phase) { _,_ in model.invalidate() }
+        .onChange(of:phase) { _,next in model.setForeground(next == .active) }
         .task(id:phase) {
-            guard phase == .active else { model.invalidate(); return }
+            model.setForeground(phase == .active)
+            guard phase == .active else { return }
             await model.refresh()
             while !Task.isCancelled {
                 do { try await Task.sleep(for:.seconds(6)) } catch { break }
@@ -59,10 +60,10 @@ struct HomeView: View {
                 Text(maintenanceLabel).foregroundStyle(.secondary)
                 if let remaining = model.status?.work_light?.remaining_sec, remaining > 0 { Text("Transición: \(remaining / 60) min \(remaining % 60) s").monospacedDigit() }
                 HStack {
-                    Button("Iniciar",systemImage:"play.fill") { confirmStart = true }
+                    Button("Iniciar",systemImage:"play.fill") { confirmStart = true }.accessibilityIdentifier("maintenance.start")
                         .disabled(!model.fresh || model.busy || model.status?.work_light?.can_start != true)
                     Spacer()
-                    Button("Parar",systemImage:"stop.fill") { Task { await model.maintenance(start:false) } }
+                    Button("Parar",systemImage:"stop.fill") { Task { await model.maintenance(start:false) } }.accessibilityIdentifier("maintenance.stop")
                         .disabled(!model.fresh || model.busy || (model.status?.work_light?.active != true && model.status?.work_light?.preparing != true) || model.status?.work_light?.phase == "returning")
                 }.buttonStyle(.borderless)
             }
@@ -123,6 +124,8 @@ struct CurvesView: View {
     @State private var exporting = false
     @State private var document = ProfileDocument(data:Data())
     @State private var confirmSave = false
+    @State private var previewMinute = 900.0
+    @State private var pointsExpanded = false
     var body: some View {
         List {
             Section {
@@ -134,19 +137,29 @@ struct CurvesView: View {
                 Text("Valores programados · no cambian las luces hasta Guardar").font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                Picker("Luz",selection:$pv) { Text("Chihiros").tag(false); Text("Pez Verde").tag(true) }.pickerStyle(.segmented)
-                ForEach(Array(rows.enumerated()),id:\.offset) { i,row in
-                    Button { editor = PointChoice(pv:pv,index:i,row:row,checksum:model.profile?.computedChecksum ?? "") } label: {
-                        HStack { Text(timeLabel(row[0])).monospacedDigit(); Spacer(); Text(row.dropFirst().map(String.init).joined(separator:" / ")).foregroundStyle(.secondary); Image(systemName:"chevron.right").font(.caption) }
-                    }
+                HStack { Text(timeLabel(Int(previewMinute))).font(.title2).monospacedDigit().accessibilityIdentifier("preview.time"); Spacer(); Text("Vista previa").font(.caption).foregroundStyle(.secondary) }
+                Slider(value:$previewMinute,in:0...1440,step:1).accessibilityLabel("Hora de vista previa").accessibilityIdentifier("preview.slider")
+                if let profile = model.profile {
+                    PreviewLampRow(name:"Chihiros",values:profile.preview(minute:Int(previewMinute),pv:false),pv:false)
+                    PreviewLampRow(name:"Pez Verde",values:profile.preview(minute:Int(previewMinute),pv:true),pv:true)
                 }
-            } header: { Text("Puntos editables") }
+            } footer: { Text("La vista previa no cambia las luces.") }
             Section {
-                Button("Guardar ambas curvas") { confirmSave = true }.disabled(!model.canSave)
-                Button("Descartar borrador",role:.destructive) { model.discard() }.disabled(!model.dirty || model.busy)
-                Button("Importar JSON") { importing = true }.disabled(model.busy || model.profile == nil)
-                Button("Exportar JSON") { exportProfile() }.disabled(model.profile == nil || model.busy)
-                if model.dirty { Text("Cambios sin guardar").foregroundStyle(.orange) }
+                Button("Guardar ambas curvas") { confirmSave = true }.disabled(!model.canSave).accessibilityIdentifier("curves.save")
+                Button("Descartar borrador",role:.destructive) { model.discard() }.disabled(!model.dirty || model.busy).accessibilityIdentifier("curves.discard")
+                Button("Importar JSON") { importing = true }.disabled(model.busy || model.profile == nil).accessibilityIdentifier("curves.import")
+                Button("Exportar JSON") { exportProfile() }.disabled(model.profile == nil || model.busy).accessibilityIdentifier("curves.export")
+                if model.dirty { Text("Cambios sin guardar").foregroundStyle(.orange).accessibilityIdentifier("curves.dirty") }
+            }
+            Section {
+                DisclosureGroup("Editar puntos",isExpanded:$pointsExpanded) {
+                    Picker("Luz",selection:$pv) { Text("Chihiros").tag(false); Text("Pez Verde").tag(true) }.pickerStyle(.segmented)
+                    ForEach(Array(rows.enumerated()),id:\.offset) { i,row in
+                        Button { editor = PointChoice(pv:pv,index:i,row:row,checksum:model.profile?.computedChecksum ?? "") } label: {
+                            HStack { Text(timeLabel(row[0])).monospacedDigit(); Spacer(); Text(row.dropFirst().map(String.init).joined(separator:" / ")).foregroundStyle(.secondary); Image(systemName:"chevron.right").font(.caption) }
+                        }.disabled(model.busy).accessibilityIdentifier("curve.point.\(i)")
+                    }
+                }.accessibilityIdentifier("curves.points")
             }
         }.navigationTitle("Curvas").refreshable { await model.refresh() }
         .sheet(item:$editor) { choice in
@@ -180,6 +193,23 @@ struct CurvesView: View {
     }
 }
 
+struct PreviewLampRow: View {
+    let name:String; let values:[Int]; let pv:Bool
+    private var percent:Int { pv ? values[3] : values.prefix(3).max() ?? 0 }
+    private var color:Color {
+        let divisor = pv ? 255.0 : 100.0
+        let scale = pv ? Double(percent)/100.0 : 1.0
+        return Color(red:Double(values[0])/divisor*scale,green:Double(values[1])/divisor*scale,blue:Double(values[2])/divisor*scale)
+    }
+    var body:some View {
+        HStack(spacing:12) {
+            RoundedRectangle(cornerRadius:9).fill(color).frame(width:38,height:38).overlay(RoundedRectangle(cornerRadius:9).stroke(.white.opacity(0.15))).accessibilityHidden(true)
+            VStack(alignment:.leading,spacing:4) { Text(name).font(.headline); Text("R \(values[0]) · G \(values[1]) · B \(values[2])").font(.caption).foregroundStyle(.secondary) }
+            Spacer(); Text("\(percent)%").font(.title3).monospacedDigit()
+        }.padding(.vertical,4)
+    }
+}
+
 func timeLabel(_ t:Int) -> String { String(format:"%02d:%02d",t/60,t%60) }
 struct PointEditor:View {
     let choice:PointChoice; let apply:([Int])->Void
@@ -189,14 +219,14 @@ struct PointEditor:View {
     var body:some View {
         NavigationStack {
             Form {
-                Stepper("Hora: \(timeLabel(row[0]))",value:$row[0],in:0...1440)
+                Stepper("Hora: \(timeLabel(row[0]))",value:$row[0],in:0...1440).accessibilityIdentifier("point.time")
                 ForEach(1...3,id:\.self) { i in
-                    Stepper("\(["","R","G","B"][i]): \(row[i])",value:$row[i],in:0...(choice.pv ? 255 : 100))
+                    Stepper("\(["","R","G","B"][i]): \(row[i])",value:$row[i],in:0...(choice.pv ? 255 : 100)).accessibilityIdentifier("point.channel.\(i)")
                 }
                 if choice.pv { Stepper("Brillo: \(row[4])%",value:$row[4],in:0...100) }
                 Text("La hora debe quedar entre los puntos vecinos. Los extremos deben conservar el apagado.").font(.caption).foregroundStyle(.secondary)
             }.navigationTitle("Editar punto")
-                .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Cancelar") { dismiss() } }; ToolbarItem(placement:.confirmationAction) { Button("Aplicar") { apply(row);dismiss() } } }
+                .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Cancelar") { dismiss() } }; ToolbarItem(placement:.confirmationAction) { Button("Aplicar") { apply(row);dismiss() }.accessibilityIdentifier("point.apply") } }
         }
     }
 }
@@ -212,8 +242,8 @@ struct CentreView:View {
                 LabeledContent("Arranque",value:model.status?.boot_id.map(String.init) ?? "—")
             }
             Section("Informe") {
-                Button("Preparar informe para compartir") { Task { await model.downloadReport() } }.disabled(!model.fresh || model.busy)
-                if let url=model.reportURL { ShareLink("Compartir informe",item:url) }
+                Button("Preparar informe para compartir") { Task { await model.downloadReport() } }.accessibilityIdentifier("report.prepare").disabled(!model.fresh || model.busy)
+                if let url=model.reportURL { ShareLink("Compartir informe",item:url).accessibilityIdentifier("report.share") }
             }
             Section("Privacidad") {
                 Text("CIELO se comunica con tu ATOM por la red local. No crea cuentas ni incorpora publicidad o analítica. Los perfiles e informes solo se comparten cuando tú lo eliges.")
@@ -229,13 +259,18 @@ struct SettingsView:View {
     @State private var host = ""
     @State private var demo = true
     @State private var confirm = false
+    @State private var localError: String?
     var body:some View {
         NavigationStack {
             Form {
-                Toggle("Modo demostración",isOn:$demo)
-                TextField("IP del ATOM",text:$host).keyboardType(.numbersAndPunctuation).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(demo)
+                Toggle("Modo demostración",isOn:$demo).accessibilityIdentifier("connection.demo")
+                TextField("IP del ATOM",text:$host).keyboardType(.numbersAndPunctuation).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(demo).accessibilityIdentifier("connection.host")
                 Text("Para controlar tus luces, conecta el iPhone a la misma red que el ATOM. La IP se usa solo durante esta sesión.").font(.footnote).foregroundStyle(.secondary)
-                Button("Aplicar conexión") { confirm = true }.disabled(model.busy)
+                if let error = localError { Text(error).font(.footnote).foregroundStyle(.orange).accessibilityIdentifier("connection.error") }
+                Button("Aplicar conexión") {
+                    do { if !demo { _ = try LocalAddress.url(host) }; localError = nil; confirm = true }
+                    catch { localError = error.localizedDescription }
+                }.accessibilityIdentifier("connection.apply").disabled(model.busy)
             }.navigationTitle("Conexión").onAppear { host=model.host;demo=model.demo }
                 .toolbar { Button("Cerrar") { dismiss() } }
                 .confirmationDialog(model.dirty ? "Cambiar la conexión descartará el borrador" : "Usar esta conexión",isPresented:$confirm,titleVisibility:.visible) {
