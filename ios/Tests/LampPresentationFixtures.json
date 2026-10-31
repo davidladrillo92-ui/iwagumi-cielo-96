@@ -1,0 +1,371 @@
+[
+  {
+    "name": "fresh_http_is_not_ble_confirmation",
+    "pv": true,
+    "fresh": false,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": true,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ]
+    },
+    "expected": {
+      "label": "Sin comunicación",
+      "values": null
+    }
+  },
+  {
+    "name": "recent_pv_reported",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": true,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ]
+    },
+    "expected": {
+      "label": "Conectado",
+      "values": [
+        120,
+        40,
+        70,
+        30
+      ]
+    }
+  },
+  {
+    "name": "idle_release_is_not_a_disconnect",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": false,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ],
+      "pv_link_idle_released": true,
+      "pv_off_obligation": true,
+      "pv_safety_state": "APAGADO_GATT_OK"
+    },
+    "expected": {
+      "label": "Conectado · en reposo",
+      "values": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  {
+    "name": "unexpected_disconnect_despite_recent_sample",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": false,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ]
+    },
+    "expected": {
+      "label": "Sin enlace BLE",
+      "values": null
+    }
+  },
+  {
+    "name": "expired_ble_evidence",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": true,
+      "pv_online_recent": false,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ]
+    },
+    "expected": {
+      "label": "Comprobando conexión",
+      "values": null
+    }
+  },
+  {
+    "name": "off_not_yet_confirmed",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": true,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ],
+      "pv_off_obligation": true,
+      "pv_safety_state": "PENDIENTE"
+    },
+    "expected": {
+      "label": "Comprobando apagado",
+      "values": null
+    }
+  },
+  {
+    "name": "confirmed_off_between_planned_checks",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": true,
+      "pv_online_recent": false,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ],
+      "pv_off_obligation": true,
+      "pv_safety_state": "APAGADO_GATT_OK",
+      "pv_waiting_off_check": true
+    },
+    "expected": {
+      "label": "Conectado · en reposo",
+      "values": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  {
+    "name": "confirmed_off_does_not_hide_lost_link",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": false,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ],
+      "pv_off_obligation": true,
+      "pv_safety_state": "APAGADO_GATT_OK"
+    },
+    "expected": {
+      "label": "Sin enlace BLE",
+      "values": null
+    }
+  },
+  {
+    "name": "ch_control_paused",
+    "pv": false,
+    "fresh": true,
+    "state": {
+      "chihiros_active": false,
+      "ch_link_connected": false,
+      "always_on": false
+    },
+    "expected": {
+      "label": "En pausa",
+      "values": null
+    }
+  },
+  {
+    "name": "control_preparing",
+    "pv": false,
+    "fresh": true,
+    "state": {
+      "chihiros_active": false,
+      "always_on": true
+    },
+    "expected": {
+      "label": "Preparando…",
+      "values": null
+    }
+  },
+  {
+    "name": "returning_to_manufacturer_app",
+    "pv": false,
+    "fresh": true,
+    "state": {
+      "chihiros_active": true,
+      "ch_link_connected": true,
+      "ch_online_recent": true,
+      "ch_last_requested": [
+        65,
+        60,
+        56
+      ],
+      "return_pending": true
+    },
+    "expected": {
+      "label": "Volviendo a su app",
+      "values": null
+    }
+  },
+  {
+    "name": "ch_reconnect_has_priority",
+    "pv": false,
+    "fresh": true,
+    "state": {
+      "chihiros_active": true,
+      "ch_link_connected": true,
+      "ch_online_recent": true,
+      "ch_last_requested": [
+        65,
+        60,
+        56
+      ],
+      "ch_reconnect_pending": true
+    },
+    "expected": {
+      "label": "Reconectando…",
+      "values": null
+    }
+  },
+  {
+    "name": "off_failure_has_priority",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": true,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ],
+      "pv_off_failures": 1
+    },
+    "expected": {
+      "label": "Reconectando…",
+      "values": null
+    }
+  },
+  {
+    "name": "ch_dark_requested",
+    "pv": false,
+    "fresh": true,
+    "state": {
+      "chihiros_active": true,
+      "ch_link_connected": true,
+      "ch_online_recent": true,
+      "ch_last_requested": [
+        0,
+        0,
+        0
+      ]
+    },
+    "expected": {
+      "label": "Conectado · en reposo",
+      "values": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  {
+    "name": "missing_link_flag_with_recent_evidence",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ]
+    },
+    "expected": {
+      "label": "Conectado",
+      "values": [
+        120,
+        40,
+        70,
+        30
+      ]
+    }
+  },
+  {
+    "name": "malformed_channels_not_reported_as_dark",
+    "pv": false,
+    "fresh": true,
+    "state": {
+      "chihiros_active": true,
+      "ch_link_connected": true,
+      "ch_online_recent": true,
+      "ch_last_requested": [
+        0,
+        0
+      ]
+    },
+    "expected": {
+      "label": "Comprobando conexión",
+      "values": null
+    }
+  },
+  {
+    "name": "current_target_is_not_last_requested",
+    "pv": true,
+    "fresh": true,
+    "state": {
+      "pez_verde_active": true,
+      "pv_link_connected": true,
+      "pv_online_recent": true,
+      "pv_last_requested": [
+        120,
+        40,
+        70,
+        30
+      ],
+      "pv_effective_requested": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "expected": {
+      "label": "Conectado",
+      "values": [
+        120,
+        40,
+        70,
+        30
+      ]
+    }
+  }
+]

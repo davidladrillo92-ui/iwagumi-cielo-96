@@ -1,0 +1,338 @@
+// !$*UTF8*$!
+{
+"archiveVersion" = 1;
+"classes" = {
+
+};
+"objectVersion" = 56;
+"objects" = {
+"000000000000000000000001" = {
+"isa" = "PBXFileReference";
+"explicitFileType" = "wrapper.application";
+"path" = "CIELO.app";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"000000000000000000000002" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Core.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000003" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000002";
+};
+"000000000000000000000004" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Controller.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000005" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000004";
+};
+"000000000000000000000006" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Views.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000007" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000006";
+};
+"000000000000000000000008" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "CieloApp.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000009" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000008";
+};
+"00000000000000000000000A" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "folder.assetcatalog";
+"path" = "Assets.xcassets";
+"sourceTree" = "<group>";
+};
+"00000000000000000000000B" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "00000000000000000000000A";
+};
+"00000000000000000000000C" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"path" = "PrivacyInfo.xcprivacy";
+"sourceTree" = "<group>";
+};
+"00000000000000000000000D" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "00000000000000000000000C";
+};
+"00000000000000000000000E" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.json";
+"path" = "DemoProfile.json";
+"sourceTree" = "<group>";
+};
+"00000000000000000000000F" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "00000000000000000000000E";
+};
+"000000000000000000000010" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"path" = "Info.plist";
+"sourceTree" = "<group>";
+};
+"000000000000000000000011" = {
+"isa" = "PBXGroup";
+"children" = ("000000000000000000000002","000000000000000000000004","000000000000000000000006","000000000000000000000008","00000000000000000000000A","00000000000000000000000C","00000000000000000000000E","000000000000000000000010");
+"path" = "Cielo";
+"sourceTree" = "<group>";
+};
+"000000000000000000000012" = {
+"isa" = "PBXGroup";
+"children" = ("000000000000000000000001","00000000000000000000001B");
+"name" = "Products";
+"sourceTree" = "<group>";
+};
+"000000000000000000000013" = {
+"isa" = "PBXGroup";
+"children" = ("000000000000000000000011","00000000000000000000001D","000000000000000000000012");
+"sourceTree" = "<group>";
+};
+"000000000000000000000014" = {
+"isa" = "PBXSourcesBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ("000000000000000000000003","000000000000000000000005","000000000000000000000007","000000000000000000000009");
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000015" = {
+"isa" = "PBXFrameworksBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ();
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000016" = {
+"isa" = "PBXResourcesBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ("00000000000000000000000B","00000000000000000000000D","00000000000000000000000F");
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000017" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "es.iwagumi.cielo";
+"PRODUCT_NAME" = "CIELO";
+"INFOPLIST_FILE" = "Cielo/Info.plist";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"MARKETING_VERSION" = "0.2.1";
+"CURRENT_PROJECT_VERSION" = "3";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"CODE_SIGN_STYLE" = "Automatic";
+"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+"SWIFT_EMIT_LOC_STRINGS" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"ONLY_ACTIVE_ARCH" = "YES";
+};
+};
+"000000000000000000000018" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "es.iwagumi.cielo";
+"PRODUCT_NAME" = "CIELO";
+"INFOPLIST_FILE" = "Cielo/Info.plist";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"MARKETING_VERSION" = "0.2.1";
+"CURRENT_PROJECT_VERSION" = "3";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"CODE_SIGN_STYLE" = "Automatic";
+"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+"SWIFT_EMIT_LOC_STRINGS" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+};
+};
+"000000000000000000000019" = {
+"isa" = "XCConfigurationList";
+"buildConfigurations" = ("000000000000000000000017","000000000000000000000018");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Release";
+};
+"00000000000000000000001A" = {
+"isa" = "PBXNativeTarget";
+"buildConfigurationList" = "000000000000000000000019";
+"buildPhases" = ("000000000000000000000014","000000000000000000000015","000000000000000000000016");
+"buildRules" = ();
+"dependencies" = ();
+"name" = "CIELO";
+"productName" = "CIELO";
+"productReference" = "000000000000000000000001";
+"productType" = "com.apple.product-type.application";
+};
+"00000000000000000000001B" = {
+"isa" = "PBXFileReference";
+"explicitFileType" = "wrapper.cfbundle";
+"path" = "CieloUITests.xctest";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"00000000000000000000001C" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "CieloUITests.swift";
+"sourceTree" = "<group>";
+};
+"00000000000000000000001D" = {
+"isa" = "PBXGroup";
+"children" = ("00000000000000000000001C");
+"path" = "Tests";
+"sourceTree" = "<group>";
+};
+"00000000000000000000001E" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "00000000000000000000001C";
+};
+"00000000000000000000001F" = {
+"isa" = "PBXSourcesBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ("00000000000000000000001E");
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000020" = {
+"isa" = "PBXFrameworksBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ();
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000021" = {
+"isa" = "PBXResourcesBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ();
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000022" = {
+"isa" = "PBXContainerItemProxy";
+"containerPortal" = "00000000000000000000002B";
+"proxyType" = 1;
+"remoteGlobalIDString" = "00000000000000000000001A";
+"remoteInfo" = "CIELO";
+};
+"000000000000000000000023" = {
+"isa" = "PBXTargetDependency";
+"target" = "00000000000000000000001A";
+"targetProxy" = "000000000000000000000022";
+};
+"000000000000000000000024" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "es.iwagumi.cielo.uitests";
+"PRODUCT_NAME" = "CieloUITests";
+"GENERATE_INFOPLIST_FILE" = "YES";
+"TEST_TARGET_NAME" = "CIELO";
+"CODE_SIGN_STYLE" = "Automatic";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"ONLY_ACTIVE_ARCH" = "YES";
+};
+};
+"000000000000000000000025" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "es.iwagumi.cielo.uitests";
+"PRODUCT_NAME" = "CieloUITests";
+"GENERATE_INFOPLIST_FILE" = "YES";
+"TEST_TARGET_NAME" = "CIELO";
+"CODE_SIGN_STYLE" = "Automatic";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+};
+};
+"000000000000000000000026" = {
+"isa" = "XCConfigurationList";
+"buildConfigurations" = ("000000000000000000000024","000000000000000000000025");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Release";
+};
+"000000000000000000000027" = {
+"isa" = "PBXNativeTarget";
+"buildConfigurationList" = "000000000000000000000026";
+"buildPhases" = ("00000000000000000000001F","000000000000000000000020","000000000000000000000021");
+"buildRules" = ();
+"dependencies" = ("000000000000000000000023");
+"name" = "CieloUITests";
+"productName" = "CieloUITests";
+"productReference" = "00000000000000000000001B";
+"productType" = "com.apple.product-type.bundle.ui-testing";
+};
+"000000000000000000000028" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"ONLY_ACTIVE_ARCH" = "YES";
+};
+};
+"000000000000000000000029" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+};
+};
+"00000000000000000000002A" = {
+"isa" = "XCConfigurationList";
+"buildConfigurations" = ("000000000000000000000028","000000000000000000000029");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Release";
+};
+"00000000000000000000002B" = {
+"isa" = "PBXProject";
+"attributes" = {
+"BuildIndependentTargetsInParallel" = "YES";
+"LastUpgradeCheck" = "1600";
+};
+"buildConfigurationList" = "00000000000000000000002A";
+"compatibilityVersion" = "Xcode 14.0";
+"developmentRegion" = "es";
+"hasScannedForEncodings" = 0;
+"knownRegions" = ("es","en","Base");
+"mainGroup" = "000000000000000000000013";
+"productRefGroup" = "000000000000000000000012";
+"projectDirPath" = "";
+"projectRoot" = "";
+"targets" = ("00000000000000000000001A","000000000000000000000027");
+};
+};
+"rootObject" = "00000000000000000000002B";
+}

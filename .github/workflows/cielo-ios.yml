@@ -1,0 +1,122 @@
+name: CIELO · iPhone nativo
+on:
+  pull_request:
+    branches: [dev/cielo-rc5-recovery3-12-diagnostics-20261031]
+  workflow_dispatch:
+concurrency:
+  group: cielo-ios-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Registrar Xcode y generar proyecto
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          python3 ios/generate_project.py
+          bash -n ios/archive_beta.sh
+          bash -n ios/run_ui_tests.sh
+      - name: Comprobar contrato nativo sin hardware
+        run: |
+          node ios/Tests/LampPresentationParity.cjs
+          swiftc ios/Cielo/Core.swift ios/Tests/CoreChecks.swift -o /tmp/cielo-core-check
+          /tmp/cielo-core-check ios/Cielo/DemoProfile.json
+      - name: Comprobar órdenes y errores con transporte simulado
+        run: |
+          swiftc -parse-as-library ios/Cielo/Core.swift ios/Cielo/Controller.swift ios/Tests/ControllerChecks.swift -o /tmp/cielo-controller-check
+          /tmp/cielo-controller-check ios/Cielo/DemoProfile.json
+      - name: Preparar simulador iPhone
+        run: |
+          mkdir -p dist
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if x["name"].startswith("iPhone")))')
+          echo "CIELO_SIMULATOR_UDID=$DEVICE" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+      - name: Probar interfaz y accesibilidad iPhone
+        id: ui
+        continue-on-error: true
+        run: bash ios/run_ui_tests.sh iphone "$CIELO_SIMULATOR_UDID"
+      - name: Compilar iPhone sin firma
+        run: xcodebuild -project ios/Cielo.xcodeproj -scheme CIELO -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath /tmp/cielo-ios-device CODE_SIGNING_ALLOWED=NO build
+      - name: Empaquetar proyecto y apps sin firma
+        run: |
+          mkdir -p dist
+          xcrun simctl terminate "$CIELO_SIMULATOR_UDID" es.iwagumi.cielo || true
+          xcrun simctl launch "$CIELO_SIMULATOR_UDID" es.iwagumi.cielo
+          sleep 2
+          xcrun simctl io "$CIELO_SIMULATOR_UDID" screenshot dist/CIELO_DEMO_SIMULADOR.png
+          ditto -c -k --keepParent ios dist/CIELO_IOS_FUENTES.zip
+          ditto -c -k --keepParent /tmp/cielo-ios-simulator/Build/Products/Debug-iphonesimulator/CIELO.app dist/CIELO_SIMULADOR.zip
+          ditto -c -k --keepParent /tmp/cielo-ios-device/Build/Products/Release-iphoneos/CIELO.app dist/CIELO_IPHONE_SIN_FIRMA.zip
+      - name: Registrar identidad y hashes de entrega
+        env:
+          CIELO_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 ios/build_manifest.py
+      - name: Conservar el fallo si la interfaz no supera las pruebas
+        if: always()
+        run: |
+          if [ "${{ steps.ui.outcome }}" != "success" ]; then
+            echo 'La candidata conserva incidencias de interfaz/accesibilidad. No es una entrega validada.'
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CIELO_IOS_CANDIDATA_NO_PUBLICADA
+          path: |
+            dist/CIELO_*.zip
+            dist/CIELO_*.png
+            dist/CIELO_*.json
+            dist/BUILD_MANIFEST.json
+          if-no-files-found: error
+  ipad:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar proyecto y simulador iPad
+        run: |
+          python3 ios/generate_project.py
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if x["name"].startswith("iPad")))')
+          echo "CIELO_IPAD_UDID=$DEVICE" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+      - name: Probar interfaz y accesibilidad iPad
+        run: bash ios/run_ui_tests.sh ipad "$CIELO_IPAD_UDID"
+      - name: Registrar identidad de la prueba iPad
+        env:
+          CIELO_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 ios/ipad_manifest.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CIELO_IOS_IPAD_VALIDACION
+          path: |
+            dist/CIELO_IPAD_*.zip
+            dist/CIELO_IPAD_*.json
+          if-no-files-found: error
+  entrega:
+    needs: [ios, ipad]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: CIELO_IOS_*
+          merge-multiple: true
+          path: bundle
+      - name: Verificar fuentes, pruebas y hashes de ambas familias
+        env:
+          CIELO_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 ios/validate_beta_delivery.py bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_IOS_0_2_1_ENTREGA_COMPLETA
+          path: bundle/*
+          if-no-files-found: error
