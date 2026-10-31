@@ -16,6 +16,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
     @Published var updated: Date?
     @Published var reportURL: URL?
     @Published var connectionError: String?
+    private var loadedProfile: CieloProfile?
     private var generation: Int?
     private var draftBoot: Int?
     private var revision = UUID()
@@ -37,6 +38,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
 
     var fresh: Bool { foreground && (updated.map { Date().timeIntervalSince($0) < 20 } ?? false) }
     var canSave: Bool { fresh && dirty && !busy && status?.work_light?.active != true && status?.work_light?.preparing != true && generation != nil && draftBoot != nil && status?.boot_id == draftBoot && status?.profileGeneration == generation }
+    var draftConflict: Bool { fresh && dirty && (status?.boot_id != draftBoot || status?.profileGeneration != generation) }
     func setForeground(_ value: Bool) { foreground = value; invalidate() }
     func invalidate() { revision = UUID(); loading = false; updated = nil }
     func connect(host: String, demo: Bool) async {
@@ -44,7 +46,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         do { if !demo { _ = try LocalAddress.url(host) } }
         catch { message = error.localizedDescription; return }
         revision = UUID(); self.host = host; self.demo = demo
-        connectionError = nil; status = nil; profile = nil; dirty = false; generation = nil; draftBoot = nil; updated = nil; reportURL = nil
+        connectionError = nil; status = nil; profile = nil; loadedProfile = nil; dirty = false; generation = nil; draftBoot = nil; updated = nil; reportURL = nil
         loading = false
         await refresh()
     }
@@ -89,15 +91,15 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
             else { next = try JSONDecoder().decode(AtomStatus.self,from:await request("/api/status")) }
             guard token == revision else { return }
             connectionError = nil; status = next; updated = Date()
-            if !dirty { profile = try CieloProfile.from(next); generation = next.profileGeneration; draftBoot = next.boot_id }
+            if !dirty { profile = try CieloProfile.from(next); loadedProfile = profile; generation = next.profileGeneration; draftBoot = next.boot_id }
         } catch { if token == revision { updated = nil; connectionError = error.localizedDescription } }
     }
     func replaceProfile(_ value: CieloProfile) {
         guard !busy else { return }
-        do { try value.validate(); profile = value; dirty = true }
+        do { try value.validate(); profile = value; dirty = value.computedChecksum != loadedProfile?.computedChecksum }
         catch { message = error.localizedDescription }
     }
-    func discard() { guard !busy else { return }; dirty = false; Task { await refresh() } }
+    func discard() async { guard !busy else { return }; profile = loadedProfile; dirty = false; await refresh() }
     func save() async {
         guard fresh && dirty && !busy else { return }
         guard canSave, var value = profile, let expected = generation else { message = CieloError.changed.localizedDescription; return }
@@ -112,7 +114,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
                 guard commit.ok else { throw CieloError.unavailable }; generation = commit.generation
             }
             if demo { demoSaved = value }
-            dirty = false; message = demo ? "Perfil guardado en la demostración." : "Perfil guardado en el ATOM."
+            loadedProfile = value; dirty = false; message = demo ? "Perfil guardado en la demostración." : "Perfil guardado en el ATOM."
         } catch { updated = nil; message = error.localizedDescription + " El borrador se conserva. Consulta el estado antes de repetir." }
         busy = false; await refresh()
     }

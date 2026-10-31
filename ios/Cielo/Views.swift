@@ -146,9 +146,10 @@ struct CurvesView: View {
             } footer: { Text("La vista previa no cambia las luces.") }
             Section {
                 Button("Guardar ambas curvas") { confirmSave = true }.disabled(!model.canSave).accessibilityIdentifier("curves.save")
-                Button("Descartar borrador",role:.destructive) { model.discard() }.disabled(!model.dirty || model.busy).accessibilityIdentifier("curves.discard")
+                Button("Descartar borrador",role:.destructive) { Task { await model.discard() } }.disabled(!model.dirty || model.busy).accessibilityIdentifier("curves.discard")
                 Button("Importar JSON") { importing = true }.disabled(model.busy || model.profile == nil).accessibilityIdentifier("curves.import")
                 Button("Exportar JSON") { exportProfile() }.disabled(model.profile == nil || model.busy).accessibilityIdentifier("curves.export")
+                if model.draftConflict { Text("El ATOM tiene otro perfil. Exporta tu borrador o descártalo para cargar el actual.").font(.footnote).foregroundStyle(.orange) }
                 if model.dirty { Text("Cambios sin guardar").foregroundStyle(.orange).accessibilityIdentifier("curves.dirty") }
             }
             Section {

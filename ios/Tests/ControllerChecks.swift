@@ -57,7 +57,7 @@ final class MockTransport: URLProtocol {
         precondition(model.fresh && model.profile?.computedChecksum == initial.computedChecksum && postCount == 0)
         var edited=initial;edited.lights.pezverde.points[1][1] = (edited.lights.pezverde.points[1][1]+1)%256;edited.seal()
         model.replaceProfile(edited);precondition(model.canSave)
-        generation += 1;await model.refresh();await model.save()
+        generation += 1;await model.refresh();precondition(model.draftConflict && !model.canSave);await model.save()
         precondition(postCount == 0 && model.dirty && model.profile == edited)
         await model.connect(host:"192.168.0.25",demo:false);model.replaceProfile(edited)
         await model.save();precondition(postCount == 1 && !model.dirty && remote == edited && model.fresh)
@@ -76,7 +76,9 @@ final class MockTransport: URLProtocol {
         failure = nil
         model.setForeground(false);await model.refresh();await model.maintenance(start:true)
         precondition(!model.fresh && !model.canSave && postCount == 6)
+        await model.discard();precondition(!model.dirty && model.profile?.computedChecksum == edited.computedChecksum)
         model.setForeground(true);await model.refresh();precondition(model.fresh)
+        model.replaceProfile(edited);precondition(!model.dirty)
         let original = MockTransport.handler!
         var pending: Task<Void,Never>!
         await withCheckedContinuation { (started: CheckedContinuation<Void,Never>) in

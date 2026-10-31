@@ -6,6 +6,7 @@ Esta candidata requiere iOS17+. Mantiene el firmware instalado, la autonomía de
 
 - Vista previa por minuto con tarjetas Chihiros/Pez Verde: RGB, porcentaje y color calculado. No envía órdenes. Usa interpolación entera y redondeo del motor existente `cielo::at`, incluyendo descensos y extremos; no modifica puntos ni reproduce visualmente la luz física. La vista previa no representa el modo experimental subminuto de15s.
 - Guardar/importar/exportar quedan antes de la lista de puntos, que se despliega cuando hace falta. No exige recorrer decenas de puntos para guardar. La edición queda bloqueada mientras hay una operación en curso.
+- Descartar restaura inmediatamente el último perfil cargado/confirmado, también sin red. Aplicar un perfil idéntico no crea un cambio pendiente.
 - Guardar se deshabilita también ante cambio de arranque/generación. El borrador se conserva y puede exportarse; para cargar la versión remota se usa Descartar borrador.
 - La app invalida la comunicación al salir de primer plano e ignora respuestas de consultas anteriores. No consulta ni habilita órdenes en segundo plano. El mantenimiento mantiene las comprobaciones del ATOM.
 - Un409 de mantenimiento muestra el motivo recibido del controlador; no se confunde con un conflicto de curvas. La IP inválida se corrige en la propia pantalla de Conexión.
