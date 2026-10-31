@@ -79,11 +79,11 @@ struct HomeView: View {
     private var canStart:Bool { model.fresh && !model.busy && model.status?.work_light?.can_start == true }
     private var canStop:Bool { model.fresh && !model.busy && (model.status?.work_light?.active == true || model.status?.work_light?.preparing == true) && model.status?.work_light?.phase != "returning" }
     private var startButton:some View {
-        Button { confirmStart = true } label: { Label("Iniciar",systemImage:"play.fill").frame(minWidth:44,minHeight:44).contentShape(Rectangle()) }
+        Button { confirmStart = true } label: { HStack { Image(systemName:"play.fill").font(.body).accessibilityHidden(true); Text("Iniciar").font(.body) }.frame(minWidth:44,minHeight:44).contentShape(Rectangle()) }
             .buttonStyle(.borderless).accessibilityIdentifier("maintenance.start").disabled(!canStart).opacity(canStart ? 1 : 0.4)
     }
     private var stopButton:some View {
-        Button { Task { await model.maintenance(start:false) } } label: { Label("Parar",systemImage:"stop.fill").frame(minWidth:44,minHeight:44).contentShape(Rectangle()) }
+        Button { Task { await model.maintenance(start:false) } } label: { HStack { Image(systemName:"stop.fill").font(.body).accessibilityHidden(true); Text("Parar").font(.body) }.frame(minWidth:44,minHeight:44).contentShape(Rectangle()) }
             .buttonStyle(.borderless).accessibilityIdentifier("maintenance.stop").disabled(!canStop).opacity(canStop ? 1 : 0.4)
     }
     private var maintenanceLabel: String {
@@ -160,6 +160,11 @@ struct CurvesView: View {
             Section {
                 HStack { Text(timeLabel(Int(previewMinute))).font(.title2).monospacedDigit().accessibilityIdentifier("preview.time"); Spacer(); Text("Vista previa").font(.caption).foregroundStyle(.secondary) }
                 Slider(value:$previewMinute,in:0...1440,step:1).accessibilityLabel("Hora de vista previa").accessibilityIdentifier("preview.slider")
+                HStack {
+                    Button { previewMinute = 0 } label: { Text("00:00").font(.caption).monospacedDigit().frame(minWidth:44,minHeight:44) }.buttonStyle(.borderless).accessibilityLabel("Ver medianoche").accessibilityIdentifier("preview.start")
+                    Spacer()
+                    Button { previewMinute = 1440 } label: { Text("24:00").font(.caption).monospacedDigit().frame(minWidth:44,minHeight:44) }.buttonStyle(.borderless).accessibilityLabel("Ver final del día").accessibilityIdentifier("preview.end")
+                }
                 if let profile = model.profile {
                     PreviewLampRow(name:"Chihiros",values:profile.preview(minute:Int(previewMinute),pv:false),pv:false)
                     PreviewLampRow(name:"Pez Verde",values:profile.preview(minute:Int(previewMinute),pv:true),pv:true)

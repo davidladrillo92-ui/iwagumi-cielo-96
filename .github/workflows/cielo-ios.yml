@@ -89,7 +89,9 @@ jobs:
         if: always()
         with:
           name: CIELO_IOS_IPAD_VALIDACION
-          path: dist/CIELO_IPAD_*
+          path: |
+            dist/CIELO_IPAD_*.zip
+            dist/CIELO_IPAD_*.json
           if-no-files-found: error
   entrega:
     needs: [ios, ipad]

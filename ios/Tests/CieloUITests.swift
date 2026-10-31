@@ -18,12 +18,38 @@ final class CieloUITests: XCTestCase {
         let alternate=app.buttons[name].firstMatch
         XCTAssertTrue(alternate.waitForExistence(timeout:10));alternate.tap()
     }
-    private func reveal(_ element: XCUIElement) {
-        for _ in 0..<14 {
-            if element.exists && element.isHittable { return }
-            app.swipeUp()
+    private func tapAction(_ identifier:String) {
+        let query=app.buttons.matching(identifier:identifier)
+        XCTAssertTrue(query.firstMatch.waitForExistence(timeout:10))
+        // Native iPad popovers can expose both the cell and its contained button.
+        for i in 0..<query.count {
+            let candidate=query.element(boundBy:i)
+            if tappable(candidate) { candidate.tap();return }
         }
-        XCTAssertTrue(element.exists && element.isHittable)
+        XCTFail("No visible action for \(identifier)")
+    }
+    private func tappable(_ element:XCUIElement) -> Bool {
+        guard element.exists else { return false }
+        let frame=element.frame
+        guard !frame.isEmpty && !frame.isNull && frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite && frame.height.isFinite && app.frame.intersects(frame) else { return false }
+        return element.isHittable
+    }
+    private func scroll(towardTop:Bool = false) {
+        // Stay inside content in compact landscape, clear of the floating tab bar.
+        let start=app.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:towardTop ? 0.45 : 0.62))
+        let end=app.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:towardTop ? 0.65 : 0.36))
+        start.press(forDuration:0.05,thenDragTo:end)
+    }
+    private func reveal(_ element: XCUIElement, towardTop:Bool = false) {
+        for _ in 0..<20 {
+            if tappable(element) { return }
+            scroll(towardTop:towardTop)
+        }
+        if !tappable(element) {
+            let tree=XCTAttachment(string:app.debugDescription);tree.name="Elemento_no_visible";tree.lifetime = .keepAlways;add(tree)
+            capture("Elemento_no_visible")
+            XCTFail("No se pudo mostrar el control")
+        }
     }
     private func capture(_ name:String) {
         let image = XCTAttachment(screenshot:app.screenshot());image.name=name;image.lifetime = .keepAlways;add(image)
@@ -33,9 +59,12 @@ final class CieloUITests: XCTestCase {
         selectTab("Curvas")
         let slider=app.sliders["preview.slider"];reveal(slider)
         capture("02_Curvas_demo")
-        slider.adjust(toNormalizedSliderPosition:0)
+        let previousTime=app.staticTexts["preview.time"].label
+        slider.adjust(toNormalizedSliderPosition:0.25)
+        XCTAssertNotEqual(app.staticTexts["preview.time"].label,previousTime)
+        let start=app.buttons["preview.start"];reveal(start);start.tap()
         XCTAssertEqual(app.staticTexts["preview.time"].label,"00:00")
-        slider.adjust(toNormalizedSliderPosition:1)
+        app.buttons["preview.end"].tap()
         XCTAssertEqual(app.staticTexts["preview.time"].label,"24:00")
         selectTab("Centro")
         let report=app.buttons["report.prepare"];reveal(report);report.tap()
@@ -54,9 +83,9 @@ final class CieloUITests: XCTestCase {
         XCTAssertNotEqual(stepper.label,previousLabel)
         app.buttons["point.apply"].tap()
         let save=app.buttons["curves.save"]
-        for _ in 0..<6 { if save.isHittable { break };app.swipeDown() }
+        reveal(save,towardTop:true)
         XCTAssertTrue(save.isEnabled);save.tap()
-        app.buttons["curves.confirm"].tap()
+        tapAction("curves.confirm")
         XCTAssertTrue(app.alerts.buttons["Aceptar"].waitForExistence(timeout:10))
         app.alerts.buttons["Aceptar"].tap()
         XCTAssertFalse(app.staticTexts["curves.dirty"].exists)
@@ -66,7 +95,7 @@ final class CieloUITests: XCTestCase {
         let start=app.buttons["maintenance.start"];reveal(start)
         XCTAssertTrue(start.isEnabled)
         XCTAssertFalse(app.buttons["maintenance.stop"].isEnabled)
-        start.tap();app.buttons["maintenance.confirm"].tap()
+        start.tap();tapAction("maintenance.confirm")
         let stop=app.buttons["maintenance.stop"]
         let ready=NSPredicate(format:"enabled == true")
         expectation(for:ready,evaluatedWith:stop)
@@ -106,7 +135,7 @@ final class CieloUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         selectTab("Curvas")
         let slider=app.sliders["preview.slider"];reveal(slider)
-        slider.adjust(toNormalizedSliderPosition:0)
+        let start=app.buttons["preview.start"];reveal(start);start.tap()
         XCTAssertEqual(app.staticTexts["preview.time"].label,"00:00")
         capture("07_Curvas_horizontal")
         XCUIDevice.shared.press(.home)
