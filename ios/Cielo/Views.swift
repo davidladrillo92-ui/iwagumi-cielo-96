@@ -233,7 +233,7 @@ struct SettingsView:View {
         NavigationStack {
             Form {
                 Toggle("Modo demostración",isOn:$demo)
-                TextField("IP del ATOM",text:$host).keyboardType(.decimalPad).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(demo)
+                TextField("IP del ATOM",text:$host).keyboardType(.numbersAndPunctuation).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(demo)
                 Text("Para controlar tus luces, conecta el iPhone a la misma red que el ATOM. La IP se usa solo durante esta sesión.").font(.footnote).foregroundStyle(.secondary)
                 Button("Aplicar conexión") { confirm = true }.disabled(model.busy)
             }.navigationTitle("Conexión").onAppear { host=model.host;demo=model.demo }
