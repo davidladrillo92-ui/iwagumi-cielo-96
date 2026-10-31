@@ -1,0 +1,29 @@
+name: CIELO · Verificador Sierra de solo lectura
+on:
+  push:
+    branches: [dev/cielo-verification-sierra-20261031]
+  pull_request:
+    branches: [dev/cielo-rc5-recovery3-12-diagnostics-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Probar verificador sin servicios ni red real
+        run: python tests/test_sierra_verifier.py
+      - name: Empaquetar comprobador independiente
+        run: python tools/package_verification_sierra.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_COMPROBACION_SIERRA_PY${{ matrix.python }}
+          path: dist/CIELO_COMPROBACION_SIERRA_V1.zip
+          if-no-files-found: error
