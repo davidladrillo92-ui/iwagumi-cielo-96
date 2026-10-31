@@ -21,6 +21,10 @@ for family,name in [('iphone','CIELO_UI_RESUMEN.json'),('ipad','CIELO_IPAD_UI_RE
     assert summary['result']=='Passed' and summary['failedTests']==0 and summary['skippedTests']==0,name
     assert summary['passedTests']==6 and summary['totalTestCount']==6,name
     results[family]={'passed':summary['passedTests'],'failed':0,'skipped':0,'devices':summary['devicesAndConfigurations']}
+for name in ['CIELO_UI_LARGE_RESUMEN.json','CIELO_IPAD_UI_LARGE_RESUMEN.json']:
+    summary=read(name)
+    assert summary['result']=='Passed' and summary['failedTests']==0 and summary['skippedTests']==0,name
+    assert summary['passedTests']==1 and summary['totalTestCount']==1,name
 archive=zipfile.ZipFile(bundle/'CIELO_IOS_FUENTES.zip');count=0
 for file in sorted((root/'ios').rglob('*')):
     if file.is_file() and '__pycache__' not in file.parts:
@@ -28,6 +32,6 @@ for file in sorted((root/'ios').rglob('*')):
         assert archive.read(name)==file.read_bytes(),name
         count+=1
 # The final JSON states the remaining human/account/device requirements explicitly.
-report={'version':'0.2.1','source_commit':expected,'ci_commit':phone['ci_commit'],'run':phone['run'],'automated_checks_passed':True,'sources_verified':count,'tests':results,'signed':False,'published':False,'ready_for_testflight':False,'pending':['APPLE_DEVELOPER_SIGNING','REAL_IPHONE_ATOM_TEST','OWNER_STORE_METADATA_AND_URLS','MANUAL_ACCESSIBILITY_REVIEW']}
+report={'version':'0.2.1','source_commit':expected,'ci_commit':phone['ci_commit'],'run':phone['run'],'automated_checks_passed':True,'sources_verified':count,'tests':results,'largest_system_text_checks':2,'signed':False,'published':False,'ready_for_testflight':False,'pending':['APPLE_DEVELOPER_SIGNING','REAL_IPHONE_ATOM_TEST','OWNER_STORE_METADATA_AND_URLS','MANUAL_ACCESSIBILITY_REVIEW']}
 (bundle/'VERIFICACION_ENTREGA.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
-print(f'PASS delivery: {count} source files, artifact hashes and 12 UI tests; signing/hardware/review remain pending')
+print(f'PASS delivery: {count} source files, artifact hashes and 12 UI tests + 2 largest-system-text checks; signing/hardware/review remain pending')

@@ -20,7 +20,9 @@ Cada incidencia conserva pantalla, descripción y referencia al elemento; el rec
 
 La auditoría automática usa los tipos Dynamic Type, texto recortado y descripción suficiente de elementos de Apple sobre las vistas principales visibles. No sustituye una revisión manual con VoiceOver, no cubre todos los elementos fuera de pantalla ni certifica accesibilidad completa. Contraste, interacción manual y uso físico siguen pendientes.
 
-La entrega conjunta solo se genera si las dos familias pasan sus seis pruebas sin fallos ni omisiones. Se cotejan los fuentes del ZIP con el checkout, la procedencia del mismo commit/ejecución y los hashes de los artefactos. `VERIFICACION_ENTREGA.json` conserva expresamente el estado sin firma, sin publicación y no listo para TestFlight.
+Una ejecución separada fija el tamaño del sistema mediante `simctl ui content_size accessibility-extra-extra-extra-large`. Verifica el crecimiento real del título (>35pt de altura), disposición vertical de mantenimiento, vista previa y compartir informe; conserva capturas y resultado propios. No reemplaza ni oculta los fallos del auditor Dynamic Type. El tamaño se restaura al terminar.
+
+La entrega conjunta solo se genera si las dos familias pasan sus seis pruebas sin fallos ni omisiones y la prueba adicional de tamaño máximo. Se cotejan los fuentes del ZIP con el checkout, la procedencia del mismo commit/ejecución y los hashes de los artefactos. `VERIFICACION_ENTREGA.json` conserva expresamente el estado sin firma, sin publicación y no listo para TestFlight.
 
 ## Pendientes que requieren al titular o el equipo físico
 

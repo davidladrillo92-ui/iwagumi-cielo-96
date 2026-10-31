@@ -143,6 +143,28 @@ final class CieloUITests: XCTestCase {
         try audit("Centro")
         capture("06_Accesibilidad_Centro")
     }
+    // Run separately after simctl has set the OS to Accessibility XXXL.
+    @MainActor func testLargestSystemTextLayout() throws {
+        let title=app.staticTexts["Chihiros"].firstMatch
+        let height=title.frame.height
+        print("CIELO_LARGEST_TEXT: Chihiros title height=\(height)")
+        XCTAssertGreaterThan(height,35,"El ajuste real del sistema debe ampliar el título, no solo el contenedor.")
+        let start=app.buttons["maintenance.start"];reveal(start)
+        let stop=app.buttons["maintenance.stop"];reveal(stop)
+        XCTAssertGreaterThanOrEqual(start.frame.height,44)
+        XCTAssertGreaterThanOrEqual(stop.frame.minY,start.frame.maxY,"Los controles deben disponerse en vertical con texto de accesibilidad.")
+        capture("09_Texto_maximo_Luz")
+        selectTab("Curvas")
+        let first=app.buttons["preview.start"];reveal(first);first.tap()
+        XCTAssertEqual(app.staticTexts["preview.time"].label,"00:00")
+        XCTAssertGreaterThan(app.staticTexts["preview.time"].frame.height,35)
+        capture("10_Texto_maximo_Curvas")
+        selectTab("Centro")
+        let report=app.buttons["report.prepare"];reveal(report);report.tap()
+        XCTAssertTrue(app.buttons["report.share"].waitForExistence(timeout:10))
+        capture("11_Texto_maximo_Centro")
+        try app.performAccessibilityAudit(for:[.textClipped,.sufficientElementDescription])
+    }
     func testLandscapeAndForegroundReturn() {
         XCUIDevice.shared.orientation = .landscapeLeft
         selectTab("Curvas")
