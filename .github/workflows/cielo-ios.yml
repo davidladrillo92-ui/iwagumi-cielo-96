@@ -46,7 +46,9 @@ jobs:
           TEST_STATUS=0
           xcodebuild -project ios/Cielo.xcodeproj -scheme CIELO -configuration Debug -sdk iphonesimulator -destination "id=$CIELO_SIMULATOR_UDID" -parallel-testing-enabled NO -derivedDataPath /tmp/cielo-ios-simulator -resultBundlePath /tmp/cielo-ios-ui.xcresult CODE_SIGNING_ALLOWED=NO test || TEST_STATUS=$?
           if [ -d /tmp/cielo-ios-ui.xcresult ]; then
-            xcrun xcresulttool export attachments --path /tmp/cielo-ios-ui.xcresult --output-path dist/CIELO_UI_CAPTURAS
+            xcrun xcresulttool export attachments --path /tmp/cielo-ios-ui.xcresult --output-path /tmp/cielo-ios-ui-attachments
+            python3 ios/export_ui_evidence.py /tmp/cielo-ios-ui-attachments dist/CIELO_UI_CAPTURAS
+            xcrun xcresulttool get test-results summary --path /tmp/cielo-ios-ui.xcresult > dist/CIELO_UI_RESUMEN.json
             ditto -c -k --keepParent /tmp/cielo-ios-ui.xcresult dist/CIELO_UI_RESULTADOS.zip
             ditto -c -k --keepParent dist/CIELO_UI_CAPTURAS dist/CIELO_UI_CAPTURAS.zip
           fi
@@ -79,6 +81,8 @@ jobs:
         with:
           name: CIELO_IOS_CANDIDATA_NO_PUBLICADA
           path: |
-            dist/CIELO_*
+            dist/CIELO_*.zip
+            dist/CIELO_*.png
+            dist/CIELO_*.json
             dist/BUILD_MANIFEST.json
           if-no-files-found: error

@@ -23,11 +23,11 @@ final class CieloUITests: XCTestCase {
         capture("01_Luz_demo")
         app.tabBars.buttons["Curvas"].tap()
         let slider=app.sliders["preview.slider"];reveal(slider)
+        capture("02_Curvas_demo")
         slider.adjust(toNormalizedSliderPosition:0)
         XCTAssertEqual(app.staticTexts["preview.time"].label,"00:00")
         slider.adjust(toNormalizedSliderPosition:1)
         XCTAssertEqual(app.staticTexts["preview.time"].label,"24:00")
-        capture("02_Curvas_demo")
         app.tabBars.buttons["Centro"].tap()
         let report=app.buttons["report.prepare"];reveal(report);report.tap()
         XCTAssertTrue(app.buttons["report.share"].waitForExistence(timeout:10))
@@ -70,9 +70,13 @@ final class CieloUITests: XCTestCase {
     }
     func testInvalidAddressStaysInSettings() {
         app.buttons["connection.open"].tap()
-        app.switches["connection.demo"].tap()
+        let mode=app.switches["connection.demo"]
+        let control=mode.switches.firstMatch
+        if control.exists { control.tap() } else { mode.coordinate(withNormalizedOffset:CGVector(dx:0.92,dy:0.5)).tap() }
         let address=app.textFields["connection.host"]
-        XCTAssertTrue(address.waitForExistence(timeout:5));address.tap()
+        XCTAssertTrue(address.waitForExistence(timeout:5))
+        expectation(for:NSPredicate(format:"enabled == true"),evaluatedWith:address)
+        waitForExpectations(timeout:5);address.tap()
         let current=address.value as? String ?? ""
         address.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:current.count)+"8.8.8.8")
         let apply=app.buttons["connection.apply"];reveal(apply);apply.tap()

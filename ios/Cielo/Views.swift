@@ -153,14 +153,19 @@ struct CurvesView: View {
                 if model.dirty { Text("Cambios sin guardar").foregroundStyle(.orange).accessibilityIdentifier("curves.dirty") }
             }
             Section {
-                DisclosureGroup("Editar puntos",isExpanded:$pointsExpanded) {
+                Button {
+                    withAnimation { pointsExpanded.toggle() }
+                } label: {
+                    HStack { Text("Editar puntos"); Spacer(); Image(systemName:pointsExpanded ? "chevron.up" : "chevron.down") }.contentShape(Rectangle())
+                }.accessibilityIdentifier("curves.points").accessibilityValue(pointsExpanded ? "Desplegado" : "Contraído")
+                if pointsExpanded {
                     Picker("Luz",selection:$pv) { Text("Chihiros").tag(false); Text("Pez Verde").tag(true) }.pickerStyle(.segmented)
                     ForEach(Array(rows.enumerated()),id:\.offset) { i,row in
                         Button { editor = PointChoice(pv:pv,index:i,row:row,checksum:model.profile?.computedChecksum ?? "") } label: {
                             HStack { Text(timeLabel(row[0])).monospacedDigit(); Spacer(); Text(row.dropFirst().map(String.init).joined(separator:" / ")).foregroundStyle(.secondary); Image(systemName:"chevron.right").font(.caption) }
                         }.disabled(model.busy).accessibilityIdentifier("curve.point.\(i)")
                     }
-                }.accessibilityIdentifier("curves.points")
+                }
             }
         }.navigationTitle("Curvas").refreshable { await model.refresh() }
         .sheet(item:$editor) { choice in
