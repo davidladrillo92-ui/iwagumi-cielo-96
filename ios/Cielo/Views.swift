@@ -16,14 +16,11 @@ struct RootView: View {
     @State private var settings = false
     var body: some View {
         TabView {
-            NavigationStack { HomeView(model:model).toolbar { Button("Conexión",systemImage:"network") { settings = true }.accessibilityIdentifier("connection.open") } }.tabItem { Label("Luz",systemImage:"lightbulb") }
-            NavigationStack { CurvesView(model:model) }.tabItem { Label("Curvas",systemImage:"chart.xyaxis.line") }
-            NavigationStack { CentreView(model:model) }.tabItem { Label("Centro",systemImage:"flask") }
+            NavigationStack { HomeView(model:model).safeAreaInset(edge:.top,spacing:0) { DemoBanner(showing:model.demo) }.toolbar { Button("Conexión",systemImage:"network") { settings = true }.accessibilityIdentifier("connection.open") } }.tabItem { Label("Luz",systemImage:"lightbulb") }
+            NavigationStack { CurvesView(model:model).safeAreaInset(edge:.top,spacing:0) { DemoBanner(showing:model.demo) } }.tabItem { Label("Curvas",systemImage:"chart.xyaxis.line") }
+            NavigationStack { CentreView(model:model).safeAreaInset(edge:.top,spacing:0) { DemoBanner(showing:model.demo) } }.tabItem { Label("Centro",systemImage:"flask") }
         }
         .tint(Color(red:0.86,green:0.76,blue:0.65))
-        .safeAreaInset(edge:.top,spacing:0) {
-            if model.demo { Text("DEMOSTRACIÓN · no controla las luces").font(.caption).frame(maxWidth:.infinity).padding(7).background(.orange.opacity(0.15)) }
-        }
         .sheet(isPresented:$settings) { SettingsView(model:model) }
         .alert("CIELO",isPresented:Binding(get:{model.message != nil},set:{if !$0 { model.message = nil }})) { Button("Aceptar") { model.message = nil } } message: { Text(model.message ?? "") }
         .onChange(of:phase) { _,next in model.setForeground(next == .active) }
@@ -36,6 +33,13 @@ struct RootView: View {
                 guard !Task.isCancelled else { break }; await model.refresh()
             }
         }
+    }
+}
+
+struct DemoBanner: View {
+    let showing:Bool
+    var body:some View {
+        if showing { Text("DEMOSTRACIÓN · no controla las luces").font(.caption).frame(maxWidth:.infinity).padding(7).background(.orange.opacity(0.15)) }
     }
 }
 
@@ -131,7 +135,7 @@ struct CurvesView: View {
             Section {
                 Chart(plot) { p in
                     LineMark(x:.value("Hora",p.minute),y:.value("Consigna",p.value)).foregroundStyle(by:.value("Luz",p.light)).symbol(.circle)
-                }.chartYScale(domain:0...100).chartXScale(domain:0...1440)
+                }.chartForegroundStyleScale(["Pez Verde":Color(red:0.89,green:0.65,blue:0.55),"Chihiros":Color(red:0.77,green:0.87,blue:0.81)]).chartYScale(domain:0...100).chartXScale(domain:0...1440)
                     .chartXAxis { AxisMarks(values:[0,360,720,1080,1440]) { v in AxisGridLine(); AxisValueLabel { if let t = v.as(Int.self) { Text(timeLabel(t)) } } } }
                     .frame(height:220).accessibilityLabel("Curvas programadas de ambas luces")
                 Text("Valores programados · no cambian las luces hasta Guardar").font(.caption).foregroundStyle(.secondary)
@@ -176,7 +180,7 @@ struct CurvesView: View {
                 p.seal(); model.replaceProfile(p)
             }
         }
-        .confirmationDialog("Guardar ambas curvas en el ATOM",isPresented:$confirmSave,titleVisibility:.visible) {
+        .confirmationDialog(model.demo ? "Guardar curvas de demostración" : "Guardar ambas curvas en el ATOM",isPresented:$confirmSave,titleVisibility:.visible) {
             Button("Guardar") { Task { await model.save() } }
         }
         .fileImporter(isPresented:$importing,allowedContentTypes:[.json]) { result in
