@@ -35,8 +35,8 @@ jobs:
         run: python tools/package_sierra.py
       - uses: actions/upload-artifact@v4
         with:
-          name: CIELO_VIGILANCIA_iMAC_SIERRA_V4_0_1
-          path: dist/CIELO_VIGILANCIA_iMAC_SIERRA_V4_0_1.zip
+          name: CIELO_VIGILANCIA_iMAC_SIERRA_V4_0_2
+          path: dist/CIELO_VIGILANCIA_iMAC_SIERRA_V4_0_2.zip
           if-no-files-found: error
   browser_ui:
     runs-on: ubuntu-latest

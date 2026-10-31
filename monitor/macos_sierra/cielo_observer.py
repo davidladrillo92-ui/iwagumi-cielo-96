@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-VERSION = '4.0.1-SIERRA'
+VERSION = '4.0.2-SIERRA'
 LABEL = 'es.iwagumi.cielo.vigilancia'
 APP_DIR = pathlib.Path.home() / 'Library' / 'Application Support' / 'IWAGUMI CIELO Vigilancia'
 CONFIG = APP_DIR / 'config.json'
@@ -250,7 +250,7 @@ def meta(db, name, value):
 
 
 def outbox(db, key, msg, now):
-    db.execute('INSERT OR REPLACE INTO outbox(key,msg,due,attempts) VALUES(?,?,?,0)', (key,msg,now))
+    db.execute('INSERT OR IGNORE INTO outbox(key,msg,due,attempts) VALUES(?,?,?,0)', (key,msg,now))
 
 
 def flush_outbox(db, cfg, now):
@@ -288,7 +288,9 @@ def issue(db, st, key, bad, now, label, urgent=False):
             item['active']=True
         if new or now-item.get('last_alert',0)>=3600:
             message = ('🚨 CIELO · ALERTA\n' if new else '⚠️ CIELO · RECORDATORIO\n') + label + '\nComprobar la pantalla físicamente: GATT no mide la luz real.'
-            outbox(db,key,message,now)
+            delivery_key='condition:{}:{}:{}'.format(key,'alert' if new else 'reminder',now)
+            message+='\nDetectado: '+datetime.datetime.fromtimestamp(now).strftime('%d/%m/%Y %H:%M:%S')
+            outbox(db,delivery_key,message,now)
             db.execute('INSERT INTO events(ts,key,kind,message) VALUES(?,?,?,?)',(now,key,'alerta',label))
             item['last_alert']=now
             log('Incidencia: '+key)
@@ -296,7 +298,8 @@ def issue(db, st, key, bad, now, label, urgent=False):
         item['active']=False
         recovered={'off':'Orden de apagado de Pez Verde completada por BLE.', 'pv':'Comunicación con Pez Verde recuperada.', 'ch':'Comunicación con Chihiros recuperada.', 'atom':'El ATOM vuelve a responder al iMac.', 'worker':'El trabajador Bluetooth vuelve a responder.'}.get(key,'La telemetría vuelve a estar normal: '+key)
         message='✅ CIELO · RECUPERACIÓN\n'+recovered+'\nNo es una comprobación óptica.'
-        outbox(db,key,message,now)
+        message+='\nDetectado: '+datetime.datetime.fromtimestamp(now).strftime('%d/%m/%Y %H:%M:%S')
+        outbox(db,'condition:{}:recovered:{}'.format(key,now),message,now)
         db.execute('INSERT INTO events(ts,key,kind,message) VALUES(?,?,?,?)',(now,key,'recuperacion',label))
         log('Recuperación: '+key)
 
@@ -555,7 +558,7 @@ def check_daily(db, now):
     for ts,kind,text in [e for e in events if e[1] in ('reinicio','reinicios_sin_detalle')][-6:]:
         message+=datetime.datetime.fromtimestamp(ts).strftime('%H:%M')+' '+text+'\n'
     message+='GATT no mide la luz física.'
-    outbox(db,'daily',message,now);meta(db,'last_daily',key);log('Resumen diario preparado')
+    outbox(db,'daily:'+key,message,now);meta(db,'last_daily',key);log('Resumen diario preparado')
 
 
 def handle_stop(*args):

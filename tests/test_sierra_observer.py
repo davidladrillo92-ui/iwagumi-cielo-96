@@ -53,7 +53,7 @@ class SierraTests(unittest.TestCase):
             self.assertEqual(sierra.setup(),0) # existing config follows update, not pairing
         self.assertEqual(sierra.CONFIG.read_bytes(),self.original[str(sierra.CONFIG)])
         self.assertEqual(sierra.DB_FILE.read_bytes(),self.original[str(sierra.DB_FILE)])
-        self.assertIn('4.0.1-SIERRA',sierra.PY_SCRIPT.read_text())
+        self.assertIn('4.0.2-SIERRA',sierra.PY_SCRIPT.read_text())
         with sqlite3.connect(str(sierra.DB_FILE)) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM samples').fetchone()[0],1)
             self.assertEqual(db.execute('SELECT msg FROM outbox WHERE key="previous"').fetchone()[0],'Aviso previo que debe conservarse')
@@ -115,7 +115,7 @@ class SierraTests(unittest.TestCase):
             now=int(sierra.time.mktime((2026,10,26,10,0,0,0,0,-1)))
             with sqlite3.connect(str(sierra.DB_FILE)) as db:
                 sierra.check_daily(db,now)
-                msg=db.execute('SELECT msg FROM outbox WHERE key="daily"').fetchone()[0]
+                msg=db.execute('SELECT msg FROM outbox WHERE key LIKE "daily:%"').fetchone()[0]
                 self.assertIn('SIN DATOS',msg);self.assertIn('1500',msg)
         finally:
             if prior is None:os.environ.pop('TZ',None)
