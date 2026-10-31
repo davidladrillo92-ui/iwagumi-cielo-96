@@ -36,7 +36,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
 
     var fresh: Bool { updated.map { Date().timeIntervalSince($0) < 20 } ?? false }
     var canSave: Bool { fresh && dirty && !busy && status?.work_light?.active != true && status?.work_light?.preparing != true && generation != nil }
-    func invalidate() { updated = nil }
+    func invalidate() { revision = UUID(); loading = false; updated = nil }
     func connect(host: String, demo: Bool) async {
         guard !busy else { return }
         do { if !demo { _ = try LocalAddress.url(host) } }

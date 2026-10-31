@@ -26,7 +26,7 @@ struct RootView: View {
         }
         .sheet(isPresented:$settings) { SettingsView(model:model) }
         .alert("CIELO",isPresented:Binding(get:{model.message != nil},set:{if !$0 { model.message = nil }})) { Button("Aceptar") { model.message = nil } } message: { Text(model.message ?? "") }
-        .onChange(of:phase) { _,next in if next != .active { model.invalidate() } }
+        .onChange(of:phase) { _,_ in model.invalidate() }
         .task(id:phase) {
             guard phase == .active else { model.invalidate(); return }
             await model.refresh()

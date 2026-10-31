@@ -46,8 +46,15 @@ jobs:
           ditto -c -k --keepParent ios dist/CIELO_IOS_FUENTES.zip
           ditto -c -k --keepParent /tmp/cielo-ios-simulator/Build/Products/Debug-iphonesimulator/CIELO.app dist/CIELO_SIMULADOR.zip
           ditto -c -k --keepParent /tmp/cielo-ios-device/Build/Products/Release-iphoneos/CIELO.app dist/CIELO_IPHONE_SIN_FIRMA.zip
+      - name: Registrar identidad y hashes de entrega
+        env:
+          CIELO_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 ios/build_manifest.py
       - uses: actions/upload-artifact@v4
         with:
           name: CIELO_IOS_CANDIDATA_NO_PUBLICADA
-          path: dist/CIELO_*
+          path: |
+            dist/CIELO_*
+            dist/BUILD_MANIFEST.json
           if-no-files-found: error
