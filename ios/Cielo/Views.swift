@@ -46,11 +46,12 @@ struct DemoBanner: View {
 struct HomeView: View {
     @ObservedObject var model: CieloController
     @State private var confirmStart = false
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         List {
             Section {
                 VStack(alignment:.leading,spacing:14) {
-                    Image(systemName:"mountain.2.fill").font(.system(size:72)).foregroundStyle(.mint.opacity(0.5)).frame(maxWidth:.infinity).padding(.vertical,18)
+                    Image(systemName:"mountain.2.fill").font(.system(size:72)).foregroundStyle(.mint.opacity(0.5)).frame(maxWidth:.infinity).padding(.vertical,18).accessibilityHidden(true)
                     Text(model.status?.clock ?? "Conecta tu ATOM").font(.title3)
                     Label(model.fresh ? "ATOM accesible" : "Sin comunicación reciente",systemImage:model.fresh ? "circle.fill" : "circle.dotted").font(.caption).foregroundStyle(model.fresh ? Color.mint : Color.secondary)
                 }.padding(.vertical,8)
@@ -63,19 +64,27 @@ struct HomeView: View {
             Section("Mantenimiento") {
                 Text(maintenanceLabel).foregroundStyle(.secondary)
                 if let remaining = model.status?.work_light?.remaining_sec, remaining > 0 { Text("Transición: \(remaining / 60) min \(remaining % 60) s").monospacedDigit() }
-                HStack {
-                    Button("Iniciar",systemImage:"play.fill") { confirmStart = true }.accessibilityIdentifier("maintenance.start")
-                        .disabled(!model.fresh || model.busy || model.status?.work_light?.can_start != true)
-                    Spacer()
-                    Button("Parar",systemImage:"stop.fill") { Task { await model.maintenance(start:false) } }.accessibilityIdentifier("maintenance.stop")
-                        .disabled(!model.fresh || model.busy || (model.status?.work_light?.active != true && model.status?.work_light?.preparing != true) || model.status?.work_light?.phase == "returning")
-                }.buttonStyle(.borderless)
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment:.leading,spacing:8) { startButton; stopButton }
+                } else {
+                    HStack { startButton; Spacer(); stopButton }
+                }
             }
             Section { Text("Los valores son consignas. La comunicación BLE no mide la luz física. Las curvas continúan en el ATOM al cerrar la app.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("CIELO").refreshable { await model.refresh() }
         .confirmationDialog("Iniciar luz de mantenimiento",isPresented:$confirmStart,titleVisibility:.visible) {
-            Button("Iniciar") { Task { await model.maintenance(start:true) } }
+            Button("Iniciar") { Task { await model.maintenance(start:true) } }.accessibilityIdentifier("maintenance.confirm")
         } message: { Text(model.demo ? "Solo cambiará la demostración." : "Subida de 10 minutos. Al parar, retorno de 2 minutos a la programación.") }
+    }
+    private var canStart:Bool { model.fresh && !model.busy && model.status?.work_light?.can_start == true }
+    private var canStop:Bool { model.fresh && !model.busy && (model.status?.work_light?.active == true || model.status?.work_light?.preparing == true) && model.status?.work_light?.phase != "returning" }
+    private var startButton:some View {
+        Button { confirmStart = true } label: { Label("Iniciar",systemImage:"play.fill").frame(minWidth:44,minHeight:44).contentShape(Rectangle()) }
+            .buttonStyle(.borderless).accessibilityIdentifier("maintenance.start").disabled(!canStart).opacity(canStart ? 1 : 0.4)
+    }
+    private var stopButton:some View {
+        Button { Task { await model.maintenance(start:false) } } label: { Label("Parar",systemImage:"stop.fill").frame(minWidth:44,minHeight:44).contentShape(Rectangle()) }
+            .buttonStyle(.borderless).accessibilityIdentifier("maintenance.stop").disabled(!canStop).opacity(canStop ? 1 : 0.4)
     }
     private var maintenanceLabel: String {
         guard model.fresh else { return "Sin confirmar" }
@@ -88,16 +97,22 @@ struct HomeView: View {
 struct LampRow: View {
     @ObservedObject var model: CieloController
     let name: String; let pv: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        HStack {
-            VStack(alignment:.leading,spacing:5) {
-                Text(name).font(.headline)
-                Text(label).font(.caption).foregroundStyle(.secondary)
-                Text(model.fresh && values.count == 3 ? "R \(values[0]) · G \(values[1]) · B \(values[2])" : "RGB sin confirmar").font(.caption).foregroundStyle(.secondary)
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment:.leading,spacing:10) { details; Text(percentLabel).font(.title2).monospacedDigit() }
+            } else {
+                HStack { details; Spacer(); Text(percentLabel).font(.title2).monospacedDigit() }
             }
-            Spacer()
-            Text(percentLabel).font(.title2).monospacedDigit()
         }.padding(.vertical,7)
+    }
+    private var details:some View {
+        VStack(alignment:.leading,spacing:5) {
+            Text(name).font(.headline)
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(model.fresh && values.count == 3 ? "R \(values[0]) · G \(values[1]) · B \(values[2])" : "RGB sin confirmar").font(.caption).foregroundStyle(.secondary)
+        }
     }
     private var percentLabel: String {
         guard model.fresh else { return "—" }
@@ -113,16 +128,18 @@ struct LampRow: View {
         let connected = pv ? m?.pv_link_connected : m?.ch_link_connected
         if connected == false { return "Sin enlace BLE" }
         if pv && m?.pv_waiting_off_check == true { return "Conectado · en reposo" }
-        if (pv ? m?.pv_online_recent : m?.ch_online_recent) == true { return values.allSatisfy({ $0 == 0 }) || (pv && model.status?.brightness == 0) ? "Conectado · en reposo" : "Conectado" }
+        if (pv ? m?.pv_online_recent : m?.ch_online_recent) == true { return (values.count == 3 && values.allSatisfy({ $0 == 0 })) || (pv && model.status?.brightness == 0) ? "Conectado · en reposo" : "Conectado" }
         return "Comprobando comunicación"
     }
 }
 
 struct PlotPoint: Identifiable { var id:String; var minute:Int; var value:Int; var light:String }
-struct PointChoice: Identifiable { var id = UUID(); var pv:Bool; var index:Int; var row:[Int]; var checksum:String }
+struct PointChoice: Identifiable { var id = UUID(); var pv:Bool; var index:Int; var row:[Int]; var checksum:String; var limits:PointLimits }
 struct CurvesView: View {
     @ObservedObject var model:CieloController
     @State private var pv = false
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo:.body) private var chartHeight:CGFloat = 220
     @State private var editor:PointChoice?
     @State private var importing = false
     @State private var exporting = false
@@ -136,8 +153,8 @@ struct CurvesView: View {
                 Chart(plot) { p in
                     LineMark(x:.value("Hora",p.minute),y:.value("Consigna",p.value)).foregroundStyle(by:.value("Luz",p.light)).symbol(.circle)
                 }.chartForegroundStyleScale(["Pez Verde":Color(red:0.89,green:0.65,blue:0.55),"Chihiros":Color(red:0.77,green:0.87,blue:0.81)]).chartYScale(domain:0...100).chartXScale(domain:0...1440)
-                    .chartXAxis { AxisMarks(values:[0,360,720,1080,1440]) { v in AxisGridLine(); AxisValueLabel { if let t = v.as(Int.self) { Text(timeLabel(t)) } } } }
-                    .frame(height:220).accessibilityLabel("Curvas programadas de ambas luces")
+                    .chartXAxis { AxisMarks(values:typeSize.isAccessibilitySize ? [0,1440] : [0,360,720,1080,1440]) { v in AxisGridLine(); AxisValueLabel { if let t = v.as(Int.self) { Text(timeLabel(t)) } } } }
+                    .frame(height:chartHeight).accessibilityLabel("Curvas programadas de ambas luces")
                 Text("Valores programados · no cambian las luces hasta Guardar").font(.caption).foregroundStyle(.secondary)
             }
             Section {
@@ -160,13 +177,16 @@ struct CurvesView: View {
                 Button {
                     withAnimation { pointsExpanded.toggle() }
                 } label: {
-                    HStack { Text("Editar puntos"); Spacer(); Image(systemName:pointsExpanded ? "chevron.up" : "chevron.down") }.contentShape(Rectangle())
+                    HStack { Text("Editar puntos"); Spacer(); Image(systemName:pointsExpanded ? "chevron.up" : "chevron.down").accessibilityHidden(true) }.contentShape(Rectangle())
                 }.accessibilityIdentifier("curves.points").accessibilityValue(pointsExpanded ? "Desplegado" : "Contraído")
                 if pointsExpanded {
                     Picker("Luz",selection:$pv) { Text("Chihiros").tag(false); Text("Pez Verde").tag(true) }.pickerStyle(.segmented)
                     ForEach(Array(rows.enumerated()),id:\.offset) { i,row in
-                        Button { editor = PointChoice(pv:pv,index:i,row:row,checksum:model.profile?.computedChecksum ?? "") } label: {
-                            HStack { Text(timeLabel(row[0])).monospacedDigit(); Spacer(); Text(row.dropFirst().map(String.init).joined(separator:" / ")).foregroundStyle(.secondary); Image(systemName:"chevron.right").font(.caption) }
+                        Button {
+                            guard let profile=model.profile, let limits=profile.editLimits(pv:pv,index:i) else { return }
+                            editor = PointChoice(pv:pv,index:i,row:row,checksum:profile.computedChecksum,limits:limits)
+                        } label: {
+                            HStack { Text(timeLabel(row[0])).monospacedDigit(); Spacer(); Text(row.dropFirst().map(String.init).joined(separator:" / ")).foregroundStyle(.secondary); Image(systemName:"chevron.right").font(.caption).accessibilityHidden(true) }
                         }.disabled(model.busy).accessibilityIdentifier("curve.point.\(i)")
                     }
                 }
@@ -181,7 +201,7 @@ struct CurvesView: View {
             }
         }
         .confirmationDialog(model.demo ? "Guardar curvas de demostración" : "Guardar ambas curvas en el ATOM",isPresented:$confirmSave,titleVisibility:.visible) {
-            Button("Guardar") { Task { await model.save() } }
+            Button("Guardar") { Task { await model.save() } }.accessibilityIdentifier("curves.confirm")
         }
         .fileImporter(isPresented:$importing,allowedContentTypes:[.json]) { result in
             do {
@@ -205,6 +225,7 @@ struct CurvesView: View {
 
 struct PreviewLampRow: View {
     let name:String; let values:[Int]; let pv:Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var percent:Int { pv ? values[3] : values.prefix(3).max() ?? 0 }
     private var color:Color {
         let divisor = pv ? 255.0 : 100.0
@@ -215,8 +236,9 @@ struct PreviewLampRow: View {
         HStack(spacing:12) {
             RoundedRectangle(cornerRadius:9).fill(color).frame(width:38,height:38).overlay(RoundedRectangle(cornerRadius:9).stroke(.white.opacity(0.15))).accessibilityHidden(true)
             VStack(alignment:.leading,spacing:4) { Text(name).font(.headline); Text("R \(values[0]) · G \(values[1]) · B \(values[2])").font(.caption).foregroundStyle(.secondary) }
-            Spacer(); Text("\(percent)%").font(.title3).monospacedDigit()
+            if !typeSize.isAccessibilitySize { Spacer(); Text("\(percent)%").font(.title3).monospacedDigit() }
         }.padding(.vertical,4)
+        if typeSize.isAccessibilitySize { Text("\(percent)%").font(.title3).monospacedDigit() }
     }
 }
 
@@ -229,12 +251,12 @@ struct PointEditor:View {
     var body:some View {
         NavigationStack {
             Form {
-                Stepper("Hora: \(timeLabel(row[0]))",value:$row[0],in:0...1440).accessibilityIdentifier("point.time")
+                Stepper("Hora: \(timeLabel(row[0]))",value:$row[0],in:choice.limits.minute).disabled(choice.limits.minute.lowerBound == choice.limits.minute.upperBound).accessibilityIdentifier("point.time")
                 ForEach(1...3,id:\.self) { i in
-                    Stepper("\(["","R","G","B"][i]): \(row[i])",value:$row[i],in:0...(choice.pv ? 255 : 100)).accessibilityIdentifier("point.channel.\(i)")
+                    Stepper("\(["","R","G","B"][i]): \(row[i])",value:$row[i],in:0...(choice.pv ? 255 : 100)).disabled(choice.limits.channelsLocked).accessibilityIdentifier("point.channel.\(i)")
                 }
-                if choice.pv { Stepper("Brillo: \(row[4])%",value:$row[4],in:0...100) }
-                Text("La hora debe quedar entre los puntos vecinos. Los extremos deben conservar el apagado.").font(.caption).foregroundStyle(.secondary)
+                if choice.pv { Stepper("Brillo: \(row[4])%",value:$row[4],in:0...100).disabled(choice.limits.brightnessLocked) }
+                Text("La hora respeta los puntos vecinos y el apagado final.").font(.caption).foregroundStyle(.secondary)
             }.navigationTitle("Editar punto")
                 .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Cancelar") { dismiss() } }; ToolbarItem(placement:.confirmationAction) { Button("Aplicar") { apply(row);dismiss() }.accessibilityIdentifier("point.apply") } }
         }

@@ -23,6 +23,13 @@ import Foundation
         precondition(sample.preview(minute:15,pv:false) == [3,97,1])
         precondition(sample.preview(minute:1440,pv:false) == [0,0,0])
         precondition(sample.preview(minute:1441,pv:false) == [0,0,0])
+        sample.seal()
+        precondition(sample.editLimits(pv:false,index:1)?.minute == 11...1439)
+        precondition(sample.editLimits(pv:false,index:2)?.minute == 1440...1440)
+        precondition(sample.editLimits(pv:false,index:2)?.channelsLocked == true)
+        precondition(profile.editLimits(pv:true,index:0)?.brightnessLocked == true)
+        precondition(profile.editLimits(pv:true,index:profile.lights.pezverde.points.count-1)?.brightnessLocked == true)
+        precondition(profile.editLimits(pv:true,index:-1) == nil)
         profile.lights.chihiros.points[1][0] = profile.lights.chihiros.points[0][0];profile.seal()
         do { try profile.validate();fatalError("Accepted duplicate time") } catch CieloError.invalidProfile {}
         print("PASS native core: import/export/checksum/generation, invalid profiles and private IPv4 boundaries")

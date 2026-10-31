@@ -1,6 +1,6 @@
 # CIELO — ficha de publicación (borrador)
 
-Estado: candidata 0.2, sin publicar. Usar estos textos solo cuando las pruebas en hardware y firma estén cerradas. Nombre e identificador sujetos a disponibilidad y derechos del titular.
+Estado: candidata 0.2.1, sin publicar. Usar estos textos solo cuando las pruebas en hardware y firma estén cerradas. Nombre e identificador sujetos a disponibilidad y derechos del titular.
 
 **Nombre:** CIELO · Luz de acuario
 
@@ -52,4 +52,4 @@ El cliente actual no integra SDK de publicidad, seguimiento ni analítica. Consu
 
 La exportación de perfiles y la preparación de informes requieren una acción del usuario. Los informes preparados se guardan en el espacio temporal privado de la app; compartirlos mediante iOS puede enviarlos a la aplicación o destino elegido por el usuario. El usuario debe revisar el contenido antes de compartirlo. El informe depende de la versión del firmware del controlador.
 
-Este apartado describe el comportamiento del código de la candidata 0.2. No es una política publicada ni sustituye los datos de contacto y responsabilidad que debe aportar el titular. Revisar de nuevo antes de enviar a Apple y tras añadir cualquier servicio externo.
+Este apartado describe el comportamiento del código de la candidata 0.2.1. No es una política publicada ni sustituye los datos de contacto y responsabilidad que debe aportar el titular. Revisar de nuevo antes de enviar a Apple y tras añadir cualquier servicio externo.

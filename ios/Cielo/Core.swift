@@ -28,6 +28,7 @@ enum LocalAddress {
 
 struct LightCurve: Codable, Equatable { var points: [[Int]]; var unit: String }
 struct ProfileLights: Codable, Equatable { var pezverde: LightCurve; var chihiros: LightCurve }
+struct PointLimits { let minute: ClosedRange<Int>; let channelsLocked: Bool; let brightnessLocked: Bool }
 struct Integrity: Codable, Equatable { var algorithm: String; var checksum: String }
 struct CieloProfile: Codable, Equatable {
     var schema = "iwagumi-cielo-profile"
@@ -67,6 +68,16 @@ struct CieloProfile: Codable, Equatable {
         guard let pv = status.points, let ch = status.chiPoints else { throw CieloError.invalidProfile }
         var profile = Self(lights: ProfileLights(pezverde: LightCurve(points: try parseWire(pv), unit: "rgb255-plus-brightness"), chihiros: LightCurve(points: try parseWire(ch), unit: "percent")), integrity: Integrity(algorithm: "fnv1a32", checksum: ""))
         profile.seal(); try profile.validate(); return profile
+    }
+    func editLimits(pv: Bool, index: Int) -> PointLimits? {
+        do { try validate() } catch { return nil }
+        let rows = pv ? lights.pezverde.points : lights.chihiros.points
+        guard rows.indices.contains(index) else { return nil }
+        let last = index == rows.count-1
+        let lower = last ? 1440 : (index == 0 ? 0 : rows[index-1][0]+1)
+        let upper = last ? 1440 : rows[index+1][0]-1
+        guard lower <= upper else { return nil }
+        return PointLimits(minute:lower...upper,channelsLocked:!pv && last,brightnessLocked:pv && (index == 0 || last))
     }
     // Integer-minute preview matches cielo::at and its signed rounding in cielo_engine.h.
     func preview(minute: Int, pv: Bool) -> [Int] {

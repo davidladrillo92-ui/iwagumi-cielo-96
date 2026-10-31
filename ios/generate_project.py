@@ -9,7 +9,7 @@ def obj(kind,**values):
     counter+=1;key=f'{counter:024X}';objects[key]={'isa':kind,**values};return key
 def configs(target=False,uitest=False):
     values={'SDKROOT':'iphoneos','IPHONEOS_DEPLOYMENT_TARGET':'17.0','SWIFT_VERSION':'5.0','CLANG_ENABLE_MODULES':'YES'}
-    if target:values.update({'PRODUCT_BUNDLE_IDENTIFIER':'es.iwagumi.cielo','PRODUCT_NAME':'CIELO','INFOPLIST_FILE':'Cielo/Info.plist','GENERATE_INFOPLIST_FILE':'NO','MARKETING_VERSION':'0.2.0','CURRENT_PROJECT_VERSION':'2','TARGETED_DEVICE_FAMILY':'1,2','CODE_SIGN_STYLE':'Automatic','ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','SWIFT_EMIT_LOC_STRINGS':'YES'})
+    if target:values.update({'PRODUCT_BUNDLE_IDENTIFIER':'es.iwagumi.cielo','PRODUCT_NAME':'CIELO','INFOPLIST_FILE':'Cielo/Info.plist','GENERATE_INFOPLIST_FILE':'NO','MARKETING_VERSION':'0.2.1','CURRENT_PROJECT_VERSION':'3','TARGETED_DEVICE_FAMILY':'1,2','CODE_SIGN_STYLE':'Automatic','ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','SWIFT_EMIT_LOC_STRINGS':'YES'})
     if uitest:values.update({'PRODUCT_BUNDLE_IDENTIFIER':'es.iwagumi.cielo.uitests','PRODUCT_NAME':'CieloUITests','GENERATE_INFOPLIST_FILE':'YES','TEST_TARGET_NAME':'CIELO','CODE_SIGN_STYLE':'Automatic','TARGETED_DEVICE_FAMILY':'1,2'})
     keys=[]
     for name in ['Debug','Release']:

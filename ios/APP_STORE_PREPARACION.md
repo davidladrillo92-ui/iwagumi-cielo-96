@@ -1,4 +1,4 @@
-# CIELO iOS — candidata nativa0.2
+# CIELO iOS — candidata nativa0.2.1
 
 Proyecto SwiftUI para iPhone/iPad, iOS17 o posterior. Base del firmware3.12 c2cb7fedcc0cc887f003f0c84bcac0a0b8748f39. Esta rama no modifica el firmware ni instala nada en el ATOM o el iMac. No es una app publicada ni un IPA firmado.
 
@@ -35,3 +35,5 @@ El perfil demo es el último JSON preparado de37PV/44CH, checksumdd129bb7. Tests
 La ficha de publicación está preparada en `FICHA_APP_STORE_BORRADOR.md`. Incluye textos de tienda y notas de revisión; el titular debe completar sus datos y publicar las URLs.
 
 Actualización0.2: vista previa RGB por minuto, acciones antes de los puntos, protección de primer plano/conflictos, pruebas nativas de interfaz y guía de firma. Ver `PRUEBA_BETA_Y_FIRMA.md`. La apertura en simulador y los ensayos automáticos no sustituyen la prueba con el ATOM ni la firma real.
+
+Actualización0.2.1: pruebas de interfaz en ambas familias, auditoría automática seleccionada de accesibilidad y límites seguros de edición. Ver `VALIDACION_0_2_1.md` para alcance y pendientes físicos/de cuenta.
