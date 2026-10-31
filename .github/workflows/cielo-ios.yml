@@ -29,26 +29,26 @@ jobs:
         run: |
           swiftc -parse-as-library ios/Cielo/Core.swift ios/Cielo/Controller.swift ios/Tests/ControllerChecks.swift -o /tmp/cielo-controller-check
           /tmp/cielo-controller-check ios/Cielo/DemoProfile.json
-      - name: Compilar para simulador
-        run: xcodebuild -project ios/Cielo.xcodeproj -scheme CIELO -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/cielo-ios-simulator CODE_SIGNING_ALLOWED=NO build
-      - name: Abrir demostración en simulador
+      - name: Preparar simulador iPhone
         run: |
           mkdir -p dist
           DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if x["name"].startswith("iPhone")))')
           echo "CIELO_SIMULATOR_UDID=$DEVICE" >> "$GITHUB_ENV"
           xcrun simctl boot "$DEVICE"
           xcrun simctl bootstatus "$DEVICE" -b
-          xcrun simctl install "$DEVICE" /tmp/cielo-ios-simulator/Build/Products/Debug-iphonesimulator/CIELO.app
-          xcrun simctl launch "$DEVICE" es.iwagumi.cielo
-          sleep 4
-          xcrun simctl io "$DEVICE" screenshot dist/CIELO_DEMO_SIMULADOR.png
       - name: Probar interfaz y accesibilidad iPhone
+        id: ui
+        continue-on-error: true
         run: bash ios/run_ui_tests.sh iphone "$CIELO_SIMULATOR_UDID"
       - name: Compilar iPhone sin firma
         run: xcodebuild -project ios/Cielo.xcodeproj -scheme CIELO -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath /tmp/cielo-ios-device CODE_SIGNING_ALLOWED=NO build
       - name: Empaquetar proyecto y apps sin firma
         run: |
           mkdir -p dist
+          xcrun simctl terminate "$CIELO_SIMULATOR_UDID" es.iwagumi.cielo || true
+          xcrun simctl launch "$CIELO_SIMULATOR_UDID" es.iwagumi.cielo
+          sleep 2
+          xcrun simctl io "$CIELO_SIMULATOR_UDID" screenshot dist/CIELO_DEMO_SIMULADOR.png
           ditto -c -k --keepParent ios dist/CIELO_IOS_FUENTES.zip
           ditto -c -k --keepParent /tmp/cielo-ios-simulator/Build/Products/Debug-iphonesimulator/CIELO.app dist/CIELO_SIMULADOR.zip
           ditto -c -k --keepParent /tmp/cielo-ios-device/Build/Products/Release-iphoneos/CIELO.app dist/CIELO_IPHONE_SIN_FIRMA.zip
@@ -57,6 +57,13 @@ jobs:
           CIELO_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 ios/build_manifest.py
+      - name: Conservar el fallo si la interfaz no supera las pruebas
+        if: always()
+        run: |
+          if [ "${{ steps.ui.outcome }}" != "success" ]; then
+            echo 'La candidata conserva incidencias de interfaz/accesibilidad. No es una entrega validada.'
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

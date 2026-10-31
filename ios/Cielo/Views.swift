@@ -39,7 +39,7 @@ struct RootView: View {
 struct DemoBanner: View {
     let showing:Bool
     var body:some View {
-        if showing { Text("DEMOSTRACIÓN · no controla las luces").font(.caption).frame(maxWidth:.infinity).padding(7).background(.orange.opacity(0.15)) }
+        if showing { Text("Modo demostración").font(.caption).frame(maxWidth:.infinity).padding(.horizontal,16).padding(.vertical,8).background(.orange.opacity(0.15)).background(Color(uiColor:.systemBackground)).accessibilityLabel("Modo demostración. No controla las luces.") }
     }
 }
 

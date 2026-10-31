@@ -10,6 +10,7 @@ Esta revisión cierra comprobaciones automáticas que faltaban en0.2. No cambia 
 - Accesos directos de vista previa a00:00 y24:00 para elegir los extremos con precisión. El arrastre del deslizador se prueba como desplazamiento, sin asumir que la automatización nativa llega exactamente al minuto extremo en todos los dispositivos.
 - Edición de horas limitada al intervalo entre vecinos. El punto final permanece a24:00; la Chihiros conserva sus canales finales a cero y Pez Verde conserva el brillo inicial/final a cero. Sigue existiendo la validación completa antes de guardar.
 - Títulos dentro del contenido de cada sección, con tipografía semántica y rasgo de encabezado para VoiceOver, y contenedores adaptativos que conservan sus vistas al cambiar el tamaño de texto. La configuración de conexión se inicializa una vez al abrirla para mantener la edición durante las consultas de estado.
+- Aviso de demostración breve y con fondo opaco, para evitar superponer texto sobre el contenido desplazado, también con tamaño máximo. VoiceOver conserva la descripción de que no controla las luces.
 - Confirmaciones con identificadores independientes para probar diálogos y ventanas emergentes en iPhone/iPad.
 
 ## Comprobaciones incluidas
@@ -21,6 +22,8 @@ Cada incidencia conserva pantalla, descripción y referencia al elemento; el rec
 La auditoría automática usa los tipos Dynamic Type, texto recortado y descripción suficiente de elementos de Apple sobre las vistas principales visibles. No sustituye una revisión manual con VoiceOver, no cubre todos los elementos fuera de pantalla ni certifica accesibilidad completa. Contraste, interacción manual y uso físico siguen pendientes.
 
 Una ejecución separada fija el tamaño del sistema mediante `simctl ui content_size accessibility-extra-extra-extra-large`. Verifica el crecimiento real del título (>35pt de altura), disposición vertical de mantenimiento, vista previa y compartir informe; conserva capturas y resultado propios. No reemplaza ni oculta los fallos del auditor Dynamic Type. El tamaño se restaura al terminar.
+
+Las fuentes y compilaciones sin firma de una candidata pueden adjuntarse para revisión aunque la auditoría falle: su manifiesto conserva el resultado fallido y el job termina en fallo. Estos paquetes no equivalen a una entrega validada.
 
 La entrega conjunta solo se genera si las dos familias pasan sus seis pruebas sin fallos ni omisiones y la prueba adicional de tamaño máximo. Se cotejan los fuentes del ZIP con el checkout, la procedencia del mismo commit/ejecución y los hashes de los artefactos. `VERIFICACION_ENTREGA.json` conserva expresamente el estado sin firma, sin publicación y no listo para TestFlight.
 
