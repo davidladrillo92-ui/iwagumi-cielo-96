@@ -1,0 +1,49 @@
+name: CIELO · iPhone nativo
+on:
+  push:
+    branches: [dev/cielo-ios-native-20261031]
+  pull_request:
+    branches: [dev/cielo-rc5-recovery3-12-diagnostics-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Registrar Xcode y generar proyecto
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          python3 ios/generate_project.py
+      - name: Comprobar contrato nativo sin hardware
+        run: |
+          swiftc ios/Cielo/Core.swift ios/Tests/CoreChecks.swift -o /tmp/cielo-core-check
+          /tmp/cielo-core-check ios/Cielo/DemoProfile.json
+      - name: Compilar para simulador
+        run: xcodebuild -project ios/Cielo.xcodeproj -scheme CIELO -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/cielo-ios-simulator CODE_SIGNING_ALLOWED=NO build
+      - name: Abrir demostración en simulador
+        run: |
+          mkdir -p dist
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if x["name"].startswith("iPhone")))')
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" /tmp/cielo-ios-simulator/Build/Products/Debug-iphonesimulator/CIELO.app
+          xcrun simctl launch "$DEVICE" es.iwagumi.cielo
+          sleep 4
+          xcrun simctl io "$DEVICE" screenshot dist/CIELO_DEMO_SIMULADOR.png
+      - name: Compilar iPhone sin firma
+        run: xcodebuild -project ios/Cielo.xcodeproj -scheme CIELO -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath /tmp/cielo-ios-device CODE_SIGNING_ALLOWED=NO build
+      - name: Empaquetar proyecto y apps sin firma
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent ios dist/CIELO_IOS_FUENTES.zip
+          ditto -c -k --keepParent /tmp/cielo-ios-simulator/Build/Products/Debug-iphonesimulator/CIELO.app dist/CIELO_SIMULADOR.zip
+          ditto -c -k --keepParent /tmp/cielo-ios-device/Build/Products/Release-iphoneos/CIELO.app dist/CIELO_IPHONE_SIN_FIRMA.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CIELO_IOS_CANDIDATA_NO_PUBLICADA
+          path: dist/CIELO_*
+          if-no-files-found: error

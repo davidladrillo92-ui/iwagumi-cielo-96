@@ -1,0 +1,232 @@
+// !$*UTF8*$!
+{
+"archiveVersion" = 1;
+"classes" = {
+
+};
+"objectVersion" = 56;
+"objects" = {
+"000000000000000000000001" = {
+"isa" = "PBXFileReference";
+"explicitFileType" = "wrapper.application";
+"path" = "CIELO.app";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"000000000000000000000002" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Core.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000003" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000002";
+};
+"000000000000000000000004" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Controller.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000005" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000004";
+};
+"000000000000000000000006" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Views.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000007" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000006";
+};
+"000000000000000000000008" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "CieloApp.swift";
+"sourceTree" = "<group>";
+};
+"000000000000000000000009" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "000000000000000000000008";
+};
+"00000000000000000000000A" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "folder.assetcatalog";
+"path" = "Assets.xcassets";
+"sourceTree" = "<group>";
+};
+"00000000000000000000000B" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "00000000000000000000000A";
+};
+"00000000000000000000000C" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"path" = "PrivacyInfo.xcprivacy";
+"sourceTree" = "<group>";
+};
+"00000000000000000000000D" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "00000000000000000000000C";
+};
+"00000000000000000000000E" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.json";
+"path" = "DemoProfile.json";
+"sourceTree" = "<group>";
+};
+"00000000000000000000000F" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "00000000000000000000000E";
+};
+"000000000000000000000010" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"path" = "Info.plist";
+"sourceTree" = "<group>";
+};
+"000000000000000000000011" = {
+"isa" = "PBXGroup";
+"children" = ("000000000000000000000002","000000000000000000000004","000000000000000000000006","000000000000000000000008","00000000000000000000000A","00000000000000000000000C","00000000000000000000000E","000000000000000000000010");
+"path" = "Cielo";
+"sourceTree" = "<group>";
+};
+"000000000000000000000012" = {
+"isa" = "PBXGroup";
+"children" = ("000000000000000000000001");
+"name" = "Products";
+"sourceTree" = "<group>";
+};
+"000000000000000000000013" = {
+"isa" = "PBXGroup";
+"children" = ("000000000000000000000011","000000000000000000000012");
+"sourceTree" = "<group>";
+};
+"000000000000000000000014" = {
+"isa" = "PBXSourcesBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ("000000000000000000000003","000000000000000000000005","000000000000000000000007","000000000000000000000009");
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000015" = {
+"isa" = "PBXFrameworksBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ();
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000016" = {
+"isa" = "PBXResourcesBuildPhase";
+"buildActionMask" = 2147483647;
+"files" = ("00000000000000000000000B","00000000000000000000000D","00000000000000000000000F");
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"000000000000000000000017" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "es.iwagumi.cielo";
+"PRODUCT_NAME" = "CIELO";
+"INFOPLIST_FILE" = "Cielo/Info.plist";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"MARKETING_VERSION" = "0.1.0";
+"CURRENT_PROJECT_VERSION" = "1";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"CODE_SIGN_STYLE" = "Automatic";
+"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+"SWIFT_EMIT_LOC_STRINGS" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+};
+};
+"000000000000000000000018" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "es.iwagumi.cielo";
+"PRODUCT_NAME" = "CIELO";
+"INFOPLIST_FILE" = "Cielo/Info.plist";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"MARKETING_VERSION" = "0.1.0";
+"CURRENT_PROJECT_VERSION" = "1";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"CODE_SIGN_STYLE" = "Automatic";
+"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+"SWIFT_EMIT_LOC_STRINGS" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+};
+};
+"000000000000000000000019" = {
+"isa" = "XCConfigurationList";
+"buildConfigurations" = ("000000000000000000000017","000000000000000000000018");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Release";
+};
+"00000000000000000000001A" = {
+"isa" = "PBXNativeTarget";
+"buildConfigurationList" = "000000000000000000000019";
+"buildPhases" = ("000000000000000000000014","000000000000000000000015","000000000000000000000016");
+"buildRules" = ();
+"dependencies" = ();
+"name" = "CIELO";
+"productName" = "CIELO";
+"productReference" = "000000000000000000000001";
+"productType" = "com.apple.product-type.application";
+};
+"00000000000000000000001B" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+};
+};
+"00000000000000000000001C" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"SDKROOT" = "iphoneos";
+"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+"SWIFT_VERSION" = "5.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+};
+};
+"00000000000000000000001D" = {
+"isa" = "XCConfigurationList";
+"buildConfigurations" = ("00000000000000000000001B","00000000000000000000001C");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Release";
+};
+"00000000000000000000001E" = {
+"isa" = "PBXProject";
+"attributes" = {
+"BuildIndependentTargetsInParallel" = "YES";
+"LastUpgradeCheck" = "1600";
+};
+"buildConfigurationList" = "00000000000000000000001D";
+"compatibilityVersion" = "Xcode 14.0";
+"developmentRegion" = "es";
+"hasScannedForEncodings" = 0;
+"knownRegions" = ("es","en","Base");
+"mainGroup" = "000000000000000000000013";
+"productRefGroup" = "000000000000000000000012";
+"projectDirPath" = "";
+"projectRoot" = "";
+"targets" = ("00000000000000000000001A");
+};
+};
+"rootObject" = "00000000000000000000001E";
+}
