@@ -14,6 +14,7 @@ def configs(target=False,uitest=False):
     keys=[]
     for name in ['Debug','Release']:
         v=dict(values);v['SWIFT_OPTIMIZATION_LEVEL']='-Onone' if name=='Debug' else '-O'
+        if name=='Debug':v['ONLY_ACTIVE_ARCH']='YES'
         keys.append(obj('XCBuildConfiguration',name=name,buildSettings=v))
     return obj('XCConfigurationList',buildConfigurations=keys,defaultConfigurationIsVisible=0,defaultConfigurationName='Release')
 product=obj('PBXFileReference',explicitFileType='wrapper.application',path='CIELO.app',sourceTree='BUILT_PRODUCTS_DIR')

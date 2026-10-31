@@ -8,6 +8,7 @@ Esta revisión cierra comprobaciones automáticas que faltaban en0.2. No cambia 
 - Filas de luces y vista previa adaptadas a texto grande; gráfico con altura escalable y menos marcas horarias en ese tamaño. Símbolos decorativos excluidos de la lectura accesible.
 - Accesos directos de vista previa a00:00 y24:00 para elegir los extremos con precisión. El arrastre del deslizador se prueba como desplazamiento, sin asumir que la automatización nativa llega exactamente al minuto extremo en todos los dispositivos.
 - Edición de horas limitada al intervalo entre vecinos. El punto final permanece a24:00; la Chihiros conserva sus canales finales a cero y Pez Verde conserva el brillo inicial/final a cero. Sigue existiendo la validación completa antes de guardar.
+- Títulos de sección con tipografía semántica y contenedores adaptativos que conservan sus vistas al cambiar el tamaño de texto. La configuración de conexión se inicializa una vez al abrirla para mantener la edición durante las consultas de estado.
 - Confirmaciones con identificadores independientes para probar diálogos y ventanas emergentes en iPhone/iPad.
 
 ## Comprobaciones incluidas
@@ -27,3 +28,5 @@ La entrega conjunta solo se genera si las dos familias pasan sus seis pruebas si
 El iMac Sierra continúa como vigilante; estas comprobaciones de iOS se realizan en los Mac de GitHub. Las instrucciones de firma y sesión física están en `PRUEBA_BETA_Y_FIRMA.md`.
 
 Referencia oficial: https://developer.apple.com/documentation/accessibility/performing-accessibility-audits-for-your-app
+
+Referencia de contenedores adaptativos: https://developer.apple.com/documentation/swiftui/anylayout

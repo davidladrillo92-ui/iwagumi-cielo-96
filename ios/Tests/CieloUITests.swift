@@ -110,7 +110,8 @@ final class CieloUITests: XCTestCase {
         app.buttons["connection.open"].tap()
         let mode=app.switches["connection.demo"]
         let control=mode.switches.firstMatch
-        if control.exists { control.tap() } else { mode.coordinate(withNormalizedOffset:CGVector(dx:0.92,dy:0.5)).tap() }
+        let target=control.exists ? control : mode
+        target.coordinate(withNormalizedOffset:CGVector(dx:0.85,dy:0.5)).tap()
         let address=app.textFields["connection.host"]
         XCTAssertTrue(address.waitForExistence(timeout:5))
         expectation(for:NSPredicate(format:"enabled == true"),evaluatedWith:address)

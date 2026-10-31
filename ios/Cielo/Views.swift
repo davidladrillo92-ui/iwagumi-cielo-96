@@ -43,6 +43,11 @@ struct DemoBanner: View {
     }
 }
 
+struct CieloSectionTitle:View {
+    let title:String; let size:DynamicTypeSize
+    var body:some View { Text(title).font(.headline).foregroundStyle(.secondary).textCase(nil).dynamicTypeSize(size) }
+}
+
 struct HomeView: View {
     @ObservedObject var model: CieloController
     @State private var confirmStart = false
@@ -57,25 +62,25 @@ struct HomeView: View {
                 }.padding(.vertical,8)
             }
             if let error = model.connectionError { Section { Text(error).font(.footnote).foregroundStyle(.secondary) } }
-            Section("Luces") {
+            Section {
                 LampRow(model:model,name:"Chihiros",pv:false)
                 LampRow(model:model,name:"Pez Verde",pv:true)
-            }
-            Section("Mantenimiento") {
+            } header: { CieloSectionTitle(title:"Luces",size:typeSize) }
+            Section {
                 Text(maintenanceLabel).foregroundStyle(.secondary)
                 if let remaining = model.status?.work_light?.remaining_sec, remaining > 0 { Text("Transición: \(remaining / 60) min \(remaining % 60) s").monospacedDigit() }
-                if typeSize.isAccessibilitySize {
-                    VStack(alignment:.leading,spacing:8) { startButton; stopButton }
-                } else {
-                    HStack { startButton; Spacer(); stopButton }
+                actionLayout {
+                    startButton.frame(maxWidth:.infinity,alignment:.leading)
+                    stopButton.frame(maxWidth:.infinity,alignment:typeSize.isAccessibilitySize ? .leading : .trailing)
                 }
-            }
+            } header: { CieloSectionTitle(title:"Mantenimiento",size:typeSize) }
             Section { Text("Los valores son consignas. La comunicación BLE no mide la luz física. Las curvas continúan en el ATOM al cerrar la app.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("CIELO").refreshable { await model.refresh() }
         .confirmationDialog("Iniciar luz de mantenimiento",isPresented:$confirmStart,titleVisibility:.visible) {
             Button("Iniciar") { Task { await model.maintenance(start:true) } }.accessibilityIdentifier("maintenance.confirm")
         } message: { Text(model.demo ? "Solo cambiará la demostración." : "Subida de 10 minutos. Al parar, retorno de 2 minutos a la programación.") }
     }
+    private var actionLayout:AnyLayout { typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment:.leading,spacing:8)) : AnyLayout(HStackLayout(spacing:8)) }
     private var canStart:Bool { model.fresh && !model.busy && model.status?.work_light?.can_start == true }
     private var canStop:Bool { model.fresh && !model.busy && (model.status?.work_light?.active == true || model.status?.work_light?.preparing == true) && model.status?.work_light?.phase != "returning" }
     private var startButton:some View {
@@ -99,14 +104,12 @@ struct LampRow: View {
     let name: String; let pv: Bool
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment:.leading,spacing:10) { details; Text(percentLabel).font(.title2).monospacedDigit() }
-            } else {
-                HStack { details; Spacer(); Text(percentLabel).font(.title2).monospacedDigit() }
-            }
+        rowLayout {
+            details.frame(maxWidth:.infinity,alignment:.leading)
+            Text(percentLabel).font(.title2).monospacedDigit().frame(maxWidth:typeSize.isAccessibilitySize ? .infinity : nil,alignment:.leading)
         }.padding(.vertical,7)
     }
+    private var rowLayout:AnyLayout { typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment:.leading,spacing:10)) : AnyLayout(HStackLayout(spacing:12)) }
     private var details:some View {
         VStack(alignment:.leading,spacing:5) {
             Text(name).font(.headline)
@@ -237,13 +240,15 @@ struct PreviewLampRow: View {
         let scale = pv ? Double(percent)/100.0 : 1.0
         return Color(red:Double(values[0])/divisor*scale,green:Double(values[1])/divisor*scale,blue:Double(values[2])/divisor*scale)
     }
+    private var rowLayout:AnyLayout { typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment:.leading,spacing:8)) : AnyLayout(HStackLayout(spacing:12)) }
     var body:some View {
-        HStack(spacing:12) {
-            RoundedRectangle(cornerRadius:9).fill(color).frame(width:38,height:38).overlay(RoundedRectangle(cornerRadius:9).stroke(.white.opacity(0.15))).accessibilityHidden(true)
-            VStack(alignment:.leading,spacing:4) { Text(name).font(.headline); Text("R \(values[0]) · G \(values[1]) · B \(values[2])").font(.caption).foregroundStyle(.secondary) }
-            if !typeSize.isAccessibilitySize { Spacer(); Text("\(percent)%").font(.title3).monospacedDigit() }
+        rowLayout {
+            HStack(spacing:12) {
+                RoundedRectangle(cornerRadius:9).fill(color).frame(width:38,height:38).overlay(RoundedRectangle(cornerRadius:9).stroke(.white.opacity(0.15))).accessibilityHidden(true)
+                VStack(alignment:.leading,spacing:4) { Text(name).font(.headline); Text("R \(values[0]) · G \(values[1]) · B \(values[2])").font(.caption).foregroundStyle(.secondary) }
+            }.frame(maxWidth:.infinity,alignment:.leading)
+            Text("\(percent)%").font(.title3).monospacedDigit().frame(maxWidth:typeSize.isAccessibilitySize ? .infinity : nil,alignment:.leading)
         }.padding(.vertical,4)
-        if typeSize.isAccessibilitySize { Text("\(percent)%").font(.title3).monospacedDigit() }
     }
 }
 
@@ -270,22 +275,24 @@ struct PointEditor:View {
 
 struct CentreView:View {
     @ObservedObject var model:CieloController
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body:some View {
         List {
-            Section("Estado") {
+            Section {
                 Text(model.fresh ? (model.status?.health?.current_critical == true ? "Revisar CIELO" : "Datos recientes del ATOM") : "Sin comunicación reciente")
                 LampRow(model:model,name:"Chihiros",pv:false); LampRow(model:model,name:"Pez Verde",pv:true)
                 LabeledContent("Firmware",value:model.status?.firmware ?? "Sin confirmar")
                 LabeledContent("Arranque",value:model.status?.boot_id.map(String.init) ?? "—")
-            }
-            Section("Informe") {
+            } header: { CieloSectionTitle(title:"Estado",size:typeSize) }
+            Section {
                 Button("Preparar informe para compartir") { Task { await model.downloadReport() } }.accessibilityIdentifier("report.prepare").disabled(!model.fresh || model.busy)
                 if let url=model.reportURL { ShareLink("Compartir informe",item:url).accessibilityIdentifier("report.share") }
-            }
-            Section("Privacidad") {
+            } header: { CieloSectionTitle(title:"Informe",size:typeSize) }
+            Section {
                 Text("CIELO se comunica con tu ATOM por la red local. No crea cuentas ni incorpora publicidad o analítica. Los perfiles e informes solo se comparten cuando tú lo eliges.")
                 Text("Telegram depende del vigilante externo. La app no vigila las luces cuando está cerrada.")
-            }.font(.footnote).foregroundStyle(.secondary)
+            } header: { CieloSectionTitle(title:"Privacidad",size:typeSize) }
+            .font(.footnote).foregroundStyle(.secondary)
         }.navigationTitle("Centro").refreshable { await model.refresh() }
     }
 }
@@ -297,6 +304,11 @@ struct SettingsView:View {
     @State private var demo = true
     @State private var confirm = false
     @State private var localError: String?
+    @MainActor init(model:CieloController) {
+        self.model=model
+        _host=State(initialValue:model.host)
+        _demo=State(initialValue:model.demo)
+    }
     var body:some View {
         NavigationStack {
             Form {
@@ -308,7 +320,7 @@ struct SettingsView:View {
                     do { if !demo { _ = try LocalAddress.url(host) }; localError = nil; confirm = true }
                     catch { localError = error.localizedDescription }
                 }.accessibilityIdentifier("connection.apply").disabled(model.busy)
-            }.navigationTitle("Conexión").onAppear { host=model.host;demo=model.demo }
+            }.navigationTitle("Conexión")
                 .toolbar { Button("Cerrar") { dismiss() } }
                 .confirmationDialog(model.dirty ? "Cambiar la conexión descartará el borrador" : "Usar esta conexión",isPresented:$confirm,titleVisibility:.visible) {
                     Button("Continuar",role:model.dirty ? .destructive : nil) { Task { await model.connect(host:host,demo:demo);dismiss() } }
