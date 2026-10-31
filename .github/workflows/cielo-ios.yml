@@ -22,6 +22,10 @@ jobs:
         run: |
           swiftc ios/Cielo/Core.swift ios/Tests/CoreChecks.swift -o /tmp/cielo-core-check
           /tmp/cielo-core-check ios/Cielo/DemoProfile.json
+      - name: Comprobar órdenes y errores con transporte simulado
+        run: |
+          swiftc -parse-as-library ios/Cielo/Core.swift ios/Cielo/Controller.swift ios/Tests/ControllerChecks.swift -o /tmp/cielo-controller-check
+          /tmp/cielo-controller-check ios/Cielo/DemoProfile.json
       - name: Compilar para simulador
         run: xcodebuild -project ios/Cielo.xcodeproj -scheme CIELO -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/cielo-ios-simulator CODE_SIGNING_ALLOWED=NO build
       - name: Abrir demostración en simulador

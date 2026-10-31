@@ -50,6 +50,7 @@ struct HomeView: View {
                     Label(model.fresh ? "ATOM accesible" : "Sin comunicación reciente",systemImage:model.fresh ? "circle.fill" : "circle.dotted").font(.caption).foregroundStyle(model.fresh ? Color.mint : Color.secondary)
                 }.padding(.vertical,8)
             }
+            if let error = model.connectionError { Section { Text(error).font(.footnote).foregroundStyle(.secondary) } }
             Section("Luces") {
                 LampRow(model:model,name:"Chihiros",pv:false)
                 LampRow(model:model,name:"Pez Verde",pv:true)
@@ -95,15 +96,15 @@ struct LampRow: View {
     }
     private var percentLabel: String {
         guard model.fresh else { return "—" }
-        if pv { return model.status?.brightness.map { "\($0)%" } ?? "—" }
+        if pv { return (model.status?.effectivePv?.last ?? model.status?.brightness).map { "\($0)%" } ?? "—" }
         return values.count == 3 ? "\(values.max() ?? 0)%" : "—"
     }
-    private var values: [Int] { (pv ? model.status?.rgb : model.status?.chLiveRgb) ?? [] }
+    private var values: [Int] { (pv ? (model.status?.effectivePv.map { Array($0.prefix(3)) } ?? model.status?.rgb) : model.status?.chLiveRgb) ?? [] }
     private var label: String {
         guard model.fresh else { return "Sin confirmar" }
         let m = model.status?.cieloV4
         let errors = pv ? m?.pv_consecutive_errors : m?.ch_consecutive_errors
-        if let errors, errors > 0 { return "Revisar comunicación" }
+        if (errors ?? 0) > 0 || (pv && (m?.pv_off_failures ?? 0) > 0) { return "Revisar comunicación" }
         let connected = pv ? m?.pv_link_connected : m?.ch_link_connected
         if connected == false { return "Sin enlace BLE" }
         if pv && m?.pv_waiting_off_check == true { return "Conectado · en reposo" }

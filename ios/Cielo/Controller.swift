@@ -15,6 +15,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
     @Published var message: String?
     @Published var updated: Date?
     @Published var reportURL: URL?
+    @Published var connectionError: String?
     private var generation: Int?
     private var draftBoot: Int?
     private var revision = UUID()
@@ -22,7 +23,10 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private var demoPhase = "idle"
     private var demoSaved: CieloProfile?
     private let delegate = NoRedirects()
+    init(session: URLSession? = nil) { suppliedSession = session }
+    private let suppliedSession: URLSession?
     private lazy var session: URLSession = {
+        if let suppliedSession { return suppliedSession }
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 8; config.timeoutIntervalForResource = 15
         config.urlCache = nil; config.httpShouldSetCookies = false
@@ -38,7 +42,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
         do { if !demo { _ = try LocalAddress.url(host) } }
         catch { message = error.localizedDescription; return }
         revision = UUID(); self.host = host; self.demo = demo
-        status = nil; profile = nil; dirty = false; generation = nil; draftBoot = nil; updated = nil; reportURL = nil
+        connectionError = nil; status = nil; profile = nil; dirty = false; generation = nil; draftBoot = nil; updated = nil; reportURL = nil
         loading = false
         await refresh()
     }
@@ -82,9 +86,9 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
             if demo { next = try demoStatus() }
             else { next = try JSONDecoder().decode(AtomStatus.self,from:await request("/api/status")) }
             guard token == revision else { return }
-            status = next; updated = Date()
+            connectionError = nil; status = next; updated = Date()
             if !dirty { profile = try CieloProfile.from(next); generation = next.profileGeneration; draftBoot = next.boot_id }
-        } catch { if token == revision { updated = nil; message = error.localizedDescription } }
+        } catch { if token == revision { updated = nil; connectionError = error.localizedDescription } }
     }
     func replaceProfile(_ value: CieloProfile) {
         do { try value.validate(); profile = value; dirty = true }

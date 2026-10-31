@@ -83,6 +83,7 @@ struct ModeState: Decodable {
     var pv_waiting_off_check: Bool?; var pv_off_obligation: Bool?
     var pv_consecutive_errors: Int?; var ch_consecutive_errors: Int?
     var pv_online_recent: Bool?; var ch_online_recent: Bool?
+    var pv_effective_requested: [Int]?; var pv_off_failures: Int?
 }
 struct AtomHealth: Decodable { var boot_ready: Bool?; var current_critical: Bool?; var worker_unresponsive: Bool? }
 struct AtomStatus: Decodable {
@@ -90,4 +91,8 @@ struct AtomStatus: Decodable {
     var rgb: [Int]?; var brightness: Int?; var chLiveRgb: [Int]?
     var profileGeneration: Int?; var points: String?; var chiPoints: String?
     var cieloV4: ModeState?; var work_light: WorkLight?; var health: AtomHealth?
+    var effectivePv: [Int]? {
+        guard let v = cieloV4?.pv_effective_requested, v.count == 4 else { return nil }
+        return v
+    }
 }
