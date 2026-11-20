@@ -46,23 +46,23 @@ int main(){
  ProfileImage p{};p.pvCount=cielo::pezverde_count;p.chCount=cielo::chihiros_count;
  memcpy(p.pv,cielo::pezverde,sizeof(cielo::pezverde));memcpy(p.ch,cielo::chihiros,sizeof(cielo::chihiros));
  profileSeal(p);assert(profileValid(p));
- // La curva operativa debe coincidir con las 27/21 muestras que usuario aprobó.
- static_assert(cielo::pezverde_count==27,"Natural V4 Pez Verde cambió");
- static_assert(cielo::chihiros_count==21,"Natural V4 Chihiros cambió");
- auto dawnPv=cielo::at(p.pv,p.pvCount,875);
- auto dayPv=cielo::at(p.pv,p.pvCount,940);
+ // El respaldo integrado debe coincidir con las 37/46 muestras V5 exportadas por el propietario (gen22).
+ static_assert(cielo::pezverde_count==37,"V5 Pez Verde cambió");
+ static_assert(cielo::chihiros_count==46,"V5 Chihiros cambió");
+ auto dawnPv=cielo::at(p.pv,p.pvCount,870);
+ auto dayPv=cielo::at(p.pv,p.pvCount,970);
  auto sunsetPv=cielo::at(p.pv,p.pvCount,1325);
  auto midnightPv=cielo::at(p.pv,p.pvCount,0);
- assert(dawnPv.brightness==1 && dayPv.brightness==20 && sunsetPv.brightness==50);
+ assert(dawnPv.brightness==1 && dayPv.brightness==20 && sunsetPv.brightness==60);
  assert(midnightPv.brightness==0);
- auto noonChi=cielo::at(p.ch,p.chCount,940);
+ auto noonChi=cielo::at(p.ch,p.chCount,970);
  auto duskChi=cielo::at(p.ch,p.chCount,1350);
- assert(noonChi.r==70&&noonChi.g==65&&noonChi.b==60);
- assert(duskChi.r==40&&duskChi.g==40&&duskChi.b==40);
- assert(cielo::at(p.ch,p.chCount,870).r==0);
- assert(cielo::at(p.pv,p.pvCount,1439).brightness==0);
- assert(cielo::at(p.ch,p.chCount,1380).r==0);
+ assert(noonChi.r==65&&noonChi.g==60&&noonChi.b==56);
+ assert(duskChi.r==42&&duskChi.g==25&&duskChi.b==23);
+ assert(cielo::at(p.ch,p.chCount,900).r==1);
+ assert(cielo::at(p.pv,p.pvCount,1439).brightness==1);
+ assert(cielo::at(p.ch,p.chCount,1410).r==0);
  p.pv[10].r^=1;assert(!profileValid(p));
  profileSeal(p);assert(profileValid(p));
- puts("OK: PV wire frames, CH RGB/AUTO with reserved bytes, double-slot snapshot seal, Natural v4 end-of-day");
+ puts("OK: PV wire frames, CH RGB/AUTO with reserved bytes, double-slot snapshot seal, V5 gen22 end-of-day");
 }
