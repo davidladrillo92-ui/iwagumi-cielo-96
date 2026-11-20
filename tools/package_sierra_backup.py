@@ -19,7 +19,7 @@ def package(root=Path('.'),output=None):
     metadata+='\n\n'.join(functions[name] for name in allowed)+'\n'
     files={p.name:p.read_bytes() for p in (root/'backup/macos_sierra').iterdir() if p.is_file()}
     if set(files)!={'COMPROBAR.command','HACER_COPIA.command','LEEME.txt'}:raise ValueError('Unexpected backup package files')
-    files['cielo_python.sh']=(root/'monitor/macos_sierra/cielo_python.sh').read_bytes()
+    files['cielo_python.sh']=(root/'tools/cielo_python.sh').read_bytes()
     files['cielo_backup_sierra.py']=(root/'tools/cielo_backup_sierra.py').read_bytes()
     files['cielo_backup_metadata.py']=metadata.encode()
     for name,data in files.items():

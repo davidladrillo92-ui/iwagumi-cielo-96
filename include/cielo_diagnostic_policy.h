@@ -25,7 +25,7 @@ inline bool importantEvent(const char* event){
  const char* patterns[]={"BLE_ERROR","BLE_SOFT_TIMEOUT","PV_POWER_OFF_REINTENTO",
  "PV_DEGRADADA","V4_WATCHDOG_PAUSA","REINICIO_ANOMALO","OTA_ERROR",
  "OTA_FIRMA_RECHAZADA","OTA_ROLLBACK","CURVA_ERROR","HTTPS_NO_DISPONIBLE",
- "BLE_PILOTO_ERROR","PV_NVS_FALLO","BLE_WORKER_RECUPERADO"};
+ "BLE_PILOTO_ERROR","PV_NVS_FALLO","BLE_WORKER_RECUPERADO","CURVA_RECUPERADA_ANTIGUA","BLE_ENLACE_PERDIDO","V4_RETORNO_FALLO"};
  for(const char* pattern:patterns){const char*a=event;const char*b=pattern;
   while(*a&&*b&&*a==*b){++a;++b;} if(!*b&&(!*a||*a=='_'))return true;
  }

@@ -7,13 +7,14 @@ fixture=r'''
 #include <cstdint>
 #include <string>
 #include <cassert>
+#include "cielo_autonomy_policy.h"
 using String=std::string;
 uint32_t millis(){return 7000;}
 enum class OtaPhase {Idle,Uploading};
 struct {OtaPhase phase=OtaPhase::Idle;} otaTxn;
 bool bleReady=true,rescueOpen=false,otaBusy=false,pvControlDesired=true,pvOffObligation=false;
 bool pvDisconnectInterlock=false,lastPvDesired=true;
-bool cieloChRun=true,cieloChWasDriven=true,cieloChReturnPending=false,cieloChAwaitResponse=false;
+bool cieloAlwaysOn=true,cieloChRun=true,cieloChWasDriven=true,cieloChReturnPending=false,cieloChAwaitResponse=false;
 uint32_t pvOffNextTry=0,pvOffInFlightSeq=3,observedUnexpectedDisconnect[2]{};
 uint32_t isolatedChDisconnects=0,pvDisconnectOffSafetyEpisodes=0;
 enum class PvSafetyState {OffPending,Active};
@@ -23,7 +24,7 @@ unsigned workCancels=0;
 void workLightCancel(const char*){workCancels++;}
 void record(const char*,const String&){records++;}
 void cieloRequestReturn(const char*){returns++;cieloChReturnPending=true;}
-struct {void cancel(){cancels++;}} chReconnect;
+cielo96::autonomy::Retry chReconnect;
 namespace cielo {namespace ble {enum class Device {PezVerde,Chihiros};}}
 struct {void cancel_pending(cielo::ble::Device){cancels++;}} queue;
 namespace cielo96 {
@@ -41,6 +42,9 @@ int main(){
  assert(isolatedChDisconnects==1&&pvDisconnectOffSafetyEpisodes==0);
  assert(workCancels==1);
  assert(!cieloChRun&&returns==1&&cieloChReturnPending&&pvSafety==PvSafetyState::Active);
+ assert(chReconnect.pending&&chReconnect.recovering&&!chReconnect.ready(37000,false));
+ cieloChReturnPending=false;assert(chReconnect.ready(37000,true));chReconnect.begin();chReconnect.success();
+ assert(!chReconnect.pending&&!chReconnect.recovering);
  auto prev=records;bleUnexpectedDisconnectTick();assert(records==prev&&returns==1);
  otaBusy=true;cielo96::links[0].unexpected_disconnects=1;
  bleUnexpectedDisconnectTick();assert(observedUnexpectedDisconnect[0]==0);
@@ -53,6 +57,6 @@ int main(){
 with tempfile.TemporaryDirectory() as d:
  p=Path(d)/'test.cpp';p.write_text(fixture+fn+checks)
  out=str(Path(d)/'test')
- subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(p),'-o',out],check=True)
+ subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-Iinclude',str(p),'-o',out],check=True)
  subprocess.run([out],check=True)
 print('PASS actual unexpected disconnect handler: isolated CH, PV-only OFF interlock, OTA exclusion, dedup')

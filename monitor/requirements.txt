@@ -1,2 +1,0 @@
-# Solo si se activa MQTT/Home Assistant. Núcleo + Telegram: biblioteca estándar Python 3.9+.
-paho-mqtt==2.1.0

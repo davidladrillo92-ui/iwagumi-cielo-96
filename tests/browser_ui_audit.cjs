@@ -24,7 +24,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
   else if(path==='/api/curves/commit'){
    if(failSave){code=507;data={error:'Guardado rechazado: perfil anterior conservado'};}
    else{const p=new URLSearchParams(req.postData());points.pezverde.points=p.get('pv').split(';').map(x=>x.split(',').map(Number));points.chihiros.points=p.get('ch').split(';').map(x=>x.split(',').map(Number));data={ok:true,generation:++generation,pv:points.pezverde.points.length,chi:points.chihiros.points.length};}
-  }else if(path==='/api/monitor/status')data={enabled:true,last_poll_age_sec:0};
+  }
   else if(path==='/api/maintenance')data={flash_backup:'USB_REQUIRED_NOT_PERFORMED'};
   else if(path==='/api/wifi/scan'){scanning=true;await new Promise(r=>setTimeout(r,50));}
   else if(path==='/api/wifi/networks')data={pending:false,networks:[{ssid:'Casa <script>error()</script>',rssi:-40}]};
@@ -109,7 +109,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
  await page.locator('#wifiSsid').fill('Casa');await page.locator('#wifiPass').fill('test-password');failWifi=true;await page.locator('#wifiTry').click();await page.waitForFunction(()=>!api.pending.has('/api/wifi'));assert(await page.locator('#wifiTry').isVisible());assert.equal(await page.locator('#wifiSsid').inputValue(),'Casa');failWifi=false;await page.locator('#wifiTry').click();await page.waitForFunction(()=>!document.getElementById('modal').classList.contains('open'));
  await settings();await page.locator('#wifiHome').click();await page.locator('#wifiForget').click();await page.waitForFunction(()=>!document.getElementById('modal').classList.contains('open'));
  await settings();await page.locator('#syncClock').click();await page.waitForFunction(()=>!document.getElementById('modal').classList.contains('open'));
- await settings();await more();await page.locator('#monitorSettings').click();await page.locator('#monitorToggle').waitFor();await auditButtons();await page.locator('#monitorToggle').click();await page.locator('#sheetClose').click();
+ await settings();await more();assert.equal(await page.locator('#monitorSettings').count(),0);await page.locator('#sheetClose').click();
  await settings();await more();await page.locator('#maintenanceRead').click();assert((await page.locator('#maintenanceResult').textContent()).includes('USB_REQUIRED'));await page.locator('#sheetClose').click();
  await settings();await more();await page.locator('#chNightOff').click();await page.locator('#cieloPauseAll').click();v.chihiros_active=v.pez_verde_active=false;v.always_on=false;await sync();await page.locator('#chNightOn').click();await page.locator('#sheetClose').click();
  await page.locator('[data-view="lab"]').click();const report=page.waitForEvent('download');await page.locator('#diagDownload').click();assert.equal((await report).suggestedFilename(),'CIELO_INFORME_MAESTRO.json');

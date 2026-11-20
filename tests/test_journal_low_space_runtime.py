@@ -16,13 +16,13 @@ fixture=r'''
 #include <cassert>
 #include <cstddef>
 uint32_t now=0;uint32_t millis(){return now;}
-bool journalDirty=true,journalHasFlushed=false,curveSaveInProgress=false,low=true;
+bool journalDirty=true,journalHasFlushed=false,curveSaveInProgress=false,low=true,counterFails=false;
 uint32_t journalLastFlush=0,diagWritesSkippedForSpace=0,savedFailures=184;
 struct {unsigned value=0;}journal;
 unsigned inspections=0,writes=0;
 bool nvsPreserveCurveHeadroom(){inspections++;return low;}
 struct {size_t putBytes(const char*,const void*,size_t n){writes++;return n;}
- void putUInt(const char*,unsigned){writes++;}}prefs;
+ size_t putUInt(const char*,unsigned){writes++;return counterFails?0:sizeof(uint32_t);}}prefs;
 '''
 structs=src[src.index("struct StorageWriteCount {"):src.index("static cielo96::nvssafe::Failure lastCurveNvsFailure")]
 # Instrumentation declarations lie directly before the existing NVS failure state.
@@ -35,6 +35,8 @@ int main(){
  assert(diagnosticWrites.attempts==1&&diagnosticWrites.accepted==1&&restartWrites.attempts==0);
  journalDirty=true;curveSaveInProgress=true;now=900000;flushJournal();
  assert(journalDirty&&diagWritesSkippedForSpace==3&&writes==2&&inspections==3);
+ curveSaveInProgress=false;counterFails=true;now=1200000;flushJournal();assert(journalDirty&&writes==4);
+ counterFails=false;now=1500000;flushJournal();assert(!journalDirty&&writes==6);
 }
 '''
 with tempfile.TemporaryDirectory() as d:

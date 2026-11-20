@@ -11,7 +11,7 @@ for candidate in "$(command -v python3.9 2>/dev/null)" /Library/Frameworks/Pytho
 done
 if [ -z "$CIELO_PYTHON" ]; then
     echo "No se localiza Python 3.9 con SSL compatible en este iMac."
-    echo "No se modifica el vigilante actual. No uses el Python 2.7 de macOS."
+    echo "No se modifica el ATOM. No uses el Python 2.7 de macOS."
     return 1
 fi
 export PYTHONIOENCODING=utf-8

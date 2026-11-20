@@ -52,11 +52,11 @@ inline uint8_t eventCode(const char* name){
  for(uint8_t i=1;i<=12;i++)if(strcmp(name,eventName(i))==0)return i;
  return 0;
 }
-struct Entry {uint32_t uptime_ms=0,epoch=0;uint8_t code=0;};
+struct Entry {uint64_t uptime_ms=0;uint32_t epoch=0;uint8_t code=0;};
 struct OperationalHistory {
  static constexpr uint8_t Capacity=16;
  Entry entries[Capacity]{};uint8_t head=0,count=0;
- void capture(const char* name,uint32_t uptime,uint32_t trustedEpoch){
+ void capture(const char* name,uint64_t uptime,uint32_t trustedEpoch){
   const uint8_t code=eventCode(name);if(!code)return;
   entries[head].uptime_ms=uptime;entries[head].epoch=trustedEpoch;entries[head].code=code;
   head=(head+1)%Capacity;

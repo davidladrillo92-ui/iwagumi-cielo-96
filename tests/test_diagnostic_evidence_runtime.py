@@ -17,6 +17,7 @@ struct String {
  void reserve(size_t n){v.reserve(n);}String&operator+=(const String&b){v+=b.v;return *this;}
  friend String operator+(String a,const String&b){return a+=b;}
 };
+String uptimeText(uint64_t n){return String(n);}
 String jsonQuote(const String&s){return String("\"")+s+String("\"");}
 constexpr int ESP_OK=0;
 uint32_t previousBootCount=141;

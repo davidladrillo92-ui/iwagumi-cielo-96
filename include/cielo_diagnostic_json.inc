@@ -23,7 +23,7 @@ static String diagnosticEvidenceJson(){
  j+=",\"operational_history\":{\"scope\":\"VOLATILE_CURRENT_BOOT\",\"capacity\":16,\"samples\":"+String(operationalHistory.count)+",\"events\":[";
  for(uint8_t i=0;i<operationalHistory.count;i++){
   const auto& e=operationalHistory.at(i);if(i)j+=",";
-  j+="{\"uptime_ms\":"+String(e.uptime_ms)+",\"epoch\":"+(e.epoch?String(e.epoch):String("null"));
+  j+="{\"uptime_ms\":"+uptimeText(e.uptime_ms)+",\"epoch\":"+(e.epoch?String(e.epoch):String("null"));
   j+=",\"event\":"+jsonQuote(cielo96::evidence::eventName(e.code))+"}";
  }
  return j+"]}}";

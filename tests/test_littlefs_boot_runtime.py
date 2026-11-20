@@ -7,6 +7,7 @@ source = Path('src/main.cpp').read_text()
 load = source[source.index('static void loadProfile(){'):source.index('struct CurveNvsStore {')]
 fixture = r'''
 #include "cielo_curve_policy.h"
+#include "cielo_recovery313.h"
 #include "profiles_generated.h"
 #include <cassert>
 #include <cstring>
@@ -30,18 +31,18 @@ struct Fs {
  ProfileImage file{},copied{};bool exists=false,little=true,ready_=true,blocked=false,accept=true;
  unsigned migrations=0;
  bool newest(ProfileImage&out){if(exists)out=file;return exists;}
- bool isLittlefs(){return little;}bool ready(){return ready_;}
+ bool isLittlefs(){return little;}bool ready(){return ready_;}bool allowNvsWrites(){return !little;}
  const char*backend(){return "LITTLEFS_AB";}const char*error(){return "TEST_IO_ERROR";}
  void block(const char*){blocked=true;}
  bool migrate(const ProfileImage&p){assert(!blocked);migrations++;copied=p;if(accept){file=p;exists=true;}return accept;}
 }curveFs;
 namespace cielo96 {namespace profilefs {inline bool newerGeneration(uint32_t a,uint32_t b){return int32_t(a-b)>0;}}}
-ProfileImage profile;bool profileRecovery=false;const char*loadedCurveBackend="DEFAULT_RAM";
+ProfileImage profile;uint32_t knownProfileGeneration=0;bool profileFallbackSuspected=false;bool profileRecovery=false;const char*loadedCurveBackend="DEFAULT_RAM";
 ProfileImage image(uint32_t gen){ProfileImage p{};p.generation=gen;p.pvCount=38;p.chCount=31;
  for(unsigned i=0;i<38;i++)p.pv[i]={uint16_t(i==37?1440:i*38),12,34,56,uint8_t(i==0||i==37?0:10)};
  for(unsigned i=0;i<31;i++)p.ch[i]={uint16_t(i==30?1440:i*48),uint8_t(i==30?0:20),0,0};
  profileSeal(p);assert(curves::curveValid(p));return p;}
-void reset(){prefs={};curveFs={};profileRecovery=false;loadedCurveBackend="DEFAULT_RAM";}
+void reset(){prefs={};curveFs={};profileRecovery=false;profileFallbackSuspected=false;knownProfileGeneration=0;loadedCurveBackend="DEFAULT_RAM";}
 '''
 checks = r'''
 int main(){
@@ -70,6 +71,10 @@ int main(){
  curveFs.exists=true;curveFs.file=newer;loadProfile();assert(profile.generation==10&&!profileRecovery);
  reset();prefs.fixture("curvesA",active);curveFs.ready_=false;
  loadProfile();assert(curveFs.migrations==0&&profile.generation==9&&!strcmp(loadedCurveBackend,"NVS_LEGACY"));
+ reset();prefs.fixture("curvesA",active);knownProfileGeneration=22;
+ loadProfile();assert(profile.generation==9&&profileFallbackSuspected&&curveFs.migrations==0);
+ reset();prefs.fixture("curvesA",active);knownProfileGeneration=22;curveFs.exists=true;curveFs.file=image(22);
+ loadProfile();assert(profile.generation==22&&!profileFallbackSuspected&&curveFs.migrations==0);
  std::cout<<"PASS actual loadProfile: exact gen9 migration, reboot no-op, newest selection, conflicts, read failure fallback and NVS unchanged\n";
 }
 '''

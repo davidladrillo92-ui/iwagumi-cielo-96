@@ -771,15 +771,6 @@ async function importProgram(ev){
  }catch(e){toast(e.message)}finally{ev.target.value=''}
 }
 
-async function monitorSettings(){
- try{
-  const d=await api('/api/monitor/status');
-  const age=d.last_poll_age_sec;
-  const observed=age===null||age===undefined?'Todavía sin consultas':age<180?'Observador conectado':'Sin consultas recientes';
-  sheet('<h2 class="sheet-title">Alertas e historial</h2><p>'+observed+'</p><p>El iMac guarda el historial y envía Telegram mientras está encendido. Este estado confirma consultas al ATOM; la entrega de avisos se comprueba en Telegram.</p><div class="actions"><button class="btn" id="monitorToggle">'+(d.enabled?'Desactivar seguimiento':'Habilitar seguimiento')+'</button></div>');
-  onAction('monitorToggle',async()=>{try{await api('/api/monitor/'+(d.enabled?'disable':'enable'),{});await monitorSettings()}catch(e){toast(e.message)}});
- }catch(e){toast(e.message)}
-}
 async function maintenanceRead(){
  try{const d=await api('/api/maintenance');
   sheet('<h2 class="sheet-title">Diagnóstico de memoria</h2><p>Consulta sin modificar memoria. El respaldo completo requiere USB; no se ha realizado desde esta pantalla.</p><pre id="maintenanceResult" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>');
@@ -792,11 +783,10 @@ function settings(){
  <div class="settings-row"><span>Wi-Fi</span><button id="wifiHome">Cambiar red ↗</button></div>
  <div class="settings-row"><span>Hora</span><button id="syncClock">Sincronizar ↗</button></div>
  <details class="curveHelper"><summary>Más opciones</summary>
- <div class="settings-row"><span>Alertas e historial</span><button id="monitorSettings">Configurar ↗</button></div>
  <div class="settings-row"><span>Diagnóstico de memoria</span><button id="maintenanceRead">Consultar ↗</button></div>
  <p class="note">Las curvas arrancan automáticamente. Estos controles solo son para detenerlas o ceder Chihiros a su app.</p>
  <div class="liveButtons"><button id="chNightOn">Reanudar curvas</button><button id="chNightOff">Usar My Chihiros</button><button id="cieloPauseAll">Pausar CIELO</button></div></details>`);
- $('monitorSettings').onclick=monitorSettings;$('maintenanceRead').onclick=maintenanceRead;
+ $('maintenanceRead').onclick=maintenanceRead;
  $('wifiHome').onclick=wifiSetup;
  onAction('chNightOn',chNightStart);onAction('chNightOff',chNightStop);onAction('cieloPauseAll',cieloPauseAllUi);
  onAction('syncClock',async()=>{
@@ -975,4 +965,5 @@ $('chart').onkeydown=e=>{
 $('scrub').oninput=e=>{state.scrub=Number(e.target.value);state.preview=state.scrub;render()};$('resetTime').onclick=()=>{state.scrub=currentClock();state.preview=null;$('scrub').value=state.scrub;render()};$('modal').onclick=e=>{if(e.target===$('modal'))close()};document.addEventListener('keydown',e=>{if(e.key==='Escape')close();dialogKeydown(e)});state.scrub=currentClock();$('scrub').value=state.scrub;render();sync();serviceRefresh();setInterval(()=>{if(state.preview===null){state.scrub=currentClock();$('scrub').value=state.scrub}if(document.visibilityState!=='hidden')sync()},6000);setInterval(()=>{if(document.visibilityState!=='hidden')refreshLiveDisplay()},1000)}
 document.addEventListener?.('visibilitychange',()=>{if(document.visibilityState!=='hidden')sync()});
 window.addEventListener('DOMContentLoaded',init);
-</script></body></html>)CIELOUI_96";
+</script></body></html>
+)CIELOUI_96";
