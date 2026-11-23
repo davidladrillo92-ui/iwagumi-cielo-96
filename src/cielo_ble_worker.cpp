@@ -140,7 +140,7 @@ bool locate(Target& t) {
  scan->setInterval(150);scan->setWindow(75);
  setWorkerPhase(BleWorkerPhase::Discovery,&t==&targets[0]?0:1);
  const uint32_t scanStart=millis();
- BLEScanResults result=scan->start(5,false);
+ BLEScanResults result=scan->start(2,false);
  opSpan.discovery+=uint32_t(millis()-scanStart);
  bool found=false;
  for(int i=0;i<result.getCount();++i){
@@ -151,6 +151,21 @@ bool locate(Target& t) {
   }
  }
  scan->clearResults();
+ // A short first window saves 3 s for nearby lamps. If advertisement is
+ // missed, retry with the original full 5 s scan rather than reducing reliability.
+ if(!found){
+  const uint32_t retryStarted=millis();
+  BLEScanResults fallback=scan->start(5,false);
+  opSpan.discovery+=uint32_t(millis()-retryStarted);
+  for(int i=0;i<fallback.getCount();++i){
+   BLEAdvertisedDevice d=fallback.getDevice(i);
+   if(d.haveName() && bleNameMatches(d.getName().c_str(),t.name)){
+    t.address=String(d.getAddress().toString().c_str());
+    t.addressType=d.getAddressType();t.addressKnown=true;found=true;break;
+   }
+  }
+  scan->clearResults();
+ }
  return found;
 }
 bool connect(Target& t,const char*&err){
