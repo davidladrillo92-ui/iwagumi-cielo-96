@@ -56,6 +56,15 @@ for p,h in f['files'].items():
     raw=Path(p).read_bytes()
     if p=='src/cielo_ble_worker.cpp':
         worker=raw.decode()
+        fast=' BLEScanResults result=scan->start(2,false);'
+        assert worker.count(fast)==1, 'BLE discovery fast-first marker missing'
+        worker=worker.replace(fast, ' BLEScanResults result=scan->start(5,false);')
+        marker=' // A short first window saves 3 s for nearby lamps.'
+        assert worker.count(marker)==1, 'BLE 5s fallback removed unexpectedly'
+        at=worker.index(marker)
+        end=worker.index(' return found;',at)
+        assert 'BLEScanResults fallback=scan->start(5,false);' in worker[at:end]
+        worker=worker[:at]+worker[end:]
         replacements=[
           ('// Written exclusively by the BLE worker during one command.\nstruct OpSpan {uint32_t discovery=0,connect=0,service=0,characteristic=0,write=0,pacing=0;};\nOpSpan opSpan{};\n',''),
           (' const uint32_t scanStart=millis();\n',''),
