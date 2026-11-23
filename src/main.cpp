@@ -50,6 +50,7 @@
 #include "cielo_cadence_diagnostics.h"
 #include "cielo_clock_evidence.h"
 #include "cielo_recovery313.h"
+#include "cielo_recovery314.h"
 
 // TLS is not started in this LAN edition. Keep an explicit stack margin for HTTP/OTA.
 static constexpr size_t CIELO_LOOP_STACK_BYTES=16384;
@@ -68,7 +69,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.13-AUTONOMY-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.14-AUTONOMY-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -79,6 +80,11 @@ struct RtcTrace { uint32_t magic; uint32_t phase; uint32_t check; };
 static constexpr uint32_t RTC_TRACE_MAGIC=0xC1E10964UL;
 static constexpr uint32_t RTC_TRACE_SALT=0x6B3D821FUL;
 RTC_NOINIT_ATTR static volatile RtcTrace rtcTrace;
+struct RtcClockWitness {uint32_t magic,epoch,check;};
+static constexpr uint32_t RTC_CLOCK_MAGIC=0xC1E13140UL;
+RTC_NOINIT_ATTR static volatile RtcClockWitness rtcClockWitness;
+static bool rtcClockContinuityTrusted=false;
+static uint32_t rtcClockLastRefresh=0;
 static uint32_t lastResetTracePhase=0;
 static bool lastResetTraceValid=false;
 static const char* tracePhaseName(uint32_t p){
@@ -164,6 +170,8 @@ static const char* wifiSleepName(){
  return "DESCONOCIDO";
 }
 static bool blePilotRequested=false, blePilotAttempted=false, rescueOpen=false;
+static uint8_t bleInitFailures=0;
+static uint32_t bleInitRetryAt=0;
 // 3.14: boot telemetry only; no change to BLE, OTA or lighting scheduling.
 static uint32_t bootBleStartMs=0, bootBaseHealthyMs=0, bootCurvesResumeMs=0;
 static uint32_t bootFirstGattMs[2]={0,0};
@@ -192,6 +200,8 @@ static LabState lab;
 static constexpr uint32_t LAB_TX_WINDOW_MS=90000UL;
 static bool customResumePending=false;
 static uint32_t customResumeRequested=0,customResumeOk=0,customResumeFailed=0;
+static uint32_t customNextRequestId=1,customExpectedRequestId=0,customStaleResponses=0;
+static uint32_t nextCustomResumeId(){if(++customNextRequestId==0)++customNextRequestId;return customNextRequestId;}
 static String customResumeLast="Sin probar";
 static uint32_t customResumeLastMs=0;
 static uint8_t contrastStage=0;
@@ -472,7 +482,8 @@ static void fail(int code,const char*msg){jsonSend(code,String("{\"ok\":false,\"
 static void ok(){jsonSend(200,"{\"ok\":true}");}
 static bool timeOK(){return time(nullptr)>1700000000L;}
 static bool clockEvidenceTrusted(){return cielo96::clock_evidence::trusted_this_boot(
- ntpSyncedThisBoot.load(),phoneSyncedThisBoot,uint32_t(time(nullptr)));}
+ ntpSyncedThisBoot.load(),phoneSyncedThisBoot,uint32_t(time(nullptr))) ||
+ (rtcClockContinuityTrusted && timeOK());}
 static void cieloTrendTick(){
  if(!cieloAlwaysOn || !clockEvidenceTrusted())return;
  uint32_t now=millis();
@@ -508,8 +519,8 @@ static String pointsCh(){String s;s.reserve(profile.chCount*20);
  s+=String(p.minute)+','+String(p.r)+','+String(p.g)+','+String(p.b);
  }return s;
 }
-static cielo::PvValue programPv(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):cielo::at(profile.pv,profile.pvCount,minuteOfDay())):cielo::PvValue{0,0,0,0};}
-static cielo::ChiValue programCh(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):cielo::at(profile.ch,profile.chCount,minuteOfDay())):cielo::ChiValue{0,0,0};}
+static cielo::PvValue programPv(){return clockEvidenceTrusted()?(cadenceTrial15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):cielo::at(profile.pv,profile.pvCount,minuteOfDay())):cielo::PvValue{0,0,0,0};}
+static cielo::ChiValue programCh(){return clockEvidenceTrusted()?(cadenceTrial15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):cielo::at(profile.ch,profile.chCount,minuteOfDay())):cielo::ChiValue{0,0,0};}
 
 static cielo96::worklight::Levels programLevels(){return {programPv(),programCh()};}
 static cielo::PvValue desiredPv(){return workLight.output(millis(),programLevels()).pv;}
@@ -2314,12 +2325,19 @@ static void configureRoutes(){
   record("LAB_HTTP","Latencia desde navegador media "+String(avg)+" ms max "+String(maximum)+" ms");ok();
  });
  srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"accessMode\":\"LAN_NO_PASSWORD\",\"otaAuthRequired\":false,\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String("false")+",\"otaGrantSeconds\":"+String(0)+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
- srv.on("/api/clock",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
-   String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
-   for(unsigned i=0;i<s.length();i++)if(s[i]<'0'||s[i]>'9')return fail(400,"Epoch incorrecto");
-   unsigned long long val=strtoull(s.c_str(),nullptr,10);if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
-   struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
-  }return fail(400,"Epoch demasiado corto");});
+ srv.on("/api/clock",HTTP_POST,[]{if(!requireAdminWrite())return;
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  const String epochStr=srv.arg("epoch");
+  if(epochStr.length()<10 || epochStr.length()>11)return fail(400,"Epoch incorrecto");
+  for(size_t i=0;i<epochStr.length();i++)if(epochStr[i]<'0'||epochStr[i]>'9')return fail(400,"Epoch incorrecto");
+  const unsigned long long val=strtoull(epochStr.c_str(),nullptr,10);
+  if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
+  struct timeval tv{(time_t)val,0};
+  if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");
+  phoneSyncedThisBoot=true;
+  record("HORA_SYNC","Reloj verificado desde telefono; NTP no obligatorio");
+  return ok();
+ });
   srv.on("/api/curves/commit",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(workLight.active()||workLightPreparing)return fail(409,"Termina mantenimiento antes de guardar curvas");
    if(rescueOpen||otaBusy||otaTxn.phase!=OtaPhase::Idle)return fail(423,"Cambios bloqueados durante rescate o OTA");
