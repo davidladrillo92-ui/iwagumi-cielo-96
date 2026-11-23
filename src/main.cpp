@@ -2414,17 +2414,17 @@ static void wifiTask(){
   apProtected=wifiApOn;
   record("AP_RECUPERACION",String("192.168.4.1; WPA2; disponible=")+String(wifiApOn));
  }
+ if(!wifiCoexistReady() && uint32_t(now-lastStatusAt)>15000UL){
+  lastStatusAt=now;
+  const esp_err_t rc=esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  record(rc==ESP_OK?"COEX_REPARADA":"COEX_ERROR",rc==ESP_OK?"MIN_MODEM activado (AP sin router incluido)":"No se pudo activar MIN_MODEM");
+ }
  if(w==WL_CONNECTED){
   if(!mdnsReady && now-mdnsLastAttempt>30000UL){
    mdnsLastAttempt=now;
    mdnsReady=MDNS.begin("iwagumi-cielo96");
    if(mdnsReady){MDNS.addService("http","tcp",80);record("MDNS_INICIADO","http://iwagumi-cielo96.local");}
    else record("MDNS_PENDIENTE","Se reintentara cuando la red este preparada");
-  }
-  if(!wifiCoexistReady() && now-lastStatusAt>15000UL){
-   lastStatusAt=now;
-   esp_err_t rc=esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-   record(rc==ESP_OK?"COEX_REPARADA":"COEX_ERROR",rc==ESP_OK?"MIN_MODEM activado":"No se pudo activar MIN_MODEM");
   }
   return;
  }
@@ -2677,8 +2677,8 @@ static void bleTick(){
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Operacion supera 3,5s; puede terminar correctamente. No es por si sola un fallo");}
  const bool validBootDay=timeOK() && cielo96::profileValid(profile) && desiredPv().brightness>0;
- const bool pvBootDayWait=cielo96::pvday::prioritize_boot_day(bleRecoveryBoot,
-   bleRecoveryBootPvSafe,pvOffLastGatt!=0,validBootDay,otaCandidateBoot,now-bootMs);
+ const bool pvBootDayWait=cielo96::r314::prioritize_pv_day(now-bootMs,
+   bleRecoveryBootPvSafe,pvOffLastGatt!=0,validBootDay,clockEvidenceTrusted());
  const bool pvDayFirst=pvBootDayWait ||
    (pvDayRecoveryPending && cielo96::pvday::defer_ch_return(true,now-pvDayRecoveryStarted));
  const bool pvOffFirst=pvOffObligation && pvSafety!=PvSafetyState::OffGattOk &&
@@ -3004,10 +3004,11 @@ void loop(){
  tracePhase(TracePhase::Http);srv.handleClient();
  tracePhase(TracePhase::Button);physicalButtonTask();
  tracePhase(TracePhase::WifiTick);wifiTask();
- if(!blePilotRequested && !blePilotAttempted && !bleReady && !rescueOpen &&
-    millis()-bootMs>=30000UL && WiFi.status()==WL_CONNECTED && wifiCoexistReady()){
+ if(!blePilotRequested && !bleReady &&
+    cielo96::r314::may_start_ble(millis()-bootMs,wifiApOn,wifiCoexistReady(),rescueOpen,
+      blePilotAttempted,(int32_t)(millis()-bleInitRetryAt)>=0)){
   blePilotRequested=true;
-  record("BLE_AUTO_SOLICITADO","WiFi listo, 30s desde arranque; solo inicializar radio");
+  record("BLE_AUTO_SOLICITADO","AP privado listo, 30s desde arranque; router domestico no requerido");
  }
  if(blePilotRequested && !blePilotAttempted && !rescueOpen){
   tracePhase(TracePhase::Ble);
@@ -3020,8 +3021,10 @@ void loop(){
    record("BLE_COEX_VALIDADO",wifiSleepName());
    record("BLE_PILOTO_INICIO","Se prueba Bluetooth con HTTP ya activo");
    bleReady=cielo96::ble_begin();
-    if(bleReady && !bootBleStartMs)bootBleStartMs=millis()-bootMs;
-   record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
+   if(bleReady && !bootBleStartMs)bootBleStartMs=millis()-bootMs;
+   if(!bleReady){++bleInitFailures;bleInitRetryAt=millis()+30000UL;
+     if(bleInitFailures<3)blePilotAttempted=false;}
+   record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE; reintento limitado");
   }
  }
  workLightTick();
@@ -3039,15 +3042,17 @@ void loop(){
  }
  // Fast daytime PV restoration AFTER OFF GATT and valid current curve.
  // CH return is deferred only briefly, and PV is never allowed to bypass night OFF.
- const bool pvEarlySafe=cielo96::pvday::early_boot_ready(bleRecoveryBoot,otaCandidateBoot,
-    millis()-bootMs,WiFi.status()==WL_CONNECTED,wifiCoexistReady(),
-    cieloWatchdogTripped,bleRecoveryExhausted);
+ const bool pvEarlySafe=cielo96::r314::may_recover_day_pv(millis()-bootMs,
+    clockEvidenceTrusted(),cielo96::profileValid(profile),bleReady,wifiCoexistReady(),
+    !cieloWatchdogTripped && !bleRecoveryExhausted && cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
+    pvOffLastGatt!=0,clockEvidenceTrusted()&&desiredPv().brightness>0,
+    otaBusy||otaTxn.phase!=OtaPhase::Idle,rescueOpen);
  if(pvControlDesired && cielo96::pvday::can_resume({
     bleRecoveryBootPvSafe,pvOffLastGatt!=0,(currentBootMarkedHealthy||pvEarlySafe),
-    timeOK(),cielo96::profileValid(profile),bleReady,
+    clockEvidenceTrusted(),cielo96::profileValid(profile),bleReady,
     otaBusy||rescueOpen||otaTxn.phase!=OtaPhase::Idle,
     cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
-    uint8_t(timeOK()&&cielo96::profileValid(profile)?desiredPv().brightness:0)})){
+    uint8_t(clockEvidenceTrusted()&&cielo96::profileValid(profile)?desiredPv().brightness:0)})){
    bleRecoveryBootPvSafe=false;
    pvOffObligation=false;pvOffNextTry=0;pvOffInFlightSeq=0;
    cielo96::ble_set_pv_off_required(false);
@@ -3062,17 +3067,22 @@ void loop(){
   pvDayRecoveryPending=false;
   record("PV_DIA_RECUPERACION_LIMITE","20s sin GATT confirmado; liberar retorno CH y mantener reintentos PV");
  }
- if(cieloResumePending && cieloAlwaysOn && !bleRecoveryBootPvSafe && currentBootMarkedHealthy &&
-    bleReady && timeOK() && wifiCoexistReady() && !rescueOpen &&
-    cielo96::profileValid(profile) && !customResumePending &&
-    !cieloChReturnPending && !cieloChAwaitResponse && !queue.busy()){
+ if(cieloResumePending && cieloAlwaysOn && cielo96::r314::may_resume_curves({
+    millis()-bootMs,clockEvidenceTrusted(),cielo96::profileValid(profile),bleReady,
+    wifiCoexistReady(),bleReady&&cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
+    otaBusy||otaTxn.phase!=OtaPhase::Idle,rescueOpen,cieloWatchdogTripped,
+    workLight.active()||workLightPreparing||labTxEnabled()||lab.scanPending||lab.probePending,
+    queue.busy()||customResumePending,
+    cieloChReturnPending||cieloChAwaitResponse||chSelectiveHold,
+    pvControlDesired,bleRecoveryBootPvSafe,pvOffLastGatt!=0,pvOffObligation,
+    clockEvidenceTrusted() && desiredPv().brightness>0})){
   cieloResumePending=false;cieloPvRun=true;cieloChRun=true;
    if(!bootCurvesResumeMs)bootCurvesResumeMs=millis()-bootMs;
   pvControlDesired=true;
   cieloWatchdogTripped=false;cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   lastPvDesired=false;lastChDesired=false;
   cieloStartedAt=millis();lastScheduleAt=millis()-30000UL;
-  record("V5_AUTO_REANUDADO","Ambas curvas reanudadas tras comprobar hora, WiFi y Bluetooth");
+  record("V5_AUTO_REANUDADO","Ambas curvas reanudadas tras reloj verificado, Bluetooth vivo y OFF PV seguro; OTA observa 180s aparte");
  }
  lightingTask();
  cielo96::ble_set_pv_off_required(pvOffObligation);
