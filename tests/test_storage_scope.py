@@ -10,7 +10,40 @@ for r in f['ranges']:
         new='cieloChRun=false;\n   if(cieloAlwaysOn)chReconnect.arm(millis());else chReconnect.cancel();'
         assert part.count(new)==1
         part=part.replace(new,'cieloChRun=false;chReconnect.cancel();')
+    if r['name']=='lighting':
+        assert part.count('if(!clockEvidenceTrusted() || !cielo96::profileValid(profile))')==1
+        part=part.replace('if(!clockEvidenceTrusted() || !cielo96::profileValid(profile))',
+                          'if(!timeOK() || !cielo96::profileValid(profile))')
     if r['name']=='ble':
+        # 3.14 explicitly permits only these measured BLE spans, a new
+        # boot timestamp, scan classification, boot-day priority and IDs.
+        added=(
+          '  lastBleSpan[device]=res;\n'
+          '  if(cielo96::r314::cold_discovery_slow(res.duration_ms,res.discovery_ms))++bleColdDiscoverySlow[device];\n'
+          '  else if(res.duration_ms>3500UL)++bleWarmSlow[device];\n'
+          '  if(res.success && res.device<2 && bootFirstGattMs[res.device]==0)bootFirstGattMs[res.device]=now-bootMs;\n'
+        )
+        assert part.count(added)==1
+        part=part.replace(added,'')
+        slow_new=('   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;\n'
+          '  if(res.duration_ms>3500UL){bleSlowCount++;\n'
+          '    const bool cold=cielo96::r314::cold_discovery_slow(res.duration_ms,res.discovery_ms);\n'
+          '    record(cold?"BLE_LENTO_DESCUBRIMIENTO":"BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms; scan="+String(res.discovery_ms)+"ms");}')
+        slow_old=('  if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;\n'
+          '  if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}')
+        assert part.count(slow_new)==1
+        part=part.replace(slow_new,slow_old)
+        priority_new=('const bool pvBootDayWait=cielo96::r314::prioritize_pv_day(now-bootMs,\n'
+          '   bleRecoveryBootPvSafe,pvOffLastGatt!=0,validBootDay,clockEvidenceTrusted());')
+        priority_old=('const bool pvBootDayWait=cielo96::pvday::prioritize_boot_day(bleRecoveryBoot,\n'
+          '   bleRecoveryBootPvSafe,pvOffLastGatt!=0,validBootDay,otaCandidateBoot,now-bootMs);')
+        assert part.count(priority_new)==1
+        part=part.replace(priority_new,priority_old)
+        request_new=('   const uint32_t requestId=nextCustomResumeId();\n'
+          '   if(cielo96::ble_custom_resume_request(requestId)){\n'
+          '    customExpectedRequestId=requestId;')
+        assert part.count(request_new)==1
+        part=part.replace(request_new,'   if(cielo96::ble_custom_resume_request()){')
         assert part.count('const bool matched=queue.complete(res.sequence,res.success,now);')==1
         part=part.replace('const bool matched=queue.complete(res.sequence,res.success,now);','queue.complete(res.sequence,res.success,now);')
         new='\n     // A late completion from the previous owner must not cancel the armed retry.\n     if(matched&&cieloChRun&&!cieloChReturnPending&&!cieloChAwaitResponse)chReconnect.success();'
