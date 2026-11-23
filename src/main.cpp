@@ -164,6 +164,9 @@ static const char* wifiSleepName(){
  return "DESCONOCIDO";
 }
 static bool blePilotRequested=false, blePilotAttempted=false, rescueOpen=false;
+// 3.14: boot telemetry only; no change to BLE, OTA or lighting scheduling.
+static uint32_t bootBleStartMs=0, bootBaseHealthyMs=0, bootCurvesResumeMs=0;
+static uint32_t bootFirstGattMs[2]={0,0};
 struct LabState {
  bool running=false;
  uint32_t started=0,lastSample=0,samples=0;
@@ -1383,6 +1386,12 @@ static void diagnosticJson(){
  j+=",\"previous_reset_phase_is_hint_only\":true";
  j+=",\"persistent_fault_count\":"+String(savedFailures)+",\"prior_fault_type\":"+jsonQuote(priorEvent);
  j+=",\"prior_fault_detail\":"+(srv.hasArg("share")?String("null"):jsonQuote(priorEventDetail))+"}";
+ j+=",\"boot_timing\":{\"ble_start_ms\":"+(bootBleStartMs?String(bootBleStartMs):String("null"));
+ j+=",\"base_healthy_ms\":"+(bootBaseHealthyMs?String(bootBaseHealthyMs):String("null"));
+ j+=",\"curves_resume_ms\":"+(bootCurvesResumeMs?String(bootCurvesResumeMs):String("null"));
+ j+=",\"first_pv_gatt_ms\":"+(bootFirstGattMs[0]?String(bootFirstGattMs[0]):String("null"));
+ j+=",\"first_ch_gatt_ms\":"+(bootFirstGattMs[1]?String(bootFirstGattMs[1]):String("null"));
+ j+=",\"scope\":\"CURRENT_BOOT_MILLIS_NON_OPTICAL\"}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
  j+=",\"wifi_disconnects\":"+String(wifiDisconnects)+",\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0);
  j+=",\"wifi_modem_sleep\":"+jsonQuote(wifiSleepName())+",\"wifi_ble_coex_ready\":"+String(wifiCoexistReady()?"true":"false")+"}";
@@ -2635,7 +2644,8 @@ static void bleTick(){
      String("30/30/30: ")+String(res.reason)+" "+String(res.duration_ms)+"ms; cambio visual por verificar");
    if(!res.success)lab.txArmed=false;
   }
-  if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
+  if(res.success && res.device<2 && bootFirstGattMs[res.device]==0)bootFirstGattMs[res.device]=now-bootMs;
+   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
   if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}
   bool autoResult=(res.device==1 && res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto));
   if(!res.success){
@@ -2931,6 +2941,7 @@ void loop(){
     !cieloChAwaitResponse && !customResumePending);
   if(baseHealthy){
    currentBootMarkedHealthy=true;
+    if(!bootBaseHealthyMs)bootBaseHealthyMs=millis()-bootMs;
    prefs.putBool("clean",true);
    record("ARRANQUE_BASE_VALIDADO",otaCandidateBoot?
      "OTA: HTTP, WiFi, reloj, perfil y BLE listos; pendiente verificacion de GATT":
@@ -2991,6 +3002,7 @@ void loop(){
    record("BLE_COEX_VALIDADO",wifiSleepName());
    record("BLE_PILOTO_INICIO","Se prueba Bluetooth con HTTP ya activo");
    bleReady=cielo96::ble_begin();
+    if(bleReady && !bootBleStartMs)bootBleStartMs=millis()-bootMs;
    record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
   }
  }
@@ -3037,6 +3049,7 @@ void loop(){
     cielo96::profileValid(profile) && !customResumePending &&
     !cieloChReturnPending && !cieloChAwaitResponse && !queue.busy()){
   cieloResumePending=false;cieloPvRun=true;cieloChRun=true;
+   if(!bootCurvesResumeMs)bootCurvesResumeMs=millis()-bootMs;
   pvControlDesired=true;
   cieloWatchdogTripped=false;cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   lastPvDesired=false;lastChDesired=false;
