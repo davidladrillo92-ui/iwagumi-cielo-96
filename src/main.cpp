@@ -1654,7 +1654,8 @@ static void diagnosticJson(){
  j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
  j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false");
  j+=",\"ntp_sync_this_boot\":"+String(ntpSyncedThisBoot.load()?"true":"false");
- j+=",\"trusted_this_boot\":"+String(clockEvidenceTrusted()?"true":"false")+"}";
+ j+=",\"trusted_this_boot\":"+String(clockEvidenceTrusted()?"true":"false");
+ j+=",\"trusted_source\":"+jsonQuote(ntpSyncedThisBoot.load()?"NTP":phoneSyncedThisBoot?"PHONE":rtcClockContinuityTrusted?"RTC_SOFTWARE_RESTART":"UNTRUSTED")+"}";
  j+=",\"lab\":"+(srv.hasArg("share")?String("null"):labJson());
  j+=",\"persistent_diagnostics\":{\"boot_history\":[";
  for(uint8_t i=0;i<bootHistoryCount;i++){
@@ -2535,7 +2536,7 @@ static void lightingTask(){
     if(workLight.active())workLightTicks++;else if(cadenceTrial15)cadenceTicks15++;else cadenceTicks30++;
     if(queue.busy()||queue.pending(cielo::ble::Device::PezVerde)||queue.pending(cielo::ble::Device::Chihiros))cadenceSkippedBusy++;
   }
- if(!timeOK() || !cielo96::profileValid(profile)){
+ if(!clockEvidenceTrusted() || !cielo96::profileValid(profile)){
   if(cadenceDue)cadenceDiagnostics.invalidClock++;
   if(cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
    cieloChRun=false;cieloPvRun=false;cieloFallbacks++;
@@ -2936,6 +2937,13 @@ void setup(){
  tracePhase(TracePhase::Clock);
  sntp_set_time_sync_notification_cb(cieloNtpSynced);
  configTzTime(CIELO_TZ,"pool.ntp.org","time.google.com");
+ // RTC witness survives only software resets; never trust time after power loss.
+ const uint32_t retainedEpoch=rtcClockWitness.epoch;
+ const bool clockWitnessValid=rtcClockWitness.magic==RTC_CLOCK_MAGIC &&
+   rtcClockWitness.check==(RTC_CLOCK_MAGIC^retainedEpoch^0x93A714C3UL);
+ rtcClockContinuityTrusted=cielo96::r314::trusted_rtc_continuity(
+   esp_reset_reason()==ESP_RST_SW,retainedEpoch,uint32_t(time(nullptr)),clockWitnessValid);
+ if(rtcClockContinuityTrusted)record("HORA_RTC_CONTINUA","Reinicio software: RTC reciente comprobado; sin escrituras flash");
  bleReady=false; // Do not start BLE until explicit physical authorization.
  record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" ("+resetReasonName(esp_reset_reason())+") BLE="+String(bleReady));
  if(abnormalReset(esp_reset_reason()))record("REINICIO_ANOMALO",resetReasonName(esp_reset_reason()));
@@ -2953,8 +2961,8 @@ void setup(){
 void loop(){
  if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
   const bool baseHealthy=!otaCandidateBoot ||
-   (WiFi.status()==WL_CONNECTED && wifiCoexistReady() &&
-    otaBleHealthy() && timeOK() && cielo96::profileValid(profile) &&
+   (wifiApOn && wifiCoexistReady() &&
+    otaBleHealthy() && clockEvidenceTrusted() && cielo96::profileValid(profile) &&
     !cieloWatchdogTripped && !cieloChReturnPending &&
     !cieloChAwaitResponse && !customResumePending);
   if(baseHealthy){
@@ -2969,8 +2977,8 @@ void loop(){
  if(otaCandidateBoot && currentBootMarkedHealthy){
   const bool gattReady=(!otaCandidateNeedsGATT ||
    (cieloPvConfirmed>0 && cieloChConfirmed>0)) &&
-   WiFi.status()==WL_CONNECTED && wifiCoexistReady() && otaBleHealthy() &&
-   timeOK() && cielo96::profileValid(profile) && !cieloWatchdogTripped &&
+   wifiApOn && wifiCoexistReady() && otaBleHealthy() &&
+   clockEvidenceTrusted() && cielo96::profileValid(profile) && !cieloWatchdogTripped &&
    !cieloChReturnPending && !cieloChAwaitResponse && !customResumePending && !otaBusy;
   if(otaHealthyWindow.tick(millis(),gattReady)){
    if(prefs.putUChar("ota_attempts",0)==1 && prefs.remove("ota_prev")){
@@ -3105,6 +3113,15 @@ void loop(){
  if(currentBootMarkedHealthy&&bleReady&&!cieloWatchdogTripped&&
     (!pvControlDesired||cieloLastSuccessfulPvAt>0)&&(!cieloAlwaysOn||cieloLastSuccessfulChAt>0)){
   if(cielo96::restarts::recovered(restartJournal,previousBootCount+1,clockEvidenceTrusted()?uint32_t(time(nullptr)):0))restartJournalDirty=true;
+ }
+ // Retain recent witnessed time only in RTC RAM; not in NVS.
+ if(clockEvidenceTrusted() && uint32_t(millis()-rtcClockLastRefresh)>=60000UL){
+  rtcClockLastRefresh=millis();
+  const uint32_t epochNow=uint32_t(time(nullptr));
+  rtcClockWitness.magic=0;
+  rtcClockWitness.epoch=epochNow;
+  rtcClockWitness.check=RTC_CLOCK_MAGIC^epochNow^0x93A714C3UL;
+  rtcClockWitness.magic=RTC_CLOCK_MAGIC;
  }
  profileCheckpointTick();
  flushRestartJournal();
