@@ -95,7 +95,7 @@ assert 'void ble_keep_links(bool pv,bool ch)' in bleworker and 'unexpectedLoss[d
 assert 'ble_link_status(linkIndex)' in code
 assert '/api/lab/preview' in code and 'CURVA_PREVIA_CH' in code
 assert 'chihiros_auto_verified' in code and 'CH_AUTO_MODE_UNVERIFIED' in bleworker
-assert 'BLE_AUTO_SOLICITADO' in code and 'millis()-bootMs>=30000UL' in code
+assert 'BLE_AUTO_SOLICITADO' in code and 'cielo96::r314::may_start_ble(' in code
 assert 'ble_start_requires_button\\\\":false' in code or 'ble_start_requires_button\\":false' in code
 assert 'if(!labTxEnabled())' in code
 assert 'BLEDevice::init(' in bleworker
