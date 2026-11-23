@@ -21,8 +21,10 @@ for r in f['ranges']:
           '  lastBleSpan[device]=res;\n'
           '  if(cielo96::r314::cold_discovery_slow(res.duration_ms,res.discovery_ms))++bleColdDiscoverySlow[device];\n'
           '  else if(res.duration_ms>3500UL)++bleWarmSlow[device];\n'
-          '  if(res.success && res.device<2 && bootFirstGattMs[res.device]==0)bootFirstGattMs[res.device]=now-bootMs;\n'
         )
+        first_gatt='  if(res.success && res.device<2 && bootFirstGattMs[res.device]==0)bootFirstGattMs[res.device]=now-bootMs;\n'
+        assert part.count(first_gatt)==1
+        part=part.replace(first_gatt,'')
         assert part.count(added)==1
         part=part.replace(added,'')
         slow_new=('   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;\n'
