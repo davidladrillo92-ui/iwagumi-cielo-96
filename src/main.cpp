@@ -51,6 +51,7 @@
 #include "cielo_clock_evidence.h"
 #include "cielo_recovery313.h"
 #include "cielo_recovery314.h"
+#include "cielo_history314.h"
 
 // TLS is not started in this LAN edition. Keep an explicit stack margin for HTTP/OTA.
 static constexpr size_t CIELO_LOOP_STACK_BYTES=16384;
@@ -256,6 +257,8 @@ static uint32_t cieloDaySamples=0,cieloNightSamples=0;
 static uint32_t cieloLastSuccessfulPvAt=0,cieloLastSuccessfulChAt=0;
 struct CieloTrendSample {uint32_t epoch=0,pv=0,ch=0,pvErrors=0,chErrors=0,heap=0;};
 static CieloTrendSample cieloTrend[96]{};
+static cielo96::history314::Ring dailyHistory314;
+static uint32_t lastDailyPv=0,lastDailyCh=0,lastDailyPvErr=0,lastDailyChErr=0;
 static uint8_t cieloTrendCount=0,cieloTrendHead=0;
 static uint32_t cieloTrendLast=0;
 static uint32_t largestHeapBlockMin15m=UINT32_MAX;
@@ -501,6 +504,11 @@ static void cieloTrendTick(){
  cieloTrendHead=(cieloTrendHead+1)%96;
  if(cieloTrendCount<96)cieloTrendCount++;
  time_t ep=time(nullptr);struct tm local{};localtime_r(&ep,&local);
+ const uint32_t dayKey=uint32_t(local.tm_year+1900)*1000UL+uint32_t(local.tm_yday);
+ dailyHistory314.sample(dayKey,cieloPvConfirmed-lastDailyPv,cieloChConfirmed-lastDailyCh,
+    devices[0].errors-lastDailyPvErr,devices[1].errors-lastDailyChErr,t.heap);
+ lastDailyPv=cieloPvConfirmed;lastDailyCh=cieloChConfirmed;
+ lastDailyPvErr=devices[0].errors;lastDailyChErr=devices[1].errors;
  const int minutes=local.tm_hour*60+local.tm_min;
  if(minutes<870 || minutes>=1380)cieloNightSamples++;else cieloDaySamples++;
 }
@@ -937,7 +945,16 @@ static String cieloTrendJson(){
   if(n)j+=",";
   j+="["+String(v.epoch)+","+String(v.pv)+","+String(v.ch)+","+String(v.pvErrors)+","+String(v.chErrors)+","+String(v.heap)+"]";
  }
- j+="]}";return j;
+ j+="],\"daily_30\":{\"scope\":\"VOLATILE_SINCE_BOOT\",\"persisted\":false,\"capacity_days\":30,\"last_7_days_max\":7,\"days\":[";
+ const uint8_t count=dailyHistory314.count();
+ for(uint8_t i=0;i<count;i++){
+  if(i)j+=",";
+  const auto&day=dailyHistory314.oldest(i);
+  j+="["+String(day.day_key)+","+String(day.samples)+","+String(day.pv_ok)+","+
+     String(day.ch_ok)+","+String(day.pv_errors)+","+String(day.ch_errors)+","+
+     String(day.heap_min)+"]";
+ }
+ j+="]}}";return j;
 }
 static bool lampControlCritical(uint8_t device);
 static String wifiConfigJson(){
