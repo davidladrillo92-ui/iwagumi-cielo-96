@@ -293,6 +293,8 @@ static uint32_t httpCount=0,bleResultCount=0,bleResultErrors=0,bleSoftTimeouts=0
 static uint32_t bleSlowCount=0,bleDurationMax=0,wifiFailures=0;
 struct DevTelemetry {uint32_t completed=0,gatt_ok=0,write_calls=0,errors=0,slow=0,last_ms=0,max_ms=0;};
 static DevTelemetry devices[2]; // PV and Chihiros. GATT acceptance is not an optical ACK.
+static cielo96::BleResult lastBleSpan[2]{};
+static uint32_t bleColdDiscoverySlow[2]{},bleWarmSlow[2]{};
 static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
@@ -1446,6 +1448,20 @@ static void diagnosticJson(){
  j+=",\"chihiros\":"+(cielo96::diag::canReportP95(latencyCount[1])?String(latencyP95(1)):String("null"))+"}";
  j+=",\"p95_min_samples\":10,\"latency_samples\":{\"pez_verde\":"+String(latencyCount[0])+",\"chihiros\":"+String(latencyCount[1])+"}";
  j+=",\"p95_window\":{\"scope\":\"LAST_COMPLETED_OPERATIONS\",\"capacity\":32,\"pez_verde_samples\":"+String(cielo96::evidence::windowSamples(latencyCount[0]))+",\"chihiros_samples\":"+String(cielo96::evidence::windowSamples(latencyCount[1]))+",\"latency_samples_scope\":\"TOTAL_THIS_BOOT\"}";
+ j+=",\"operation_breakdown_last\":{";
+ for(uint8_t d=0;d<2;d++){
+  if(d)j+=",";
+  const auto& v=lastBleSpan[d];
+  const uint32_t attributed=v.discovery_ms+v.connect_ms+v.service_ms+
+    v.characteristic_ms+v.write_ms+v.pacing_ms;
+  j+=jsonQuote(d?"chihiros":"pez_verde")+":{\"completed_ms\":"+String(v.duration_ms);
+  j+=",\"discovery_ms\":"+String(v.discovery_ms)+",\"connect_ms\":"+String(v.connect_ms);
+  j+=",\"service_ms\":"+String(v.service_ms)+",\"characteristic_ms\":"+String(v.characteristic_ms);
+  j+=",\"write_ms\":"+String(v.write_ms)+",\"pacing_ms\":"+String(v.pacing_ms);
+  j+=",\"unattributed_ms\":"+String(v.duration_ms>attributed?v.duration_ms-attributed:0);
+  j+=",\"cold_scan_slow_operations\":"+String(bleColdDiscoverySlow[d]);
+  j+=",\"warm_slow_operations\":"+String(bleWarmSlow[d])+"}";
+ }j+="}";
  j+=",\"phase_timing_ms\":{";
  for(uint8_t i=0;i<2;i++){
   const auto x=cielo96::ble_transport_stats(i);if(i)j+=",";
@@ -2612,6 +2628,9 @@ static void bleTick(){
  while(cielo96::ble_result(res)){
   uint8_t device=res.device==1?1:0;
   DevTelemetry& t=devices[device];t.completed++;t.write_calls+=res.write_calls;t.last_ms=res.duration_ms;
+  lastBleSpan[device]=res;
+  if(cielo96::r314::cold_discovery_slow(res.duration_ms,res.discovery_ms))++bleColdDiscoverySlow[device];
+  else if(res.duration_ms>3500UL)++bleWarmSlow[device];
   latencyHistory[device][latencyCount[device]++%32]=res.duration_ms;
   if(res.duration_ms>t.max_ms)t.max_ms=res.duration_ms;
   if(res.duration_ms>3500)t.slow++;
@@ -2675,7 +2694,9 @@ static void bleTick(){
   }
   if(res.success && res.device<2 && bootFirstGattMs[res.device]==0)bootFirstGattMs[res.device]=now-bootMs;
    if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
-  if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}
+  if(res.duration_ms>3500UL){bleSlowCount++;
+    const bool cold=cielo96::r314::cold_discovery_slow(res.duration_ms,res.discovery_ms);
+    record(cold?"BLE_LENTO_DESCUBRIMIENTO":"BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms; scan="+String(res.discovery_ms)+"ms");}
   bool autoResult=(res.device==1 && res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto));
   if(!res.success){
    bleResultErrors++;lastBleError=String(res.device?"CH ":"PV ")+String(res.reason);record("BLE_ERROR",lastBleError);
