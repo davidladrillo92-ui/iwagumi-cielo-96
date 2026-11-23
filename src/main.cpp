@@ -530,8 +530,8 @@ static String pointsCh(){String s;s.reserve(profile.chCount*20);
  s+=String(p.minute)+','+String(p.r)+','+String(p.g)+','+String(p.b);
  }return s;
 }
-static cielo::PvValue programPv(){return clockEvidenceTrusted()?(cadenceTrial15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):cielo::at(profile.pv,profile.pvCount,minuteOfDay())):cielo::PvValue{0,0,0,0};}
-static cielo::ChiValue programCh(){return clockEvidenceTrusted()?(cadenceTrial15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):cielo::at(profile.ch,profile.chCount,minuteOfDay())):cielo::ChiValue{0,0,0};}
+static cielo::PvValue programPv(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.pv,profile.pvCount,secondOfDay()):cielo::at(profile.pv,profile.pvCount,minuteOfDay())):cielo::PvValue{0,0,0,0};}
+static cielo::ChiValue programCh(){return timeOK()?(cadenceTrial15?cielo::atSecond(profile.ch,profile.chCount,secondOfDay()):cielo::at(profile.ch,profile.chCount,minuteOfDay())):cielo::ChiValue{0,0,0};}
 
 static cielo96::worklight::Levels programLevels(){return {programPv(),programCh()};}
 static cielo::PvValue desiredPv(){return workLight.output(millis(),programLevels()).pv;}
