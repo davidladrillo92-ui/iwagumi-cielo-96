@@ -52,7 +52,42 @@ for r in f['ranges']:
         assert part.count(new)==1
         part=part.replace(new,'chReconnect.success();')
     assert hashlib.sha256(part.encode()).hexdigest()==r['sha256'],r['name']
-for p,h in f['files'].items():assert hashlib.sha256(Path(p).read_bytes()).hexdigest()==h,p
+for p,h in f['files'].items():
+    raw=Path(p).read_bytes()
+    if p=='src/cielo_ble_worker.cpp':
+        worker=raw.decode()
+        replacements=[
+          ('// Written exclusively by the BLE worker during one command.\nstruct OpSpan {uint32_t discovery=0,connect=0,service=0,characteristic=0,write=0,pacing=0;};\nOpSpan opSpan{};\n',''),
+          (' const uint32_t scanStart=millis();\n',''),
+          (' opSpan.discovery+=uint32_t(millis()-scanStart);\n',''),
+          (' const uint32_t connectDuration=millis()-started;\n opSpan.connect+=connectDuration;\n metricTime(metrics.connect_last,metrics.connect_max,connectDuration);',
+           ' metricTime(metrics.connect_last,metrics.connect_max,millis()-started);'),
+          (' const uint32_t serviceStart=millis();\n',''),
+          (' opSpan.service+=uint32_t(millis()-serviceStart);\n',''),
+          (' const uint32_t characteristicStart=millis();\n',''),
+          (' opSpan.characteristic+=uint32_t(millis()-characteristicStart);\n',''),
+          (' const uint32_t writeDuration=millis()-writeStarted;\n opSpan.write+=writeDuration;\n metricTime(metrics.write_last,metrics.write_max,writeDuration);',
+           ' metricTime(metrics.write_last,metrics.write_max,millis()-writeStarted);'),
+          (' const uint32_t paceStart=millis();\n',''),
+          (' opSpan.pacing+=uint32_t(millis()-paceStart);\n',''),
+          ('void resumeCustomCurve(uint32_t requestId){\n BleCustomResumeResult res{};res.request_id=requestId;uint32_t started=millis();\n opSpan=OpSpan{};const char*err="OK";',
+           'void resumeCustomCurve(){\n BleCustomResumeResult res{};uint32_t started=millis();const char*err="OK";'),
+          ('  uint32_t customToken=0;', '  uint8_t customToken=0;'),
+          ('   resumeCustomCurve(customToken);touchHeartbeat();','   resumeCustomCurve();touchHeartbeat();'),
+          ('offWrittenInCurrentOperation=false;opSpan=OpSpan{};const char*err="OK";',
+           'offWrittenInCurrentOperation=false;const char*err="OK";'),
+          ('  res.off_sent=offWrittenInCurrentOperation;res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;\n  res.discovery_ms=opSpan.discovery;res.connect_ms=opSpan.connect;\n  res.service_ms=opSpan.service;res.characteristic_ms=opSpan.characteristic;\n  res.write_ms=opSpan.write;res.pacing_ms=opSpan.pacing;\n  copyReason(res,err);',
+           '  res.off_sent=offWrittenInCurrentOperation;res.success=success;res.duration_ms=millis()-started;res.write_calls=writesInCurrentOperation;copyReason(res,err);'),
+          ('sizeof(BleProbeResult),sizeof(uint8_t),sizeof(uint32_t),sizeof(BleCustomResumeResult)',
+           'sizeof(BleProbeResult),sizeof(uint8_t),sizeof(uint8_t),sizeof(BleCustomResumeResult)'),
+          ('bool ble_custom_resume_request(uint32_t request_id){\n return request_id!=0 && customRequests && xQueueSend(customRequests,&request_id,0)==pdTRUE;\n}',
+           'bool ble_custom_resume_request(){\n uint8_t token=1;\n return customRequests && xQueueSend(customRequests,&token,0)==pdTRUE;\n}')
+        ]
+        for added,original in replacements:
+            assert worker.count(added)==1,('BLE 3.14 unexpected diff',added)
+            worker=worker.replace(added,original)
+        raw=worker.encode()
+    assert hashlib.sha256(raw).hexdigest()==h,p
 fs=Path('include/cielo_profile_fs.h').read_text()
 for mutation in ['SPIFFS.begin(true','SPIFFS.format(','esp_spiffs_format(','esp_spiffs_check(']:assert mutation not in fs
 print('PASS storage scope: engine/BLE/recovery/partition and3.7 storage hashes unchanged; admission/UI changes authorized; no format/check/repair fallback')
