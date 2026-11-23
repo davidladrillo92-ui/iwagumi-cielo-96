@@ -438,6 +438,7 @@ static uint32_t latencyP95(uint8_t device){
  return sorted[(95*n+99)/100-1];
 }
 static uint32_t wifiDisconnects=0;
+static uint32_t wifiRetryDelayMs=30000UL;
 static wl_status_t lastWifiStatus=WL_IDLE_STATUS;
 static bool connectionStarted=false;
 static bool apRecoveryAlways=true; // Rescue AP remains available while STA is connected.
@@ -2465,6 +2466,7 @@ static void wifiTask(){
   record(rc==ESP_OK?"COEX_REPARADA":"COEX_ERROR",rc==ESP_OK?"MIN_MODEM activado (AP sin router incluido)":"No se pudo activar MIN_MODEM");
  }
  if(w==WL_CONNECTED){
+  wifiRetryDelayMs=30000UL;
   if(!mdnsReady && now-mdnsLastAttempt>30000UL){
    mdnsLastAttempt=now;
    mdnsReady=MDNS.begin("iwagumi-cielo96");
@@ -2473,8 +2475,11 @@ static void wifiTask(){
   }
   return;
  }
- if(storedSSID.length() && now-lastWiFiAttempt>30000UL){
-  lastWiFiAttempt=now;WiFi.begin(storedSSID.c_str(),storedPass.c_str());wifiFailures++;
+ if(storedSSID.length() && uint32_t(now-lastWiFiAttempt)>wifiRetryDelayMs &&
+    (!bleReady || !queue.busy()) && !otaBusy){
+  lastWiFiAttempt=now;
+  WiFi.begin(storedSSID.c_str(),storedPass.c_str());wifiFailures++;
+  if(wifiRetryDelayMs<120000UL)wifiRetryDelayMs*=2;
  }
 
 }
