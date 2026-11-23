@@ -1215,6 +1215,12 @@ static void labTick(){
  const uint32_t now=millis();
  cielo96::BleCustomResumeResult custom{};
  while(cielo96::ble_custom_resume_result(custom)){
+  if(!cielo96::r314::matching_return(customExpectedRequestId,custom.request_id,customResumePending)){
+   customStaleResponses++;
+   record("CH_03_RESPUESTA_ANTIGUA",String("Ignorada respuesta de solicitud ")+String(custom.request_id)+"; actual="+String(customExpectedRequestId));
+   continue;
+  }
+  customExpectedRequestId=0;
   customResumePending=false;customResumeLastMs=now;
   customResumeLast=String(custom.reason)+" "+String(custom.duration_ms)+" ms; verificacion visual pendiente";
   if(custom.success){
@@ -1247,6 +1253,7 @@ static void labTick(){
   }
  }
  if(customResumePending && now-customResumeRequested>24000UL){
+  customExpectedRequestId=0;
   customResumePending=false;customResumeFailed++;
   customResumeLast="Sin respuesta de la tarea BLE en 24 s; no repetir automaticamente";
   if(contrastStage==4)contrastStage=6;
@@ -1482,6 +1489,7 @@ static void diagnosticJson(){
     jsonQuote(cielo96::ble_worker_phase_name(bleRtcPhaseTrace.phase[i]))+"]";
  }
  j+="]}";
+ j+=",\"stale_custom_resume_responses\":"+String(customStaleResponses);
  j+=",\"ble_callbacks\":{";
  for(uint8_t dev=0;dev<2;dev++){
   if(dev)j+=",";
@@ -2258,7 +2266,9 @@ static void configureRoutes(){
   if(contrastStage!=2)return fail(409,"Primero envia 30/30/30 y confirma que la operacion GATT termine");
   if(customResumePending||lab.scanPending||lab.probePending||queue.busy())
    return fail(409,"Bluetooth ocupado: espera a terminar");
-  if(!cielo96::ble_custom_resume_request())return fail(503,"No se pudo programar ensayo seguro");
+  const uint32_t requestId=nextCustomResumeId();
+  if(!cielo96::ble_custom_resume_request(requestId))return fail(503,"No se pudo programar ensayo seguro");
+  customExpectedRequestId=requestId;
   customResumePending=true;customResumeRequested=millis();
   contrastStage=4;contrastObserved=true;
   chiManual=false;chiAutoPending=false;
@@ -2687,7 +2697,9 @@ static void bleTick(){
  if(cieloChReturnPending && !chSelectiveHold && !pvOffFirst && !pvDayFirst && !queue.busy() && !customResumePending &&
     !lab.scanPending && !lab.probePending &&
     (int32_t)(now-cieloReturnRetryAt)>=0){
-   if(cielo96::ble_custom_resume_request()){
+   const uint32_t requestId=nextCustomResumeId();
+   if(cielo96::ble_custom_resume_request(requestId)){
+    customExpectedRequestId=requestId;
     cieloChReturnPending=false;cieloChAwaitResponse=true;
     customResumePending=true;customResumeRequested=now;cieloReturnTries++;
     record("V4_RETORNO_ENVIANDO",String("Intento ")+String(cieloReturnTries)+" modo personalizado 0x03");
