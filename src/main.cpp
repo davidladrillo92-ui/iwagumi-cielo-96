@@ -1384,7 +1384,8 @@ static void diagnosticJson(){
  bool workerUnavailable=bleReady && (cielo96::ble_worker_snapshot().heartbeat_age_ms>45000UL);
  bool critical=currentCritical(); // Los errores BLE ya recuperados son historicos.
  bool historical=badReset||m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
- String j;j.reserve(22000);
+ // Reserve enough for phase breakdown and the 30-day bounded summary to avoid repeated heap reallocations.
+ String j;j.reserve(28000);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(clockEvidenceTrusted()?dateTime():String("Hora pendiente de sincronizacion"));
  j+=",\"boot_id\":"+String(previousBootCount+1);
  j+=",\"generated_epoch\":"+(clockEvidenceTrusted()?String((uint32_t)time(nullptr)):String("null"));
