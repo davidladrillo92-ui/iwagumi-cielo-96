@@ -1401,6 +1401,133 @@ static String restartHistoryJson(){
  }
  return j+"]";
 }
+// Passive profile and delivery diagnostics; never submit commands or modify curves.
+static cielo96::health314::Levels profileLevels314(uint8_t d,int minute){
+ if(d){const auto v=cielo::at(profile.ch,profile.chCount,minute);return {v.r,v.g,v.b,0};}
+ const auto v=cielo::at(profile.pv,profile.pvCount,minute);return {v.r,v.g,v.b,v.brightness};
+}
+static uint32_t profileLitSamples314[2]{},profileOffSamples314[2]{},profileUnknownSamples314=0;
+static void profileStateSample314(){
+ if(!clockEvidenceTrusted()||!cielo96::profileValid(profile)){++profileUnknownSamples314;return;}
+ const int minute=minuteOfDay();bool any=false;
+ for(uint8_t d=0;d<2;d++){
+  bool lit=cielo96::health314::lit(profileLevels314(d,minute),d==0);
+  if(lit)++profileLitSamples314[d];else ++profileOffSamples314[d];any|=lit;
+ }
+ if(any)++cieloDaySamples;else ++cieloNightSamples;
+}
+static uint32_t healthLastBusy314=0,healthLastDue314=0;
+static void healthSample314(uint32_t heap,uint32_t largest){
+ if(uptimeSeconds()<600 || otaBusy||otaTxn.phase!=OtaPhase::Idle||rescueOpen||workLight.active()||lab.txArmed)return;
+ nvs_stats_t nvs{};bool nvsOk=nvs_get_stats("nvs",&nvs)==ESP_OK;
+ const uint32_t due=cadenceDiagnostics.due-healthLastDue314,busy=cadenceDiagnostics.busy-healthLastBusy314;
+ healthLastDue314=cadenceDiagnostics.due;healthLastBusy314=cadenceDiagnostics.busy;
+ cielo96::health314::Sample v{};
+ v.heap=heap;v.fragmentation=uint32_t(cielo96::diag::fragmentationPct(heap,largest));
+ v.latencyValid=latencyCount[0]>=10&&latencyCount[1]>=10;
+ v.pv95=latencyP95(0);v.ch95=latencyP95(1);
+ v.queueValid=due>=10;v.busyBp=cielo96::evidence::basisPoints(busy,due);
+ v.stack=uxTaskGetStackHighWaterMark(nullptr);
+ v.nvsValid=nvsOk;v.nvsFree=nvs.free_entries;v.nvsReserve=activeDiagnosticReserve();
+ const uint32_t previous=healthTrend314.flags;healthTrend314.sample(v);
+ if(previous!=healthTrend314.flags)record("SALUD_TENDENCIA",String("Mascara anterior ")+String(previous)+" actual "+String(healthTrend314.flags));
+}
+static bool profileControl314(uint8_t d){
+ return clockEvidenceTrusted()&&cielo96::profileValid(profile)&&bleReady&&!cieloWatchdogTripped&&
+ !rescueOpen&&!otaBusy&&otaTxn.phase==OtaPhase::Idle&&!workLight.active()&&!workLightPreparing&&!lab.txArmed&&
+ (d?(cieloChRun&&!chiManual&&!chSelectiveHold&&!cieloChReturnPending&&!cieloChAwaitResponse&&!customResumePending):
+    (cieloPvRun&&pvControlDesired&&!pezManual&&!bleRecoveryBootPvSafe&&!pvDisconnectInterlock));
+}
+static uint64_t mismatchSince314[2]{},maxMismatch314[2]{},lastMismatchDuration314[2]{};
+static uint64_t lastProfileCheck314=0;
+static void profileDeliveryTick314(){
+ const uint64_t now=uptimeMillis64();
+ if(now-lastProfileCheck314<5000ULL)return;lastProfileCheck314=now;
+ for(uint8_t d=0;d<2;d++){
+  auto& v=delivery314[d];
+  if(!profileControl314(d)){v.invalidate();mismatchSince314[d]=0;continue;}
+  if(!v.hasAck||!v.ackApplicable){mismatchSince314[d]=0;continue;}
+  const auto expected=profileLevels314(d,minuteOfDay());
+  if(cielo96::health314::equal(expected,v.ack)){
+   if(mismatchSince314[d]){lastMismatchDuration314[d]=now-mismatchSince314[d];
+    if(lastMismatchDuration314[d]>maxMismatch314[d])maxMismatch314[d]=lastMismatchDuration314[d];}
+   mismatchSince314[d]=0;
+  }else if(!mismatchSince314[d])mismatchSince314[d]=now;
+ }
+}
+static String levelsJson314(cielo96::health314::Levels v,uint8_t d){
+ String j="["+String(v.r)+","+String(v.g)+","+String(v.b);
+ if(!d)j+=","+String(v.brightness);return j+"]";
+}
+static void appendHealth314(String& j,bool critical,bool historical){
+ using namespace cielo96::health314;
+ const uint64_t now=uptimeMillis64();
+ nvs_stats_t stats{};const bool valid=nvs_get_stats("nvs",&stats)==ESP_OK;
+ const size_t reserve=activeDiagnosticReserve();const char* pressure=pressureName(valid,stats.free_entries,reserve);
+ const bool warning=strcmp(pressure,"NORMAL")||healthTrend314.flags||
+  bleClass314[0].recentWarning(now)||bleClass314[1].recentWarning(now)||
+  (WiFi.status()!=WL_CONNECTED&&wifiApOn);
+ const bool observing=!currentBootMarkedHealthy||!bleReady||uptimeSeconds()<600;
+ const bool clockTrusted=clockEvidenceTrusted();
+ const bool criticalNow=critical||(!observing&&!clockTrusted);
+ j+=",\"health_v2\":{\"state\":"+jsonQuote(summary(criticalNow,observing,warning));
+ j+=",\"critical_now\":"+String(criticalNow?"true":"false")+",\"warning_now\":"+String(warning?"true":"false");
+ j+=",\"historical_events_present\":"+String(historical?"true":"false");
+ j+=",\"clock_trusted\":"+String(clockTrusted?"true":"false");
+ j+=",\"home_wifi_connected\":"+String(WiFi.status()==WL_CONNECTED?"true":"false");
+ j+=",\"profile_valid\":"+String(cielo96::profileValid(profile)?"true":"false");
+ j+=",\"pv_control_critical\":"+String(lampControlCritical(0)?"true":"false")+",\"ch_control_critical\":"+String(lampControlCritical(1)?"true":"false");
+ j+=",\"optical_verification\":false,\"automatic_restart_from_trend\":false,\"nvs\":{\"pressure\":"+jsonQuote(pressure);
+ j+=",\"free_entries\":"+(valid?String(stats.free_entries):String("null"))+",\"reserve_entries\":"+String(reserve);
+ j+=",\"margin_entries\":"+(valid?String(int32_t(stats.free_entries)-int32_t(reserve)):String("null"));
+ j+=",\"optional_guard_extra_entries\":16,\"low_space_retry_ms\":1800000,\"diagnostic_deferred\":"+String(diagPressureDeferred?"true":"false");
+ j+=",\"redundant_blob_writes_avoided\":"+String(diagBlobAvoided)+"}";
+ j+=",\"trend\":{\"samples\":"+String(healthTrend314.samples)+",\"interval_ms\":900000,\"consecutive_required\":3";
+ j+=",\"flags_mask\":"+String(healthTrend314.flags)+",\"flags\":[";
+ const char* names[]={"HEAP","FRAGMENTATION","PV_LATENCY","CH_LATENCY","BUSY_CHECKPOINTS","STACK","NVS"};
+ bool comma=false;for(uint8_t i=0;i<7;i++)if(healthTrend314.flags&(1UL<<i)){if(comma)j+=",";j+=jsonQuote(names[i]);comma=true;}
+ j+="],\"baseline_heap\":"+(healthTrend314.samples?String(healthTrend314.baseline.heap):String("null"));
+ j+=",\"baseline_pv_p95\":"+(healthTrend314.baseline.latencyValid?String(healthTrend314.baseline.pv95):String("null"));
+ j+=",\"baseline_ch_p95\":"+(healthTrend314.baseline.latencyValid?String(healthTrend314.baseline.ch95):String("null"))+"}";
+ j+=",\"off_event_summary\":{\"scope\":\"CURRENT_BOOT\",\"events\":[";
+ const char* labels[]={"PV_POWER_OFF_ENCOLADO","PV_POWER_OFF_INTENTO","PV_POWER_OFF_GATT_OK"};
+ for(uint8_t i=0;i<3;i++){if(i)j+=",";j+="{\"event\":"+jsonQuote(labels[i])+",\"count\":"+String(offSummary314.count[i]);
+  j+=",\"first_ms\":"+(offSummary314.count[i]?uptimeText(offSummary314.first[i]):String("null"));
+  j+=",\"last_ms\":"+(offSummary314.count[i]?uptimeText(offSummary314.last[i]):String("null"))+"}";}
+ j+="]},\"incidents\":[";
+ for(uint8_t i=0;i<incidents314.count;i++){if(i)j+=",";const auto&e=incidents314.at(i);
+  j+="{\"event\":"+jsonQuote(e.code)+",\"first_ms\":"+uptimeText(e.first)+",\"last_ms\":"+uptimeText(e.last)+",\"repeats\":"+String(e.repeats)+"}";}
+ j+="],\"lamps\":{";
+ const bool profileKnown=clockTrusted&&cielo96::profileValid(profile);const int minute=profileKnown?minuteOfDay():0;
+ for(uint8_t d=0;d<2;d++){
+  if(d)j+=",";const auto& b=bleClass314[d];const auto& v=delivery314[d];
+  j+=jsonQuote(d?"chihiros":"pez_verde")+":{\"ble\":{\"first_operation_slow\":"+String(b.startupSlow);
+  j+=",\"reconnect_slow\":"+String(b.reconnectSlow)+",\"stable_link_slow\":"+String(b.stableSlow);
+  j+=",\"slow_completed_ok\":"+String(b.recoveredSlow)+",\"slow_completed_failed\":"+String(b.failedSlow);
+  j+=",\"recent_repeated_stable_slow\":"+String(b.recentWarning(now)?"true":"false")+"}";
+  const auto expected=profileKnown?profileLevels314(d,minute):Levels{};
+  const auto before=profileKnown?profileLevels314(d,(minute+1435)%1440):Levels{};
+  const auto after=profileKnown?profileLevels314(d,(minute+5)%1440):Levels{};
+  const bool applicable=profileControl314(d)&&v.hasAck&&v.ackApplicable;
+  j+=",\"phase\":"+jsonQuote(profileKnown?phase(before,expected,after,d==0):"UNKNOWN");
+  j+=",\"expected_profile\":"+(profileKnown?levelsJson314(expected,d):String("null"));
+  j+=",\"profile_control_applicable\":"+String(profileControl314(d)?"true":"false");
+  j+=",\"last_dispatched\":"+(v.hasSent?levelsJson314(v.sent,d):String("null"));
+  j+=",\"last_dispatched_sequence\":"+(v.hasSent?String(v.sequence):String("null"));
+  j+=",\"last_gatt_accepted\":"+(v.hasAck?levelsJson314(v.ack,d):String("null"));
+  j+=",\"last_gatt_sequence\":"+(v.hasAck?String(v.ackSeq):String("null"));
+  j+=",\"last_gatt_age_ms\":"+(v.hasAck?uptimeText(now-v.ackAt):String("null"));
+  j+=",\"matches_current_profile\":"+(applicable?String(equal(expected,v.ack)?"true":"false"):String("null"));
+  j+=",\"dispatch_to_gatt_ms\":"+(v.count?String(v.lastMs):String("null"));
+  j+=",\"dispatch_to_gatt_max_ms\":"+(v.count?String(v.maxMs):String("null"));
+  j+=",\"observed_mismatch_ms\":"+(applicable&&mismatchSince314[d]?uptimeText(now-mismatchSince314[d]):String("null"));
+  j+=",\"max_resolved_mismatch_ms\":"+uptimeText(maxMismatch314[d]);
+  j+=",\"lit_profile_samples\":"+String(profileLitSamples314[d])+",\"off_profile_samples\":"+String(profileOffSamples314[d])+"}";
+ }
+ j+="},\"profile_unknown_samples\":"+String(profileUnknownSamples314);
+ j+=",\"queue_expired_total\":"+String(queue.metrics().expired)+",\"queue_superseded_total\":"+String(queue.metrics().superseded);
+ j+=",\"delivery_scope\":\"MATCHED_GATT_NOT_OPTICAL; DISPATCH_TO_RESULT_NOT_QUEUE_WAIT; MISMATCH_SAMPLED_5S_NOT_MISSED_UPDATES\"}";
+}
 static void diagnosticJson(){
  const auto&m=queue.metrics();bool wifi=WiFi.status()==WL_CONNECTED;
  uint32_t freeMem=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
@@ -1744,7 +1871,8 @@ static void diagnosticJson(){
  }
  j+="],\"pending_nvs_write\":"+String(journalDirty?"true":"false");
  j+=",\"flash_policy\":\"Solo al arrancar y al registrar incidencias; maximo un lote cada 5 minutos\"}";
- j+=",\"event_retention\":\"36_RAM_8_incidencias_NVS_sin_detalles\",\"events\":[";
+ appendHealth314(j,critical,historical);
+ j+=",\"event_retention\":\"36_RAM_16_INCIDENCIAS_RAM_8_NVS_OFF_AGREGADO\",\"events\":[";
  for(int i=0;i<eventCount;i++){
   int idx=(eventHead-eventCount+i+EVENT_MAX)%EVENT_MAX;
   if(i)j+=',';
@@ -3181,6 +3309,7 @@ void loop(){
  lightingTask();
  cielo96::ble_set_pv_off_required(pvOffObligation);
  cieloTrendTick();
+ profileDeliveryTick314();
  labTick();
  chReconnectTick();
  otaPreparationTick();
