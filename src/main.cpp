@@ -1434,7 +1434,7 @@ static void healthSample314(uint32_t heap,uint32_t largest){
 }
 static bool profileControl314(uint8_t d){
  return clockEvidenceTrusted()&&cielo96::profileValid(profile)&&bleReady&&!cieloWatchdogTripped&&
- !rescueOpen&&!otaBusy&&otaTxn.phase==OtaPhase::Idle&&!workLight.active()&&!workLightPreparing&&!lab.txArmed&&
+ !rescueOpen&&!otaBusy&&otaTxn.phase==OtaPhase::Idle&&!workLight.active()&&!workLightPreparing&&!lab.txArmed&&!cadenceTrial15&&
  (d?(cieloChRun&&!chiManual&&!chSelectiveHold&&!cieloChReturnPending&&!cieloChAwaitResponse&&!customResumePending):
     (cieloPvRun&&pvControlDesired&&!pezManual&&!bleRecoveryBootPvSafe&&!pvDisconnectInterlock));
 }
@@ -1448,7 +1448,7 @@ static void profileDeliveryTick314(){
   if(!profileControl314(d)){v.invalidate();mismatchSince314[d]=0;continue;}
   if(!v.hasAck||!v.ackApplicable){mismatchSince314[d]=0;continue;}
   const auto expected=profileLevels314(d,minuteOfDay());
-  if(cielo96::health314::equal(expected,v.ack)){
+  if(cielo96::health314::equivalent(expected,v.ack,d==0)){
    if(mismatchSince314[d]){lastMismatchDuration314[d]=now-mismatchSince314[d];
     if(lastMismatchDuration314[d]>maxMismatch314[d])maxMismatch314[d]=lastMismatchDuration314[d];}
    mismatchSince314[d]=0;
@@ -1504,6 +1504,7 @@ static void appendHealth314(String& j,bool critical,bool historical){
   j+=jsonQuote(d?"chihiros":"pez_verde")+":{\"ble\":{\"first_operation_slow\":"+String(b.startupSlow);
   j+=",\"reconnect_slow\":"+String(b.reconnectSlow)+",\"stable_link_slow\":"+String(b.stableSlow);
   j+=",\"slow_completed_ok\":"+String(b.recoveredSlow)+",\"slow_completed_failed\":"+String(b.failedSlow);
+  j+=",\"matched_soft_timeouts_recovered\":"+String(b.matchedSoftTimeoutOk)+",\"matched_soft_timeouts_failed\":"+String(b.matchedSoftTimeoutFailed);
   j+=",\"recent_repeated_stable_slow\":"+String(b.recentWarning(now)?"true":"false")+"}";
   const auto expected=profileKnown?profileLevels314(d,minute):Levels{};
   const auto before=profileKnown?profileLevels314(d,(minute+1435)%1440):Levels{};
@@ -1517,7 +1518,7 @@ static void appendHealth314(String& j,bool critical,bool historical){
   j+=",\"last_gatt_accepted\":"+(v.hasAck?levelsJson314(v.ack,d):String("null"));
   j+=",\"last_gatt_sequence\":"+(v.hasAck?String(v.ackSeq):String("null"));
   j+=",\"last_gatt_age_ms\":"+(v.hasAck?uptimeText(now-v.ackAt):String("null"));
-  j+=",\"matches_current_profile\":"+(applicable?String(equal(expected,v.ack)?"true":"false"):String("null"));
+  j+=",\"matches_current_profile\":"+(applicable?String(equivalent(expected,v.ack,d==0)?"true":"false"):String("null"));
   j+=",\"dispatch_to_gatt_ms\":"+(v.count?String(v.lastMs):String("null"));
   j+=",\"dispatch_to_gatt_max_ms\":"+(v.count?String(v.maxMs):String("null"));
   j+=",\"observed_mismatch_ms\":"+(applicable&&mismatchSince314[d]?uptimeText(now-mismatchSince314[d]):String("null"));
@@ -2811,7 +2812,9 @@ static void bleTick(){
   if(res.duration_ms>t.max_ms)t.max_ms=res.duration_ms;
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
-  const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;
+  const bool softMatched=queue.active_sequence()==res.sequence&&queue.stalled();
+   const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;
+   bleClass314[device].softResult(softMatched&&matched,res.success);
    bleClass314[device].observe(uptimeMillis64(),res.success,res.duration_ms,res.discovery_ms,res.connect_ms);
    delivery314[device].finish(res.sequence,matched,res.success,uptimeMillis64(),res.off_sent);
   if(!res.success)workLightCancel("Fallo Bluetooth: mantenimiento cancelado");
