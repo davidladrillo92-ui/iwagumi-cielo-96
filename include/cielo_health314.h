@@ -84,7 +84,10 @@ struct BleClass {
  }
  bool recentWarning(uint64_t now)const{return consecutiveStableSlow>=2 && now-lastStableSlow<=300000ULL;}
 };
-struct Levels {uint8_t r=0,g=0,b=0,brightness=0;};
+struct Levels {
+ uint8_t r,g,b,brightness;
+ constexpr Levels(uint8_t red=0,uint8_t green=0,uint8_t blue=0,uint8_t level=0):r(red),g(green),b(blue),brightness(level){}
+};
 inline bool equal(Levels a,Levels b){return a.r==b.r&&a.g==b.g&&a.b==b.b&&a.brightness==b.brightness;}
 inline bool equivalent(Levels a,Levels b,bool pv){return (pv&&!a.brightness&&!b.brightness)||equal(a,b);}
 inline bool lit(Levels a,bool pv){return pv?a.brightness!=0:(a.r||a.g||a.b);}
