@@ -52,6 +52,7 @@
 #include "cielo_recovery313.h"
 #include "cielo_recovery314.h"
 #include "cielo_history314.h"
+#include "cielo_health314.h"
 
 // TLS is not started in this LAN edition. Keep an explicit stack margin for HTTP/OTA.
 static constexpr size_t CIELO_LOOP_STACK_BYTES=16384;
@@ -70,7 +71,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.14-AUTONOMY-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.14-V2-HEALTH-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -343,10 +344,22 @@ static size_t lastCurveNvsFreeBefore=0,lastCurveNvsMinRequired=0;
 static bool curveSaveInProgress=false;
 static cielo96::profiletxn::Result lastCurveTransaction;
 static uint32_t diagWritesSkippedForSpace=0,restartWritesSkippedForSpace=0;
+static bool diagPressureDeferred=false;
+static uint32_t diagBlobAvoided=0;
+static cielo96::health314::OffSummary offSummary314;
+static cielo96::health314::Incidents incidents314;
+static cielo96::health314::Trend healthTrend314;
+static cielo96::health314::BleClass bleClass314[2];
+static cielo96::health314::Delivery delivery314[2];
 static uint32_t knownProfileGeneration=0,profileCheckpointLastTry=0;
 static bool profileCheckpointAttempted=false,profileCheckpointWriteFailed=false,profileFallbackSuspected=false;
 static size_t activeDiagnosticReserve(){
  return cielo96::r313::diagnosticReserve(curveFs.ready()&&curveFs.isLittlefs(),sizeof(cielo96::ProfileImage));
+}
+static bool nvsOptionalHeadroom(size_t margin){
+ nvs_stats_t stats{};
+ const bool valid=nvs_get_stats("nvs",&stats)==ESP_OK;
+ return cielo96::health314::optionalWriteAllowed(valid,stats.free_entries,activeDiagnosticReserve(),margin);
 }
 static bool nvsPreserveCurveHeadroom(){
  nvs_stats_t stats{};
@@ -411,17 +424,25 @@ struct JournalStore {uint32_t magic;uint8_t count;uint8_t head;uint16_t reserved
 static constexpr uint32_t JOURNAL_MAGIC=0xC1E10505UL;
 static JournalStore journal{JOURNAL_MAGIC,0,0,0,{}};
 static bool journalDirty=false,journalHasFlushed=false;
+static JournalStore acceptedJournal314{};
+static bool acceptedJournalKnown314=false;
 static uint32_t journalLastFlush=0;
 static void flushJournal(){
  if(!journalDirty || !cielo96::diag::shouldFlush(millis(),journalLastFlush,journalHasFlushed))return;
- if(curveSaveInProgress||nvsPreserveCurveHeadroom()){
+ if(diagPressureDeferred && uint32_t(millis()-journalLastFlush)<cielo96::health314::diagnosticRetryMs(true))return;
+ if(curveSaveInProgress||nvsPreserveCurveHeadroom()||!nvsOptionalHeadroom(16)){
+  diagPressureDeferred=true;
   diagWritesSkippedForSpace++;journalLastFlush=millis();journalHasFlushed=true;
   return; // RAM journal stays dirty; retry at most every five minutes.
  }
  journalHasFlushed=true;journalLastFlush=millis(); // Respetar límite incluso si NVS falla.
- if(trackedJournalWrite("diag_journal",&journal,sizeof(journal),diagnosticWrites)==sizeof(journal)){
+ diagPressureDeferred=false;
+ const bool alreadyAccepted=acceptedJournalKnown314&&memcmp(&journal,&acceptedJournal314,sizeof(journal))==0;
+ if(alreadyAccepted)++diagBlobAvoided;
+ if(alreadyAccepted||trackedJournalWrite("diag_journal",&journal,sizeof(journal),diagnosticWrites)==sizeof(journal)){
+  acceptedJournal314=journal;acceptedJournalKnown314=true;
   // Keep dirty on counter write failure; the two legacy keys are independent.
-  if(prefs.putUInt("fault_count",savedFailures)==sizeof(uint32_t))journalDirty=false;
+  if(prefs.getUInt("fault_count",0)==savedFailures||prefs.putUInt("fault_count",savedFailures)==sizeof(uint32_t))journalDirty=false;
  }
 }
 
@@ -470,6 +491,8 @@ static void persistCritical(const char* name,const String& detail){
 static void record(const char*name,const String& detail){
  const uint64_t eventUptime=uptimeMillis64();
  operationalHistory.capture(name,eventUptime,clockEvidenceTrusted()?uint32_t(time(nullptr)):0);
+  if(offSummary314.capture(name,eventUptime))return; // routine OFF telemetry remains in counters, not event ring
+  if(cielo96::diag::importantEvent(name)||strstr(name,"FALLO")||strstr(name,"ERROR")||strstr(name,"BLOQUEADO")||strstr(name,"AGOTADO")||!strcmp(name,"SALUD_TENDENCIA"))incidents314.capture(name,eventUptime);
  Event&e=events[eventHead];e.elapsed=eventUptime;
  snprintf(e.label,sizeof(e.label),"%s",name);
  snprintf(e.detail,sizeof(e.detail),"%s",detail.c_str());
@@ -490,6 +513,8 @@ static bool timeOK(){return time(nullptr)>1700000000L;}
 static bool clockEvidenceTrusted(){return cielo96::clock_evidence::trusted_this_boot(
  ntpSyncedThisBoot.load(),phoneSyncedThisBoot,uint32_t(time(nullptr))) ||
  (rtcClockContinuityTrusted && timeOK());}
+static void profileStateSample314();
+static void healthSample314(uint32_t heap,uint32_t largest);
 static void cieloTrendTick(){
  if(!cieloAlwaysOn || !clockEvidenceTrusted())return;
  uint32_t now=millis();
@@ -510,8 +535,8 @@ static void cieloTrendTick(){
     devices[0].errors-lastDailyPvErr,devices[1].errors-lastDailyChErr,t.heap);
  lastDailyPv=cieloPvConfirmed;lastDailyCh=cieloChConfirmed;
  lastDailyPvErr=devices[0].errors;lastDailyChErr=devices[1].errors;
- const int minutes=local.tm_hour*60+local.tm_min;
- if(minutes<870 || minutes>=1380)cieloNightSamples++;else cieloDaySamples++;
+ profileStateSample314();
+ healthSample314(t.heap,largestNow);
 }
 static int minuteOfDay(){time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);return x.tm_hour*60+x.tm_min;}
 static String dateTime(){
@@ -939,7 +964,7 @@ static String cieloTrendJson(){
  String j;j.reserve(9000);
  j="{\"interval_min\":15,\"capacity\":96,\"samples\":"+String(cieloTrendCount);
  j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
- j+=",\"counter_scope\":\"SINCE_BOOT\",\"history_scope\":\"LAST_96_SAMPLES_RAM\",\"day_night_basis\":\"LEGACY_FIXED_14_30_TO_23_00_NOT_PROFILE_LIGHT_STATE\"";
+ j+=",\"counter_scope\":\"SINCE_BOOT\",\"history_scope\":\"LAST_96_SAMPLES_RAM\",\"day_night_basis\":\"PROFILE_EXPECTED_EITHER_LAMP_NONZERO\"";
  j+=",\"history\":[";
  for(uint8_t n=0;n<cieloTrendCount;n++){
   const auto &v=cieloTrend[(cieloTrendHead+96-cieloTrendCount+n)%96];
@@ -2659,6 +2684,8 @@ static void bleTick(){
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
   const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;
+   bleClass314[device].observe(uptimeMillis64(),res.success,res.duration_ms,res.discovery_ms,res.connect_ms);
+   delivery314[device].finish(res.sequence,matched,res.success,uptimeMillis64(),res.off_sent);
   if(!res.success)workLightCancel("Fallo Bluetooth: mantenimiento cancelado");
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
      (cieloPvRun||cieloChRun||cieloChWasDriven||pvOffObligation)){
@@ -2791,6 +2818,8 @@ static void bleTick(){
      record("PV_POWER_OFF_REINTENTO","Cola BLE rechazada: apagado sigue pendiente");
     }
     record("BLE_COLA_LLENA","No se envio comando al worker");
+  }else if(cmd.action==cielo::ble::Action::Apply){
+   delivery314[cmd.device==cielo::ble::Device::Chihiros?1:0].dispatch(cmd.sequence,{cmd.r,cmd.g,cmd.b,cmd.brightness},uptimeMillis64());
   }
  }
 }
@@ -2907,11 +2936,12 @@ void setup(){
  bootHistory[bootHistoryHead]={previousBootCount+1,(uint8_t)esp_reset_reason(),(uint8_t)priorBootClean,0};
  bootHistoryHead=(bootHistoryHead+1)%8;if(bootHistoryCount<8)bootHistoryCount++;
  // boot_hist is redundant to restart_v2; preserve NVS headroom for curves.
- if(!nvsPreserveCurveHeadroom())prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
+ if(!nvsPreserveCurveHeadroom()&&nvsOptionalHeadroom(16))prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
  else diagWritesSkippedForSpace++;
  if(prefs.getBytesLength("diag_journal")==sizeof(journal)){
   prefs.getBytes("diag_journal",&journal,sizeof(journal));
   if(journal.magic!=JOURNAL_MAGIC||journal.count>8||journal.head>=8)journal=JournalStore{JOURNAL_MAGIC,0,0,0,{}};
+  else {acceptedJournal314=journal;acceptedJournalKnown314=true;}
  }
 
  prefs.putUInt("boots",previousBootCount+1);
