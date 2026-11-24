@@ -48,6 +48,9 @@ struct Trend {
  void sample(const Sample& s){
   if(!s.heap)return;
   if(!samples){baseline=s;}
+  // A cold or night-only first sample may not have enough GATT data.
+  if(s.latencyValid&&!baseline.latencyValid){baseline.pv95=s.pv95;baseline.ch95=s.ch95;baseline.latencyValid=true;}
+  if(s.nvsValid&&!baseline.nvsValid){baseline.nvsFree=s.nvsFree;baseline.nvsReserve=s.nvsReserve;baseline.nvsValid=true;}
   // Baseline frozen after first eligible warm sample. NVS margin tracked separately.
   ++samples;
   bool known[7]={true,true,s.latencyValid&&baseline.latencyValid,s.latencyValid&&baseline.latencyValid,s.queueValid,true,s.nvsValid};
@@ -96,16 +99,17 @@ inline const char* phase(Levels before,Levels now,Levels after,bool pv){
 }
 struct Delivery {
  Levels sent{},ack{};uint32_t sequence=0,ackSeq=0;
- uint64_t sentAt=0,ackAt=0;uint32_t lastMs=0,maxMs=0,count=0;
- bool pending=false,hasAck=false,hasSent=false,ackApplicable=false;
- void dispatch(uint32_t seq,Levels v,uint64_t at){sequence=seq;sent=v;sentAt=at;pending=true;hasSent=true;}
+ uint64_t sentAt=0,ackAt=0;uint32_t lastMs=0,maxMs=0,count=0,queueAge=0,lastTotalMs=0,maxTotalMs=0;
+ bool pending=false,hasAck=false,hasSent=false,ackApplicable=false,fromProfile=false,queueAgeKnown=false,lastTotalKnown=false;
+ void dispatch(uint32_t seq,Levels v,uint64_t at,bool profileMode=true,bool queueKnown=false,uint32_t queued=0){sequence=seq;sent=v;sentAt=at;pending=true;hasSent=true;fromProfile=profileMode;queueAgeKnown=queueKnown;queueAge=queued;}
  bool finish(uint32_t seq,bool matched,bool success, uint64_t at,bool forcedOff){
   if(!pending||seq!=sequence||!matched)return false;
   pending=false;if(!success){ackApplicable=false;return false;}
-  ack=forcedOff?Levels{}:sent;ackSeq=seq;ackAt=at;hasAck=true;ackApplicable=true;
-  lastMs=uint32_t(at-sentAt);if(lastMs>maxMs)maxMs=lastMs;++count;return true;
+  ack=forcedOff?Levels{}:sent;ackSeq=seq;ackAt=at;hasAck=true;ackApplicable=fromProfile;
+  lastMs=uint32_t(at-sentAt);if(lastMs>maxMs)maxMs=lastMs;
+  lastTotalKnown=queueAgeKnown;if(lastTotalKnown){lastTotalMs=queueAge+lastMs;if(lastTotalMs>maxTotalMs)maxTotalMs=lastTotalMs;}++count;return true;
  }
- void invalidate(){ackApplicable=false;}
+ void invalidate(){ackApplicable=false;fromProfile=false;}
 };
 inline const char* summary(bool critical,bool observing,bool warning){
  return critical?"INCIDENTE_ACTUAL":observing?"OBSERVACION":warning?"OPERATIVO_CON_AVISOS":"OPERATIVO";
