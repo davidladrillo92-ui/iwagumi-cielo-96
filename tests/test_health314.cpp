@@ -1,4 +1,5 @@
 #include "cielo_health314.h"
+#include "cielo_ble_queue.h"
 #include <cassert>
 #include <cstdio>
 using namespace cielo96::health314;
@@ -41,6 +42,23 @@ int main(){
  d.invalidate();assert(!d.ackApplicable);
  d.dispatch(8,c,20000);assert(d.finish(8,true,true,20070,true)&&equal(d.ack,b)&&d.maxMs==70);
  d.dispatch(9,c,30000);assert(!d.finish(9,true,false,30010,false)&&!d.ackApplicable);
+ // Baseline initially has no PV latency evidence; acquire it once valid.
+ Trend cold;Sample missing=good;missing.latencyValid=false;cold.sample(missing);assert(!cold.baseline.latencyValid);
+ cold.sample(good);assert(cold.baseline.latencyValid&&cold.baseline.pv95==33);
+ for(int i=0;i<3;i++)cold.sample(bad); // invalid latency is not an alarm
+ assert(!(cold.flags&(PvLatency|ChLatency)));
+ // Exact queue age across millis rollover and retry, without mutating queue.
+ cielo::ble::Scheduler q;const uint32_t t0=0xfffffff0UL;
+ assert(q.submit(cielo::ble::Device::PezVerde,cielo::ble::Action::Apply,1,2,3,4,t0));
+ cielo::ble::Command cmd{};assert(q.start_next(32,cmd));uint32_t age=0;
+ assert(q.active_age_ms(cmd.sequence,32,age)&&age==48);
+ assert(!q.active_age_ms(cmd.sequence+1,32,age));
+ assert(q.complete(cmd.sequence,false,40));assert(!q.active_age_ms(cmd.sequence,40,age));
+ assert(q.start_next(3000,cmd));assert(q.active_age_ms(cmd.sequence,3000,age)&&age==3016);
+ Delivery actual;actual.dispatch(cmd.sequence,c,10000,true,true,age);
+ assert(actual.finish(cmd.sequence,true,true,10040,false));assert(actual.lastTotalMs==3056&&actual.lastTotalKnown);
+ actual.dispatch(50,c,20000,false,true,100);assert(actual.finish(50,true,true,20030,false)&&!actual.ackApplicable);
+ actual.dispatch(51,c,30000,true,true,50);actual.invalidate();assert(actual.finish(51,true,true,30020,false)&&!actual.ackApplicable);
  assert(!strcmp(summary(false,false,false),"OPERATIVO"));assert(!strcmp(summary(false,false,true),"OPERATIVO_CON_AVISOS"));assert(!strcmp(summary(true,true,true),"INCIDENTE_ACTUAL"));
  puts("PASS 3.14 V2: 144 OFF cycles, independent incidents, NVS margin, degradation debounce, BLE result identity and profile evidence");
 }
