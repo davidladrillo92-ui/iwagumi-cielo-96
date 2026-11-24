@@ -26,7 +26,9 @@ for r in f['ranges']:
         assert part.count(observer)==1
         part=part.replace(observer,'  const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;')
         dispatched=('  }else if(cmd.action==cielo::ble::Action::Apply){\n'
-                    '   delivery314[cmd.device==cielo::ble::Device::Chihiros?1:0].dispatch(cmd.sequence,{cmd.r,cmd.g,cmd.b,cmd.brightness},uptimeMillis64());\n'
+                    '   const uint8_t d=cmd.device==cielo::ble::Device::Chihiros?1:0;\n'
+                    '   uint32_t queuedMs=0;const bool queueKnown=queue.active_age_ms(cmd.sequence,now,queuedMs);\n'
+                    '   delivery314[d].dispatch(cmd.sequence,{cmd.r,cmd.g,cmd.b,cmd.brightness},uptimeMillis64(),profileControl314(d),queueKnown,queuedMs);\n'
                     '  }')
         assert part.count(dispatched)==1
         part=part.replace(dispatched,'  }')
@@ -69,6 +71,15 @@ for r in f['ranges']:
     assert hashlib.sha256(part.encode()).hexdigest()==r['sha256'],r['name']
 for p,h in f['files'].items():
     raw=Path(p).read_bytes()
+    if p=='include/cielo_ble_queue.h':
+        code=raw.decode()
+        observer=('  // Read-only telemetry: actual age since submission, including any retries.\n'
+                  '  bool active_age_ms(uint32_t sequence,uint32_t now,uint32_t& age) const {\n'
+                  '    if(!inflight_||active_.cmd.sequence!=sequence)return false;\n'
+                  '    age=uint32_t(now-active_.at_ms);return true;\n'
+                  '  }\n')
+        assert code.count(observer)==1
+        raw=code.replace(observer,'').encode()
     if p=='src/cielo_ble_worker.cpp':
         worker=raw.decode()
         fast=' BLEScanResults result=scan->start(2,false);'
