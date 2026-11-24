@@ -1417,6 +1417,7 @@ static void profileStateSample314(){
  if(any)++cieloDaySamples;else ++cieloNightSamples;
 }
 static uint32_t healthLastBusy314=0,healthLastDue314=0;
+static uint64_t healthLastSample314=0;
 static void healthSample314(uint32_t heap,uint32_t largest){
  if(uptimeSeconds()<600 || otaBusy||otaTxn.phase!=OtaPhase::Idle||rescueOpen||workLight.active()||lab.txArmed)return;
  nvs_stats_t nvs{};bool nvsOk=nvs_get_stats("nvs",&nvs)==ESP_OK;
@@ -1429,7 +1430,7 @@ static void healthSample314(uint32_t heap,uint32_t largest){
  v.queueValid=due>=10;v.busyBp=cielo96::evidence::basisPoints(busy,due);
  v.stack=uxTaskGetStackHighWaterMark(nullptr);
  v.nvsValid=nvsOk;v.nvsFree=nvs.free_entries;v.nvsReserve=activeDiagnosticReserve();
- const uint32_t previous=healthTrend314.flags;healthTrend314.sample(v);
+ const uint32_t previous=healthTrend314.flags;healthTrend314.sample(v);healthLastSample314=uptimeMillis64();
  if(previous!=healthTrend314.flags)record("SALUD_TENDENCIA",String("Mascara anterior ")+String(previous)+" actual "+String(healthTrend314.flags));
 }
 static bool profileControl314(uint8_t d){
@@ -1483,6 +1484,7 @@ static void appendHealth314(String& j,bool critical,bool historical){
  j+=",\"optional_guard_extra_entries\":16,\"low_space_retry_ms\":1800000,\"diagnostic_deferred\":"+String(diagPressureDeferred?"true":"false");
  j+=",\"redundant_blob_writes_avoided\":"+String(diagBlobAvoided)+"}";
  j+=",\"trend\":{\"samples\":"+String(healthTrend314.samples)+",\"interval_ms\":900000,\"consecutive_required\":3";
+ j+=",\"last_sample_age_ms\":"+(healthTrend314.samples?uptimeText(now-healthLastSample314):String("null"));
  j+=",\"flags_mask\":"+String(healthTrend314.flags)+",\"flags\":[";
  const char* names[]={"HEAP","FRAGMENTATION","PV_LATENCY","CH_LATENCY","BUSY_CHECKPOINTS","STACK","NVS"};
  bool comma=false;for(uint8_t i=0;i<7;i++)if(healthTrend314.flags&(1UL<<i)){if(comma)j+=",";j+=jsonQuote(names[i]);comma=true;}
@@ -1521,13 +1523,15 @@ static void appendHealth314(String& j,bool critical,bool historical){
   j+=",\"matches_current_profile\":"+(applicable?String(equivalent(expected,v.ack,d==0)?"true":"false"):String("null"));
   j+=",\"dispatch_to_gatt_ms\":"+(v.count?String(v.lastMs):String("null"));
   j+=",\"dispatch_to_gatt_max_ms\":"+(v.count?String(v.maxMs):String("null"));
+  j+=",\"submission_to_gatt_ms\":"+(v.lastTotalKnown?String(v.lastTotalMs):String("null"));
+  j+=",\"submission_to_gatt_max_ms\":"+(v.lastTotalKnown?String(v.maxTotalMs):String("null"));
   j+=",\"observed_mismatch_ms\":"+(applicable&&mismatchSince314[d]?uptimeText(now-mismatchSince314[d]):String("null"));
   j+=",\"max_resolved_mismatch_ms\":"+uptimeText(maxMismatch314[d]);
   j+=",\"lit_profile_samples\":"+String(profileLitSamples314[d])+",\"off_profile_samples\":"+String(profileOffSamples314[d])+"}";
  }
  j+="},\"profile_unknown_samples\":"+String(profileUnknownSamples314);
  j+=",\"queue_expired_total\":"+String(queue.metrics().expired)+",\"queue_superseded_total\":"+String(queue.metrics().superseded);
- j+=",\"delivery_scope\":\"MATCHED_GATT_NOT_OPTICAL; DISPATCH_TO_RESULT_NOT_QUEUE_WAIT; MISMATCH_SAMPLED_5S_NOT_MISSED_UPDATES\"}";
+ j+=",\"delivery_scope\":\"MATCHED_GATT_NOT_OPTICAL; SUBMISSION_TO_RESULT_INCLUDES_QUEUE_AND_RETRIES; MISMATCH_SAMPLED_5S_NOT_MISSED_UPDATES\"}";
 }
 static void diagnosticJson(){
  const auto&m=queue.metrics();bool wifi=WiFi.status()==WL_CONNECTED;
@@ -2950,7 +2954,9 @@ static void bleTick(){
     }
     record("BLE_COLA_LLENA","No se envio comando al worker");
   }else if(cmd.action==cielo::ble::Action::Apply){
-   delivery314[cmd.device==cielo::ble::Device::Chihiros?1:0].dispatch(cmd.sequence,{cmd.r,cmd.g,cmd.b,cmd.brightness},uptimeMillis64());
+   const uint8_t d=cmd.device==cielo::ble::Device::Chihiros?1:0;
+   uint32_t queuedMs=0;const bool queueKnown=queue.active_age_ms(cmd.sequence,now,queuedMs);
+   delivery314[d].dispatch(cmd.sequence,{cmd.r,cmd.g,cmd.b,cmd.brightness},uptimeMillis64(),profileControl314(d),queueKnown,queuedMs);
   }
  }
 }
