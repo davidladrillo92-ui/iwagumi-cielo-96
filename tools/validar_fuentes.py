@@ -34,7 +34,7 @@ assert 'avisos_historicos' in code and 'incidencia_actual' in code
 assert '23:00: finalizar Natural V4 Chihiros' not in code
 assert 'lastPvDesiredAt' in code and 'lastChDesiredAt' in code
 assert 'queue.cancel_pending(cielo::ble::Device::Chihiros)' in code
-assert 'cielo96::ble_custom_resume_request()' in code
+assert 'cielo96::ble_custom_resume_request(requestId)' in code
 assert 'cieloReturnTries<2' in code and 'V4_RETORNO_GATT_OK' in code
 assert 'PV_DEGRADADA' in code and 'V5_24H_ACTIVADA' in code
 assert 'cieloChRun&&timeOK()' in code
@@ -95,7 +95,7 @@ assert 'void ble_keep_links(bool pv,bool ch)' in bleworker and 'unexpectedLoss[d
 assert 'ble_link_status(linkIndex)' in code
 assert '/api/lab/preview' in code and 'CURVA_PREVIA_CH' in code
 assert 'chihiros_auto_verified' in code and 'CH_AUTO_MODE_UNVERIFIED' in bleworker
-assert 'BLE_AUTO_SOLICITADO' in code and 'millis()-bootMs>=30000UL' in code
+assert 'BLE_AUTO_SOLICITADO' in code and 'cielo96::r314::may_start_ble(' in code
 assert 'ble_start_requires_button\\\\":false' in code or 'ble_start_requires_button\\":false' in code
 assert 'if(!labTxEnabled())' in code
 assert 'BLEDevice::init(' in bleworker

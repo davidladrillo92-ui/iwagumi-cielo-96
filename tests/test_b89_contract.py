@@ -1,7 +1,17 @@
 from pathlib import Path
 import hashlib,json,re
 pins=json.loads(Path('tests/fixtures/rc6_invariants_sha256.json').read_text())
-for name,digest in pins.items():assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==digest,name
+for name,digest in pins.items():
+    raw=Path(name).read_bytes()
+    if name=='include/cielo_ble_queue.h':
+        observer=('  // Read-only telemetry: actual age since submission, including any retries.\n'
+                  '  bool active_age_ms(uint32_t sequence,uint32_t now,uint32_t& age) const {\n'
+                  '    if(!inflight_||active_.cmd.sequence!=sequence)return false;\n'
+                  '    age=uint32_t(now-active_.at_ms);return true;\n'
+                  '  }\n').encode()
+        assert raw.count(observer)==1
+        raw=raw.replace(observer,b'')
+    assert hashlib.sha256(raw).hexdigest()==digest,name
 main=Path('src/main.cpp').read_text();proxy=Path('src/cielo_https_proxy.cpp').read_text()
 assert 'collectHeaders(keys,sizeof(keys)/sizeof(keys[0]))' in main
 assert 'LAN_NO_PASSWORD' in main

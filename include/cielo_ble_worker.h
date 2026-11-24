@@ -3,7 +3,7 @@
 #include "cielo_ble_queue.h"
 namespace cielo96 {
 // Una sola tarea BLE propietaria del stack, aislada del servidor web.
-struct BleResult {uint32_t sequence; bool success;bool off_sent;uint32_t duration_ms;uint8_t device;uint8_t action;uint8_t write_calls;char reason[50];};
+struct BleResult {uint32_t sequence; bool success;bool off_sent;uint32_t duration_ms;uint8_t device;uint8_t action;uint8_t write_calls;char reason[50];uint32_t discovery_ms=0,connect_ms=0,service_ms=0,characteristic_ms=0,write_ms=0,pacing_ms=0;};
 // Descubrimiento BLE activo (scan responses), sin conexiones ni escrituras GATT.
 struct BleScanResult {
  uint32_t elapsed_ms=0; uint32_t completed_at_ms=0;
@@ -36,8 +36,8 @@ struct BleLinkStatus {
  int sdk_last_esp_error=0;
 };
 // Experimento exclusivo: select custom curve (0x03), GATT en worker y desconectar.
-struct BleCustomResumeResult {bool success=false;uint32_t duration_ms=0;char reason[48]{};};
-bool ble_custom_resume_request();
+struct BleCustomResumeResult {bool success=false;uint32_t duration_ms=0;uint32_t request_id=0;char reason[48]{};};
+bool ble_custom_resume_request(uint32_t request_id);
 bool ble_custom_resume_result(BleCustomResumeResult& result);
 bool ble_release_request(uint8_t device);
 BleLinkStatus ble_link_status(uint8_t device);

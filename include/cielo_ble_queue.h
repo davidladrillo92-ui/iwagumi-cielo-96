@@ -137,6 +137,11 @@ public:
   bool busy() const {return inflight_;}
   bool pending(Device d) const {const int i=index(d);return i>=0 && queue_[i].present;}
   uint32_t active_sequence() const {return inflight_?active_.cmd.sequence:0;}
+  // Read-only telemetry: actual age since submission, including any retries.
+  bool active_age_ms(uint32_t sequence,uint32_t now,uint32_t& age) const {
+    if(!inflight_||active_.cmd.sequence!=sequence)return false;
+    age=uint32_t(now-active_.at_ms);return true;
+  }
   bool stalled() const {return inflight_ && soft_timeout_reported_;}
   const Metrics& metrics() const {return metrics_;}
 private:

@@ -50,6 +50,9 @@
 #include "cielo_cadence_diagnostics.h"
 #include "cielo_clock_evidence.h"
 #include "cielo_recovery313.h"
+#include "cielo_recovery314.h"
+#include "cielo_history314.h"
+#include "cielo_health314.h"
 
 // TLS is not started in this LAN edition. Keep an explicit stack margin for HTTP/OTA.
 static constexpr size_t CIELO_LOOP_STACK_BYTES=16384;
@@ -68,7 +71,7 @@ SET_LOOP_TASK_STACK_SIZE(CIELO_LOOP_STACK_BYTES);
 #define CIELO_ENABLE_OTA 1 // OTA LAN sin clave; conserva compatibilidad, integridad y retorno de arranque
 #endif
 
-static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.13-AUTONOMY-CANDIDATE";
+static constexpr const char* VERSION="11.1.0-RC5-RECOVERY3.14-V2-HEALTH-CANDIDATE";
 static constexpr const char* CIELO_TZ="CET-1CEST,M3.5.0,M10.5.0/3";
 enum class TracePhase : uint32_t {
  Unknown=0, Setup=10, Nvs=20, Profile=30, WifiInit=40, Clock=50,
@@ -79,6 +82,11 @@ struct RtcTrace { uint32_t magic; uint32_t phase; uint32_t check; };
 static constexpr uint32_t RTC_TRACE_MAGIC=0xC1E10964UL;
 static constexpr uint32_t RTC_TRACE_SALT=0x6B3D821FUL;
 RTC_NOINIT_ATTR static volatile RtcTrace rtcTrace;
+struct RtcClockWitness {uint32_t magic,epoch,check;};
+static constexpr uint32_t RTC_CLOCK_MAGIC=0xC1E13140UL;
+RTC_NOINIT_ATTR static volatile RtcClockWitness rtcClockWitness;
+static bool rtcClockContinuityTrusted=false;
+static uint32_t rtcClockLastRefresh=0;
 static uint32_t lastResetTracePhase=0;
 static bool lastResetTraceValid=false;
 static const char* tracePhaseName(uint32_t p){
@@ -164,6 +172,11 @@ static const char* wifiSleepName(){
  return "DESCONOCIDO";
 }
 static bool blePilotRequested=false, blePilotAttempted=false, rescueOpen=false;
+static uint8_t bleInitFailures=0;
+static uint32_t bleInitRetryAt=0;
+// 3.14: boot telemetry only; no change to BLE, OTA or lighting scheduling.
+static uint32_t bootBleStartMs=0, bootBaseHealthyMs=0, bootCurvesResumeMs=0;
+static uint32_t bootFirstGattMs[2]={0,0};
 struct LabState {
  bool running=false;
  uint32_t started=0,lastSample=0,samples=0;
@@ -189,6 +202,8 @@ static LabState lab;
 static constexpr uint32_t LAB_TX_WINDOW_MS=90000UL;
 static bool customResumePending=false;
 static uint32_t customResumeRequested=0,customResumeOk=0,customResumeFailed=0;
+static uint32_t customNextRequestId=1,customExpectedRequestId=0,customStaleResponses=0;
+static uint32_t nextCustomResumeId(){if(++customNextRequestId==0)++customNextRequestId;return customNextRequestId;}
 static String customResumeLast="Sin probar";
 static uint32_t customResumeLastMs=0;
 static uint8_t contrastStage=0;
@@ -243,6 +258,8 @@ static uint32_t cieloDaySamples=0,cieloNightSamples=0;
 static uint32_t cieloLastSuccessfulPvAt=0,cieloLastSuccessfulChAt=0;
 struct CieloTrendSample {uint32_t epoch=0,pv=0,ch=0,pvErrors=0,chErrors=0,heap=0;};
 static CieloTrendSample cieloTrend[96]{};
+static cielo96::history314::Ring dailyHistory314;
+static uint32_t lastDailyPv=0,lastDailyCh=0,lastDailyPvErr=0,lastDailyChErr=0;
 static uint8_t cieloTrendCount=0,cieloTrendHead=0;
 static uint32_t cieloTrendLast=0;
 static uint32_t largestHeapBlockMin15m=UINT32_MAX;
@@ -280,6 +297,8 @@ static uint32_t httpCount=0,bleResultCount=0,bleResultErrors=0,bleSoftTimeouts=0
 static uint32_t bleSlowCount=0,bleDurationMax=0,wifiFailures=0;
 struct DevTelemetry {uint32_t completed=0,gatt_ok=0,write_calls=0,errors=0,slow=0,last_ms=0,max_ms=0;};
 static DevTelemetry devices[2]; // PV and Chihiros. GATT acceptance is not an optical ACK.
+static cielo96::BleResult lastBleSpan[2]{};
+static uint32_t bleColdDiscoverySlow[2]{},bleWarmSlow[2]{};
 static bool lastPvDesired=false,lastChDesired=false,chiAutoAttempted=false;
 static cielo::PvValue prevPv{};
 static cielo::ChiValue prevCh{};
@@ -325,10 +344,22 @@ static size_t lastCurveNvsFreeBefore=0,lastCurveNvsMinRequired=0;
 static bool curveSaveInProgress=false;
 static cielo96::profiletxn::Result lastCurveTransaction;
 static uint32_t diagWritesSkippedForSpace=0,restartWritesSkippedForSpace=0;
+static bool diagPressureDeferred=false;
+static uint32_t diagBlobAvoided=0;
+static cielo96::health314::OffSummary offSummary314;
+static cielo96::health314::Incidents incidents314;
+static cielo96::health314::Trend healthTrend314;
+static cielo96::health314::BleClass bleClass314[2];
+static cielo96::health314::Delivery delivery314[2];
 static uint32_t knownProfileGeneration=0,profileCheckpointLastTry=0;
 static bool profileCheckpointAttempted=false,profileCheckpointWriteFailed=false,profileFallbackSuspected=false;
 static size_t activeDiagnosticReserve(){
  return cielo96::r313::diagnosticReserve(curveFs.ready()&&curveFs.isLittlefs(),sizeof(cielo96::ProfileImage));
+}
+static bool nvsOptionalHeadroom(size_t margin){
+ nvs_stats_t stats{};
+ const bool valid=nvs_get_stats("nvs",&stats)==ESP_OK;
+ return cielo96::health314::optionalWriteAllowed(valid,stats.free_entries,activeDiagnosticReserve(),margin);
 }
 static bool nvsPreserveCurveHeadroom(){
  nvs_stats_t stats{};
@@ -393,17 +424,25 @@ struct JournalStore {uint32_t magic;uint8_t count;uint8_t head;uint16_t reserved
 static constexpr uint32_t JOURNAL_MAGIC=0xC1E10505UL;
 static JournalStore journal{JOURNAL_MAGIC,0,0,0,{}};
 static bool journalDirty=false,journalHasFlushed=false;
+static JournalStore acceptedJournal314{};
+static bool acceptedJournalKnown314=false;
 static uint32_t journalLastFlush=0;
 static void flushJournal(){
  if(!journalDirty || !cielo96::diag::shouldFlush(millis(),journalLastFlush,journalHasFlushed))return;
- if(curveSaveInProgress||nvsPreserveCurveHeadroom()){
+ if(diagPressureDeferred && uint32_t(millis()-journalLastFlush)<cielo96::health314::diagnosticRetryMs(true))return;
+ if(curveSaveInProgress||nvsPreserveCurveHeadroom()||!nvsOptionalHeadroom(16)){
+  diagPressureDeferred=true;
   diagWritesSkippedForSpace++;journalLastFlush=millis();journalHasFlushed=true;
   return; // RAM journal stays dirty; retry at most every five minutes.
  }
  journalHasFlushed=true;journalLastFlush=millis(); // Respetar límite incluso si NVS falla.
- if(trackedJournalWrite("diag_journal",&journal,sizeof(journal),diagnosticWrites)==sizeof(journal)){
+ diagPressureDeferred=false;
+ const bool alreadyAccepted=acceptedJournalKnown314&&memcmp(&journal,&acceptedJournal314,sizeof(journal))==0;
+ if(alreadyAccepted)++diagBlobAvoided;
+ if(alreadyAccepted||trackedJournalWrite("diag_journal",&journal,sizeof(journal),diagnosticWrites)==sizeof(journal)){
+  acceptedJournal314=journal;acceptedJournalKnown314=true;
   // Keep dirty on counter write failure; the two legacy keys are independent.
-  if(prefs.putUInt("fault_count",savedFailures)==sizeof(uint32_t))journalDirty=false;
+  if(prefs.getUInt("fault_count",0)==savedFailures||prefs.putUInt("fault_count",savedFailures)==sizeof(uint32_t))journalDirty=false;
  }
 }
 
@@ -420,6 +459,7 @@ static uint32_t latencyP95(uint8_t device){
  return sorted[(95*n+99)/100-1];
 }
 static uint32_t wifiDisconnects=0;
+static uint32_t wifiRetryDelayMs=30000UL;
 static wl_status_t lastWifiStatus=WL_IDLE_STATUS;
 static bool connectionStarted=false;
 static bool apRecoveryAlways=true; // Rescue AP remains available while STA is connected.
@@ -451,6 +491,8 @@ static void persistCritical(const char* name,const String& detail){
 static void record(const char*name,const String& detail){
  const uint64_t eventUptime=uptimeMillis64();
  operationalHistory.capture(name,eventUptime,clockEvidenceTrusted()?uint32_t(time(nullptr)):0);
+  if(offSummary314.capture(name,eventUptime))return; // routine OFF telemetry remains in counters, not event ring
+  if(cielo96::diag::importantEvent(name)||strstr(name,"FALLO")||strstr(name,"ERROR")||strstr(name,"BLOQUEADO")||strstr(name,"AGOTADO")||!strcmp(name,"SALUD_TENDENCIA"))incidents314.capture(name,eventUptime);
  Event&e=events[eventHead];e.elapsed=eventUptime;
  snprintf(e.label,sizeof(e.label),"%s",name);
  snprintf(e.detail,sizeof(e.detail),"%s",detail.c_str());
@@ -469,7 +511,10 @@ static void fail(int code,const char*msg){jsonSend(code,String("{\"ok\":false,\"
 static void ok(){jsonSend(200,"{\"ok\":true}");}
 static bool timeOK(){return time(nullptr)>1700000000L;}
 static bool clockEvidenceTrusted(){return cielo96::clock_evidence::trusted_this_boot(
- ntpSyncedThisBoot.load(),phoneSyncedThisBoot,uint32_t(time(nullptr)));}
+ ntpSyncedThisBoot.load(),phoneSyncedThisBoot,uint32_t(time(nullptr))) ||
+ (rtcClockContinuityTrusted && timeOK());}
+static void profileStateSample314();
+static void healthSample314(uint32_t heap,uint32_t largest);
 static void cieloTrendTick(){
  if(!cieloAlwaysOn || !clockEvidenceTrusted())return;
  uint32_t now=millis();
@@ -485,8 +530,13 @@ static void cieloTrendTick(){
  cieloTrendHead=(cieloTrendHead+1)%96;
  if(cieloTrendCount<96)cieloTrendCount++;
  time_t ep=time(nullptr);struct tm local{};localtime_r(&ep,&local);
- const int minutes=local.tm_hour*60+local.tm_min;
- if(minutes<870 || minutes>=1380)cieloNightSamples++;else cieloDaySamples++;
+ const uint32_t dayKey=uint32_t(local.tm_year+1900)*1000UL+uint32_t(local.tm_yday);
+ dailyHistory314.sample(dayKey,cieloPvConfirmed-lastDailyPv,cieloChConfirmed-lastDailyCh,
+    devices[0].errors-lastDailyPvErr,devices[1].errors-lastDailyChErr,t.heap);
+ lastDailyPv=cieloPvConfirmed;lastDailyCh=cieloChConfirmed;
+ lastDailyPvErr=devices[0].errors;lastDailyChErr=devices[1].errors;
+ profileStateSample314();
+ healthSample314(t.heap,largestNow);
 }
 static int minuteOfDay(){time_t t=time(nullptr);struct tm x{};localtime_r(&t,&x);return x.tm_hour*60+x.tm_min;}
 static String dateTime(){
@@ -914,14 +964,23 @@ static String cieloTrendJson(){
  String j;j.reserve(9000);
  j="{\"interval_min\":15,\"capacity\":96,\"samples\":"+String(cieloTrendCount);
  j+=",\"day_samples\":"+String(cieloDaySamples)+",\"night_samples\":"+String(cieloNightSamples);
- j+=",\"counter_scope\":\"SINCE_BOOT\",\"history_scope\":\"LAST_96_SAMPLES_RAM\",\"day_night_basis\":\"LEGACY_FIXED_14_30_TO_23_00_NOT_PROFILE_LIGHT_STATE\"";
+ j+=",\"counter_scope\":\"SINCE_BOOT\",\"history_scope\":\"LAST_96_SAMPLES_RAM\",\"day_night_basis\":\"PROFILE_EXPECTED_EITHER_LAMP_NONZERO\"";
  j+=",\"history\":[";
  for(uint8_t n=0;n<cieloTrendCount;n++){
   const auto &v=cieloTrend[(cieloTrendHead+96-cieloTrendCount+n)%96];
   if(n)j+=",";
   j+="["+String(v.epoch)+","+String(v.pv)+","+String(v.ch)+","+String(v.pvErrors)+","+String(v.chErrors)+","+String(v.heap)+"]";
  }
- j+="]}";return j;
+ j+="],\"daily_30\":{\"scope\":\"VOLATILE_SINCE_BOOT\",\"persisted\":false,\"capacity_days\":30,\"last_7_days_max\":7,\"days\":[";
+ const uint8_t count=dailyHistory314.count();
+ for(uint8_t i=0;i<count;i++){
+  if(i)j+=",";
+  const auto&day=dailyHistory314.oldest(i);
+  j+="["+String(day.day_key)+","+String(day.samples)+","+String(day.pv_ok)+","+
+     String(day.ch_ok)+","+String(day.pv_errors)+","+String(day.ch_errors)+","+
+     String(day.heap_min)+"]";
+ }
+ j+="]}}";return j;
 }
 static bool lampControlCritical(uint8_t device);
 static String wifiConfigJson(){
@@ -1201,6 +1260,12 @@ static void labTick(){
  const uint32_t now=millis();
  cielo96::BleCustomResumeResult custom{};
  while(cielo96::ble_custom_resume_result(custom)){
+  if(!cielo96::r314::matching_return(customExpectedRequestId,custom.request_id,customResumePending)){
+   customStaleResponses++;
+   record("CH_03_RESPUESTA_ANTIGUA",String("Ignorada respuesta de solicitud ")+String(custom.request_id)+"; actual="+String(customExpectedRequestId));
+   continue;
+  }
+  customExpectedRequestId=0;
   customResumePending=false;customResumeLastMs=now;
   customResumeLast=String(custom.reason)+" "+String(custom.duration_ms)+" ms; verificacion visual pendiente";
   if(custom.success){
@@ -1233,6 +1298,7 @@ static void labTick(){
   }
  }
  if(customResumePending && now-customResumeRequested>24000UL){
+  customExpectedRequestId=0;
   customResumePending=false;customResumeFailed++;
   customResumeLast="Sin respuesta de la tarea BLE en 24 s; no repetir automaticamente";
   if(contrastStage==4)contrastStage=6;
@@ -1335,6 +1401,138 @@ static String restartHistoryJson(){
  }
  return j+"]";
 }
+// Passive profile and delivery diagnostics; never submit commands or modify curves.
+static cielo96::health314::Levels profileLevels314(uint8_t d,int minute){
+ if(d){const auto v=cielo::at(profile.ch,profile.chCount,minute);return {v.r,v.g,v.b,0};}
+ const auto v=cielo::at(profile.pv,profile.pvCount,minute);return {v.r,v.g,v.b,v.brightness};
+}
+static uint32_t profileLitSamples314[2]{},profileOffSamples314[2]{},profileUnknownSamples314=0;
+static void profileStateSample314(){
+ if(!clockEvidenceTrusted()||!cielo96::profileValid(profile)){++profileUnknownSamples314;return;}
+ const int minute=minuteOfDay();bool any=false;
+ for(uint8_t d=0;d<2;d++){
+  bool lit=cielo96::health314::lit(profileLevels314(d,minute),d==0);
+  if(lit)++profileLitSamples314[d];else ++profileOffSamples314[d];any|=lit;
+ }
+ if(any)++cieloDaySamples;else ++cieloNightSamples;
+}
+static uint32_t healthLastBusy314=0,healthLastDue314=0;
+static uint64_t healthLastSample314=0;
+static void healthSample314(uint32_t heap,uint32_t largest){
+ if(uptimeSeconds()<600 || otaBusy||otaTxn.phase!=OtaPhase::Idle||rescueOpen||workLight.active()||lab.txArmed)return;
+ nvs_stats_t nvs{};bool nvsOk=nvs_get_stats("nvs",&nvs)==ESP_OK;
+ const uint32_t due=cadenceDiagnostics.due-healthLastDue314,busy=cadenceDiagnostics.busy-healthLastBusy314;
+ healthLastDue314=cadenceDiagnostics.due;healthLastBusy314=cadenceDiagnostics.busy;
+ cielo96::health314::Sample v{};
+ v.heap=heap;v.fragmentation=uint32_t(cielo96::diag::fragmentationPct(heap,largest));
+ v.latencyValid=latencyCount[0]>=10&&latencyCount[1]>=10;
+ v.pv95=latencyP95(0);v.ch95=latencyP95(1);
+ v.queueValid=due>=10;v.busyBp=cielo96::evidence::basisPoints(busy,due);
+ v.stack=uxTaskGetStackHighWaterMark(nullptr);
+ v.nvsValid=nvsOk;v.nvsFree=nvs.free_entries;v.nvsReserve=activeDiagnosticReserve();
+ const uint32_t previous=healthTrend314.flags;healthTrend314.sample(v);healthLastSample314=uptimeMillis64();
+ if(previous!=healthTrend314.flags)record("SALUD_TENDENCIA",String("Mascara anterior ")+String(previous)+" actual "+String(healthTrend314.flags));
+}
+static bool profileControl314(uint8_t d){
+ return clockEvidenceTrusted()&&cielo96::profileValid(profile)&&bleReady&&!cieloWatchdogTripped&&
+ !rescueOpen&&!otaBusy&&otaTxn.phase==OtaPhase::Idle&&!workLight.active()&&!workLightPreparing&&!lab.txArmed&&!cadenceTrial15&&
+ (d?(cieloChRun&&!chiManual&&!chSelectiveHold&&!cieloChReturnPending&&!cieloChAwaitResponse&&!customResumePending):
+    (cieloPvRun&&pvControlDesired&&!pezManual&&!bleRecoveryBootPvSafe&&!pvDisconnectInterlock));
+}
+static uint64_t mismatchSince314[2]{},maxMismatch314[2]{},lastMismatchDuration314[2]{};
+static uint64_t lastProfileCheck314=0;
+static void profileDeliveryTick314(){
+ const uint64_t now=uptimeMillis64();
+ if(now-lastProfileCheck314<5000ULL)return;lastProfileCheck314=now;
+ for(uint8_t d=0;d<2;d++){
+  auto& v=delivery314[d];
+  if(!profileControl314(d)){v.invalidate();mismatchSince314[d]=0;continue;}
+  if(!v.hasAck||!v.ackApplicable){mismatchSince314[d]=0;continue;}
+  const auto expected=profileLevels314(d,minuteOfDay());
+  if(cielo96::health314::equivalent(expected,v.ack,d==0)){
+   if(mismatchSince314[d]){lastMismatchDuration314[d]=now-mismatchSince314[d];
+    if(lastMismatchDuration314[d]>maxMismatch314[d])maxMismatch314[d]=lastMismatchDuration314[d];}
+   mismatchSince314[d]=0;
+  }else if(!mismatchSince314[d])mismatchSince314[d]=now;
+ }
+}
+static String levelsJson314(cielo96::health314::Levels v,uint8_t d){
+ String j="["+String(v.r)+","+String(v.g)+","+String(v.b);
+ if(!d)j+=","+String(v.brightness);return j+"]";
+}
+static void appendHealth314(String& j,bool critical,bool historical){
+ using namespace cielo96::health314;
+ const uint64_t now=uptimeMillis64();
+ nvs_stats_t stats{};const bool valid=nvs_get_stats("nvs",&stats)==ESP_OK;
+ const size_t reserve=activeDiagnosticReserve();const char* pressure=pressureName(valid,stats.free_entries,reserve);
+ const bool warning=strcmp(pressure,"NORMAL")||healthTrend314.flags||
+  bleClass314[0].recentWarning(now)||bleClass314[1].recentWarning(now)||
+  (WiFi.status()!=WL_CONNECTED&&wifiApOn);
+ const bool observing=!currentBootMarkedHealthy||!bleReady||uptimeSeconds()<600;
+ const bool clockTrusted=clockEvidenceTrusted();
+ const bool criticalNow=critical||(!observing&&!clockTrusted);
+ j+=",\"health_v2\":{\"state\":"+jsonQuote(summary(criticalNow,observing,warning));
+ j+=",\"critical_now\":"+String(criticalNow?"true":"false")+",\"warning_now\":"+String(warning?"true":"false");
+ j+=",\"historical_events_present\":"+String(historical?"true":"false");
+ j+=",\"clock_trusted\":"+String(clockTrusted?"true":"false");
+ j+=",\"home_wifi_connected\":"+String(WiFi.status()==WL_CONNECTED?"true":"false");
+ j+=",\"profile_valid\":"+String(cielo96::profileValid(profile)?"true":"false");
+ j+=",\"pv_control_critical\":"+String(lampControlCritical(0)?"true":"false")+",\"ch_control_critical\":"+String(lampControlCritical(1)?"true":"false");
+ j+=",\"optical_verification\":false,\"automatic_restart_from_trend\":false,\"nvs\":{\"pressure\":"+jsonQuote(pressure);
+ j+=",\"free_entries\":"+(valid?String(stats.free_entries):String("null"))+",\"reserve_entries\":"+String(reserve);
+ j+=",\"margin_entries\":"+(valid?String(int32_t(stats.free_entries)-int32_t(reserve)):String("null"));
+ j+=",\"optional_guard_extra_entries\":16,\"low_space_retry_ms\":1800000,\"diagnostic_deferred\":"+String(diagPressureDeferred?"true":"false");
+ j+=",\"redundant_blob_writes_avoided\":"+String(diagBlobAvoided)+"}";
+ j+=",\"trend\":{\"samples\":"+String(healthTrend314.samples)+",\"interval_ms\":900000,\"consecutive_required\":3";
+ j+=",\"last_sample_age_ms\":"+(healthTrend314.samples?uptimeText(now-healthLastSample314):String("null"));
+ j+=",\"flags_mask\":"+String(healthTrend314.flags)+",\"flags\":[";
+ const char* names[]={"HEAP","FRAGMENTATION","PV_LATENCY","CH_LATENCY","BUSY_CHECKPOINTS","STACK","NVS"};
+ bool comma=false;for(uint8_t i=0;i<7;i++)if(healthTrend314.flags&(1UL<<i)){if(comma)j+=",";j+=jsonQuote(names[i]);comma=true;}
+ j+="],\"baseline_heap\":"+(healthTrend314.samples?String(healthTrend314.baseline.heap):String("null"));
+ j+=",\"baseline_pv_p95\":"+(healthTrend314.baseline.latencyValid?String(healthTrend314.baseline.pv95):String("null"));
+ j+=",\"baseline_ch_p95\":"+(healthTrend314.baseline.latencyValid?String(healthTrend314.baseline.ch95):String("null"))+"}";
+ j+=",\"off_event_summary\":{\"scope\":\"CURRENT_BOOT\",\"events\":[";
+ const char* labels[]={"PV_POWER_OFF_ENCOLADO","PV_POWER_OFF_INTENTO","PV_POWER_OFF_GATT_OK"};
+ for(uint8_t i=0;i<3;i++){if(i)j+=",";j+="{\"event\":"+jsonQuote(labels[i])+",\"count\":"+String(offSummary314.count[i]);
+  j+=",\"first_ms\":"+(offSummary314.count[i]?uptimeText(offSummary314.first[i]):String("null"));
+  j+=",\"last_ms\":"+(offSummary314.count[i]?uptimeText(offSummary314.last[i]):String("null"))+"}";}
+ j+="]},\"incidents\":[";
+ for(uint8_t i=0;i<incidents314.count;i++){if(i)j+=",";const auto&e=incidents314.at(i);
+  j+="{\"event\":"+jsonQuote(e.code)+",\"first_ms\":"+uptimeText(e.first)+",\"last_ms\":"+uptimeText(e.last)+",\"repeats\":"+String(e.repeats)+"}";}
+ j+="],\"lamps\":{";
+ const bool profileKnown=clockTrusted&&cielo96::profileValid(profile);const int minute=profileKnown?minuteOfDay():0;
+ for(uint8_t d=0;d<2;d++){
+  if(d)j+=",";const auto& b=bleClass314[d];const auto& v=delivery314[d];
+  j+=jsonQuote(d?"chihiros":"pez_verde")+":{\"ble\":{\"first_operation_slow\":"+String(b.startupSlow);
+  j+=",\"reconnect_slow\":"+String(b.reconnectSlow)+",\"stable_link_slow\":"+String(b.stableSlow);
+  j+=",\"slow_completed_ok\":"+String(b.recoveredSlow)+",\"slow_completed_failed\":"+String(b.failedSlow);
+  j+=",\"matched_soft_timeouts_recovered\":"+String(b.matchedSoftTimeoutOk)+",\"matched_soft_timeouts_failed\":"+String(b.matchedSoftTimeoutFailed);
+  j+=",\"recent_repeated_stable_slow\":"+String(b.recentWarning(now)?"true":"false")+"}";
+  const auto expected=profileKnown?profileLevels314(d,minute):Levels{};
+  const auto before=profileKnown?profileLevels314(d,(minute+1435)%1440):Levels{};
+  const auto after=profileKnown?profileLevels314(d,(minute+5)%1440):Levels{};
+  const bool applicable=profileControl314(d)&&v.hasAck&&v.ackApplicable;
+  j+=",\"phase\":"+jsonQuote(profileKnown?phase(before,expected,after,d==0):"UNKNOWN");
+  j+=",\"expected_profile\":"+(profileKnown?levelsJson314(expected,d):String("null"));
+  j+=",\"profile_control_applicable\":"+String(profileControl314(d)?"true":"false");
+  j+=",\"last_dispatched\":"+(v.hasSent?levelsJson314(v.sent,d):String("null"));
+  j+=",\"last_dispatched_sequence\":"+(v.hasSent?String(v.sequence):String("null"));
+  j+=",\"last_gatt_accepted\":"+(v.hasAck?levelsJson314(v.ack,d):String("null"));
+  j+=",\"last_gatt_sequence\":"+(v.hasAck?String(v.ackSeq):String("null"));
+  j+=",\"last_gatt_age_ms\":"+(v.hasAck?uptimeText(now-v.ackAt):String("null"));
+  j+=",\"matches_current_profile\":"+(applicable?String(equivalent(expected,v.ack,d==0)?"true":"false"):String("null"));
+  j+=",\"dispatch_to_gatt_ms\":"+(v.count?String(v.lastMs):String("null"));
+  j+=",\"dispatch_to_gatt_max_ms\":"+(v.count?String(v.maxMs):String("null"));
+  j+=",\"submission_to_gatt_ms\":"+(v.lastTotalKnown?String(v.lastTotalMs):String("null"));
+  j+=",\"submission_to_gatt_max_ms\":"+(v.lastTotalKnown?String(v.maxTotalMs):String("null"));
+  j+=",\"observed_mismatch_ms\":"+(applicable&&mismatchSince314[d]?uptimeText(now-mismatchSince314[d]):String("null"));
+  j+=",\"max_resolved_mismatch_ms\":"+uptimeText(maxMismatch314[d]);
+  j+=",\"lit_profile_samples\":"+String(profileLitSamples314[d])+",\"off_profile_samples\":"+String(profileOffSamples314[d])+"}";
+ }
+ j+="},\"profile_unknown_samples\":"+String(profileUnknownSamples314);
+ j+=",\"queue_expired_total\":"+String(queue.metrics().expired)+",\"queue_superseded_total\":"+String(queue.metrics().superseded);
+ j+=",\"delivery_scope\":\"MATCHED_GATT_NOT_OPTICAL; SUBMISSION_TO_RESULT_INCLUDES_QUEUE_AND_RETRIES; MISMATCH_SAMPLED_5S_NOT_MISSED_UPDATES\"}";
+}
 static void diagnosticJson(){
  const auto&m=queue.metrics();bool wifi=WiFi.status()==WL_CONNECTED;
  uint32_t freeMem=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
@@ -1344,7 +1542,8 @@ static void diagnosticJson(){
  bool workerUnavailable=bleReady && (cielo96::ble_worker_snapshot().heartbeat_age_ms>45000UL);
  bool critical=currentCritical(); // Los errores BLE ya recuperados son historicos.
  bool historical=badReset||m.soft_timeouts||bleSlowCount||savedFailures||bleResultErrors;
- String j;j.reserve(22000);
+ // Reserve enough for phase breakdown and the 30-day bounded summary to avoid repeated heap reallocations.
+ String j;j.reserve(28000);
  j="{\"schema\":\"iwagumi-cielo-96-diagnostico-v3\",\"firmware\":"+jsonQuote(VERSION)+",\"generated_at\":"+jsonQuote(clockEvidenceTrusted()?dateTime():String("Hora pendiente de sincronizacion"));
  j+=",\"boot_id\":"+String(previousBootCount+1);
  j+=",\"generated_epoch\":"+(clockEvidenceTrusted()?String((uint32_t)time(nullptr)):String("null"));
@@ -1383,6 +1582,12 @@ static void diagnosticJson(){
  j+=",\"previous_reset_phase_is_hint_only\":true";
  j+=",\"persistent_fault_count\":"+String(savedFailures)+",\"prior_fault_type\":"+jsonQuote(priorEvent);
  j+=",\"prior_fault_detail\":"+(srv.hasArg("share")?String("null"):jsonQuote(priorEventDetail))+"}";
+ j+=",\"boot_timing\":{\"ble_start_ms\":"+(bootBleStartMs?String(bootBleStartMs):String("null"));
+ j+=",\"base_healthy_ms\":"+(bootBaseHealthyMs?String(bootBaseHealthyMs):String("null"));
+ j+=",\"curves_resume_ms\":"+(bootCurvesResumeMs?String(bootCurvesResumeMs):String("null"));
+ j+=",\"first_pv_gatt_ms\":"+(bootFirstGattMs[0]?String(bootFirstGattMs[0]):String("null"));
+ j+=",\"first_ch_gatt_ms\":"+(bootFirstGattMs[1]?String(bootFirstGattMs[1]):String("null"));
+ j+=",\"scope\":\"CURRENT_BOOT_MILLIS_NON_OPTICAL\"}";
  j+=",\"network\":{\"home_wifi_connected\":"+String(wifi?"true":"false")+",\"ap_enabled\":"+String(wifiApOn?"true":"false");
  j+=",\"wifi_disconnects\":"+String(wifiDisconnects)+",\"wifi_connection_attempts\":"+String(wifiFailures)+",\"wifi_rssi_dbm\":"+String(wifi?WiFi.RSSI():0);
  j+=",\"wifi_modem_sleep\":"+jsonQuote(wifiSleepName())+",\"wifi_ble_coex_ready\":"+String(wifiCoexistReady()?"true":"false")+"}";
@@ -1419,6 +1624,20 @@ static void diagnosticJson(){
  j+=",\"chihiros\":"+(cielo96::diag::canReportP95(latencyCount[1])?String(latencyP95(1)):String("null"))+"}";
  j+=",\"p95_min_samples\":10,\"latency_samples\":{\"pez_verde\":"+String(latencyCount[0])+",\"chihiros\":"+String(latencyCount[1])+"}";
  j+=",\"p95_window\":{\"scope\":\"LAST_COMPLETED_OPERATIONS\",\"capacity\":32,\"pez_verde_samples\":"+String(cielo96::evidence::windowSamples(latencyCount[0]))+",\"chihiros_samples\":"+String(cielo96::evidence::windowSamples(latencyCount[1]))+",\"latency_samples_scope\":\"TOTAL_THIS_BOOT\"}";
+ j+=",\"operation_breakdown_last\":{";
+ for(uint8_t d=0;d<2;d++){
+  if(d)j+=",";
+  const auto& v=lastBleSpan[d];
+  const uint32_t attributed=v.discovery_ms+v.connect_ms+v.service_ms+
+    v.characteristic_ms+v.write_ms+v.pacing_ms;
+  j+=jsonQuote(d?"chihiros":"pez_verde")+":{\"completed_ms\":"+String(v.duration_ms);
+  j+=",\"discovery_ms\":"+String(v.discovery_ms)+",\"connect_ms\":"+String(v.connect_ms);
+  j+=",\"service_ms\":"+String(v.service_ms)+",\"characteristic_ms\":"+String(v.characteristic_ms);
+  j+=",\"write_ms\":"+String(v.write_ms)+",\"pacing_ms\":"+String(v.pacing_ms);
+  j+=",\"unattributed_ms\":"+String(v.duration_ms>attributed?v.duration_ms-attributed:0);
+  j+=",\"cold_scan_slow_operations\":"+String(bleColdDiscoverySlow[d]);
+  j+=",\"warm_slow_operations\":"+String(bleWarmSlow[d])+"}";
+ }j+="}";
  j+=",\"phase_timing_ms\":{";
  for(uint8_t i=0;i<2;i++){
   const auto x=cielo96::ble_transport_stats(i);if(i)j+=",";
@@ -1462,6 +1681,7 @@ static void diagnosticJson(){
     jsonQuote(cielo96::ble_worker_phase_name(bleRtcPhaseTrace.phase[i]))+"]";
  }
  j+="]}";
+ j+=",\"stale_custom_resume_responses\":"+String(customStaleResponses);
  j+=",\"ble_callbacks\":{";
  for(uint8_t dev=0;dev<2;dev++){
   if(dev)j+=",";
@@ -1634,7 +1854,8 @@ static void diagnosticJson(){
  j+=",\"daylight_saving\":"+String(timeOK()&&clockLocal.tm_isdst>0?"true":"false");
  j+=",\"phone_sync_this_boot\":"+String(phoneSyncedThisBoot?"true":"false");
  j+=",\"ntp_sync_this_boot\":"+String(ntpSyncedThisBoot.load()?"true":"false");
- j+=",\"trusted_this_boot\":"+String(clockEvidenceTrusted()?"true":"false")+"}";
+ j+=",\"trusted_this_boot\":"+String(clockEvidenceTrusted()?"true":"false");
+ j+=",\"trusted_source\":"+jsonQuote(ntpSyncedThisBoot.load()?"NTP":phoneSyncedThisBoot?"PHONE":rtcClockContinuityTrusted?"RTC_SOFTWARE_RESTART":"UNTRUSTED")+"}";
  j+=",\"lab\":"+(srv.hasArg("share")?String("null"):labJson());
  j+=",\"persistent_diagnostics\":{\"boot_history\":[";
  for(uint8_t i=0;i<bootHistoryCount;i++){
@@ -1655,7 +1876,8 @@ static void diagnosticJson(){
  }
  j+="],\"pending_nvs_write\":"+String(journalDirty?"true":"false");
  j+=",\"flash_policy\":\"Solo al arrancar y al registrar incidencias; maximo un lote cada 5 minutos\"}";
- j+=",\"event_retention\":\"36_RAM_8_incidencias_NVS_sin_detalles\",\"events\":[";
+ appendHealth314(j,critical,historical);
+ j+=",\"event_retention\":\"36_RAM_16_INCIDENCIAS_RAM_8_NVS_OFF_AGREGADO\",\"events\":[";
  for(int i=0;i<eventCount;i++){
   int idx=(eventHead-eventCount+i+EVENT_MAX)%EVENT_MAX;
   if(i)j+=',';
@@ -2237,7 +2459,9 @@ static void configureRoutes(){
   if(contrastStage!=2)return fail(409,"Primero envia 30/30/30 y confirma que la operacion GATT termine");
   if(customResumePending||lab.scanPending||lab.probePending||queue.busy())
    return fail(409,"Bluetooth ocupado: espera a terminar");
-  if(!cielo96::ble_custom_resume_request())return fail(503,"No se pudo programar ensayo seguro");
+  const uint32_t requestId=nextCustomResumeId();
+  if(!cielo96::ble_custom_resume_request(requestId))return fail(503,"No se pudo programar ensayo seguro");
+  customExpectedRequestId=requestId;
   customResumePending=true;customResumeRequested=millis();
   contrastStage=4;contrastObserved=true;
   chiManual=false;chiAutoPending=false;
@@ -2305,12 +2529,19 @@ static void configureRoutes(){
   record("LAB_HTTP","Latencia desde navegador media "+String(avg)+" ms max "+String(maximum)+" ms");ok();
  });
  srv.on("/api/service/status",HTTP_GET,[]{jsonSend(200,String("{\"version\":")+jsonQuote(VERSION)+",\"accessMode\":\"LAN_NO_PASSWORD\",\"otaAuthRequired\":false,\"otaEnabled\":"+String(CIELO_ENABLE_OTA?"true":"false")+",\"otaPaired\":"+String("false")+",\"otaGrantSeconds\":"+String(0)+",\"otaBusy\":"+String(otaBusy?"true":"false")+",\"otaBytes\":"+String(otaBytes)+"}");});
- srv.on("/api/clock",HTTP_POST,[]{if(!requireAdminWrite())return;if(rescueOpen)return fail(403,"Rescate solo lectura");unsigned epoch;if(!positiveInt(srv.arg("epoch"),epoch)){
-   String s=srv.arg("epoch");if(s.length()<10||s.length()>11)return fail(400,"Epoch incorrecto");
-   for(unsigned i=0;i<s.length();i++)if(s[i]<'0'||s[i]>'9')return fail(400,"Epoch incorrecto");
-   unsigned long long val=strtoull(s.c_str(),nullptr,10);if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
-   struct timeval tv{(time_t)val,0};if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");phoneSyncedThisBoot=true;record("HORA_SYNC","Reloj desde telefono");return ok();
-  }return fail(400,"Epoch demasiado corto");});
+ srv.on("/api/clock",HTTP_POST,[]{if(!requireAdminWrite())return;
+  if(rescueOpen)return fail(403,"Rescate solo lectura");
+  const String epochStr=srv.arg("epoch");
+  if(epochStr.length()<10 || epochStr.length()>11)return fail(400,"Epoch incorrecto");
+  for(size_t i=0;i<epochStr.length();i++)if(epochStr[i]<'0'||epochStr[i]>'9')return fail(400,"Epoch incorrecto");
+  const unsigned long long val=strtoull(epochStr.c_str(),nullptr,10);
+  if(val<1700000000ULL||val>4102444800ULL)return fail(400,"Epoch fuera de rango");
+  struct timeval tv{(time_t)val,0};
+  if(settimeofday(&tv,nullptr)!=0)return fail(500,"No se pudo fijar el reloj");
+  phoneSyncedThisBoot=true;
+  record("HORA_SYNC","Reloj verificado desde telefono; NTP no obligatorio");
+  return ok();
+ });
   srv.on("/api/curves/commit",HTTP_POST,[]{if(!requireAdminWrite())return;
   if(workLight.active()||workLightPreparing)return fail(409,"Termina mantenimiento antes de guardar curvas");
    if(rescueOpen||otaBusy||otaTxn.phase!=OtaPhase::Idle)return fail(423,"Cambios bloqueados durante rescate o OTA");
@@ -2387,22 +2618,26 @@ static void wifiTask(){
   apProtected=wifiApOn;
   record("AP_RECUPERACION",String("192.168.4.1; WPA2; disponible=")+String(wifiApOn));
  }
+ if(!wifiCoexistReady() && uint32_t(now-lastStatusAt)>15000UL){
+  lastStatusAt=now;
+  const esp_err_t rc=esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  record(rc==ESP_OK?"COEX_REPARADA":"COEX_ERROR",rc==ESP_OK?"MIN_MODEM activado (AP sin router incluido)":"No se pudo activar MIN_MODEM");
+ }
  if(w==WL_CONNECTED){
+  wifiRetryDelayMs=30000UL;
   if(!mdnsReady && now-mdnsLastAttempt>30000UL){
    mdnsLastAttempt=now;
    mdnsReady=MDNS.begin("iwagumi-cielo96");
    if(mdnsReady){MDNS.addService("http","tcp",80);record("MDNS_INICIADO","http://iwagumi-cielo96.local");}
    else record("MDNS_PENDIENTE","Se reintentara cuando la red este preparada");
   }
-  if(!wifiCoexistReady() && now-lastStatusAt>15000UL){
-   lastStatusAt=now;
-   esp_err_t rc=esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-   record(rc==ESP_OK?"COEX_REPARADA":"COEX_ERROR",rc==ESP_OK?"MIN_MODEM activado":"No se pudo activar MIN_MODEM");
-  }
   return;
  }
- if(storedSSID.length() && now-lastWiFiAttempt>30000UL){
-  lastWiFiAttempt=now;WiFi.begin(storedSSID.c_str(),storedPass.c_str());wifiFailures++;
+ if(storedSSID.length() && uint32_t(now-lastWiFiAttempt)>wifiRetryDelayMs &&
+    (!bleReady || !queue.busy()) && !otaBusy){
+  lastWiFiAttempt=now;
+  WiFi.begin(storedSSID.c_str(),storedPass.c_str());wifiFailures++;
+  if(wifiRetryDelayMs<120000UL)wifiRetryDelayMs*=2;
  }
 
 }
@@ -2508,7 +2743,7 @@ static void lightingTask(){
     if(workLight.active())workLightTicks++;else if(cadenceTrial15)cadenceTicks15++;else cadenceTicks30++;
     if(queue.busy()||queue.pending(cielo::ble::Device::PezVerde)||queue.pending(cielo::ble::Device::Chihiros))cadenceSkippedBusy++;
   }
- if(!timeOK() || !cielo96::profileValid(profile)){
+ if(!clockEvidenceTrusted() || !cielo96::profileValid(profile)){
   if(cadenceDue)cadenceDiagnostics.invalidClock++;
   if(cieloChWasDriven && !cieloChReturnPending && !cieloChAwaitResponse){
    cieloChRun=false;cieloPvRun=false;cieloFallbacks++;
@@ -2574,11 +2809,18 @@ static void bleTick(){
  while(cielo96::ble_result(res)){
   uint8_t device=res.device==1?1:0;
   DevTelemetry& t=devices[device];t.completed++;t.write_calls+=res.write_calls;t.last_ms=res.duration_ms;
+  lastBleSpan[device]=res;
+  if(cielo96::r314::cold_discovery_slow(res.duration_ms,res.discovery_ms))++bleColdDiscoverySlow[device];
+  else if(res.duration_ms>3500UL)++bleWarmSlow[device];
   latencyHistory[device][latencyCount[device]++%32]=res.duration_ms;
   if(res.duration_ms>t.max_ms)t.max_ms=res.duration_ms;
   if(res.duration_ms>3500)t.slow++;
   if(res.success)t.gatt_ok++;else t.errors++;
-  const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;
+  const bool softMatched=queue.active_sequence()==res.sequence&&queue.stalled();
+   const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;
+   bleClass314[device].softResult(softMatched&&matched,res.success);
+   bleClass314[device].observe(uptimeMillis64(),res.success,res.duration_ms,res.discovery_ms,res.connect_ms);
+   delivery314[device].finish(res.sequence,matched,res.success,uptimeMillis64(),res.off_sent);
   if(!res.success)workLightCancel("Fallo Bluetooth: mantenimiento cancelado");
   if(res.action==static_cast<uint8_t>(cielo::ble::Action::Apply) &&
      (cieloPvRun||cieloChRun||cieloChWasDriven||pvOffObligation)){
@@ -2635,8 +2877,11 @@ static void bleTick(){
      String("30/30/30: ")+String(res.reason)+" "+String(res.duration_ms)+"ms; cambio visual por verificar");
    if(!res.success)lab.txArmed=false;
   }
-  if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
-  if(res.duration_ms>3500UL){bleSlowCount++;record("BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms");}
+  if(res.success && res.device<2 && bootFirstGattMs[res.device]==0)bootFirstGattMs[res.device]=now-bootMs;
+   if(res.duration_ms>bleDurationMax)bleDurationMax=res.duration_ms;
+  if(res.duration_ms>3500UL){bleSlowCount++;
+    const bool cold=cielo96::r314::cold_discovery_slow(res.duration_ms,res.discovery_ms);
+    record(cold?"BLE_LENTO_DESCUBRIMIENTO":"BLE_LENTO",String(res.device?"CH ":"PV ")+String(res.duration_ms)+"ms; scan="+String(res.discovery_ms)+"ms");}
   bool autoResult=(res.device==1 && res.action==static_cast<uint8_t>(cielo::ble::Action::RestoreAuto));
   if(!res.success){
    bleResultErrors++;lastBleError=String(res.device?"CH ":"PV ")+String(res.reason);record("BLE_ERROR",lastBleError);
@@ -2649,8 +2894,8 @@ static void bleTick(){
  const uint32_t timeoutNow=queue.metrics().soft_timeouts;
  if(timeoutNow>bleSoftTimeouts){bleSoftTimeouts=timeoutNow;record("BLE_SOFT_TIMEOUT","Operacion supera 3,5s; puede terminar correctamente. No es por si sola un fallo");}
  const bool validBootDay=timeOK() && cielo96::profileValid(profile) && desiredPv().brightness>0;
- const bool pvBootDayWait=cielo96::pvday::prioritize_boot_day(bleRecoveryBoot,
-   bleRecoveryBootPvSafe,pvOffLastGatt!=0,validBootDay,otaCandidateBoot,now-bootMs);
+ const bool pvBootDayWait=cielo96::r314::prioritize_pv_day(now-bootMs,
+   bleRecoveryBootPvSafe,pvOffLastGatt!=0,validBootDay,clockEvidenceTrusted());
  const bool pvDayFirst=pvBootDayWait ||
    (pvDayRecoveryPending && cielo96::pvday::defer_ch_return(true,now-pvDayRecoveryStarted));
  const bool pvOffFirst=pvOffObligation && pvSafety!=PvSafetyState::OffGattOk &&
@@ -2658,7 +2903,9 @@ static void bleTick(){
  if(cieloChReturnPending && !chSelectiveHold && !pvOffFirst && !pvDayFirst && !queue.busy() && !customResumePending &&
     !lab.scanPending && !lab.probePending &&
     (int32_t)(now-cieloReturnRetryAt)>=0){
-   if(cielo96::ble_custom_resume_request()){
+   const uint32_t requestId=nextCustomResumeId();
+   if(cielo96::ble_custom_resume_request(requestId)){
+    customExpectedRequestId=requestId;
     cieloChReturnPending=false;cieloChAwaitResponse=true;
     customResumePending=true;customResumeRequested=now;cieloReturnTries++;
     record("V4_RETORNO_ENVIANDO",String("Intento ")+String(cieloReturnTries)+" modo personalizado 0x03");
@@ -2706,6 +2953,10 @@ static void bleTick(){
      record("PV_POWER_OFF_REINTENTO","Cola BLE rechazada: apagado sigue pendiente");
     }
     record("BLE_COLA_LLENA","No se envio comando al worker");
+  }else if(cmd.action==cielo::ble::Action::Apply){
+   const uint8_t d=cmd.device==cielo::ble::Device::Chihiros?1:0;
+   uint32_t queuedMs=0;const bool queueKnown=queue.active_age_ms(cmd.sequence,now,queuedMs);
+   delivery314[d].dispatch(cmd.sequence,{cmd.r,cmd.g,cmd.b,cmd.brightness},uptimeMillis64(),profileControl314(d),queueKnown,queuedMs);
   }
  }
 }
@@ -2822,11 +3073,12 @@ void setup(){
  bootHistory[bootHistoryHead]={previousBootCount+1,(uint8_t)esp_reset_reason(),(uint8_t)priorBootClean,0};
  bootHistoryHead=(bootHistoryHead+1)%8;if(bootHistoryCount<8)bootHistoryCount++;
  // boot_hist is redundant to restart_v2; preserve NVS headroom for curves.
- if(!nvsPreserveCurveHeadroom())prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
+ if(!nvsPreserveCurveHeadroom()&&nvsOptionalHeadroom(16))prefs.putBytes("boot_hist",bootHistory,sizeof(bootHistory));
  else diagWritesSkippedForSpace++;
  if(prefs.getBytesLength("diag_journal")==sizeof(journal)){
   prefs.getBytes("diag_journal",&journal,sizeof(journal));
   if(journal.magic!=JOURNAL_MAGIC||journal.count>8||journal.head>=8)journal=JournalStore{JOURNAL_MAGIC,0,0,0,{}};
+  else {acceptedJournal314=journal;acceptedJournalKnown314=true;}
  }
 
  prefs.putUInt("boots",previousBootCount+1);
@@ -2908,6 +3160,13 @@ void setup(){
  tracePhase(TracePhase::Clock);
  sntp_set_time_sync_notification_cb(cieloNtpSynced);
  configTzTime(CIELO_TZ,"pool.ntp.org","time.google.com");
+ // RTC witness survives only software resets; never trust time after power loss.
+ const uint32_t retainedEpoch=rtcClockWitness.epoch;
+ const bool clockWitnessValid=rtcClockWitness.magic==RTC_CLOCK_MAGIC &&
+   rtcClockWitness.check==(RTC_CLOCK_MAGIC^retainedEpoch^0x93A714C3UL);
+ rtcClockContinuityTrusted=cielo96::r314::trusted_rtc_continuity(
+   esp_reset_reason()==ESP_RST_SW,retainedEpoch,uint32_t(time(nullptr)),clockWitnessValid);
+ if(rtcClockContinuityTrusted)record("HORA_RTC_CONTINUA","Reinicio software: RTC reciente comprobado; sin escrituras flash");
  bleReady=false; // Do not start BLE until explicit physical authorization.
  record("INICIO",String("reset=")+String((unsigned)esp_reset_reason())+" ("+resetReasonName(esp_reset_reason())+") BLE="+String(bleReady));
  if(abnormalReset(esp_reset_reason()))record("REINICIO_ANOMALO",resetReasonName(esp_reset_reason()));
@@ -2925,12 +3184,13 @@ void setup(){
 void loop(){
  if(!currentBootMarkedHealthy && millis()-bootMs>=180000UL){
   const bool baseHealthy=!otaCandidateBoot ||
-   (WiFi.status()==WL_CONNECTED && wifiCoexistReady() &&
-    otaBleHealthy() && timeOK() && cielo96::profileValid(profile) &&
+   (wifiApOn && wifiCoexistReady() &&
+    otaBleHealthy() && clockEvidenceTrusted() && cielo96::profileValid(profile) &&
     !cieloWatchdogTripped && !cieloChReturnPending &&
     !cieloChAwaitResponse && !customResumePending);
   if(baseHealthy){
    currentBootMarkedHealthy=true;
+    if(!bootBaseHealthyMs)bootBaseHealthyMs=millis()-bootMs;
    prefs.putBool("clean",true);
    record("ARRANQUE_BASE_VALIDADO",otaCandidateBoot?
      "OTA: HTTP, WiFi, reloj, perfil y BLE listos; pendiente verificacion de GATT":
@@ -2940,8 +3200,8 @@ void loop(){
  if(otaCandidateBoot && currentBootMarkedHealthy){
   const bool gattReady=(!otaCandidateNeedsGATT ||
    (cieloPvConfirmed>0 && cieloChConfirmed>0)) &&
-   WiFi.status()==WL_CONNECTED && wifiCoexistReady() && otaBleHealthy() &&
-   timeOK() && cielo96::profileValid(profile) && !cieloWatchdogTripped &&
+   wifiApOn && wifiCoexistReady() && otaBleHealthy() &&
+   clockEvidenceTrusted() && cielo96::profileValid(profile) && !cieloWatchdogTripped &&
    !cieloChReturnPending && !cieloChAwaitResponse && !customResumePending && !otaBusy;
   if(otaHealthyWindow.tick(millis(),gattReady)){
    if(prefs.putUChar("ota_attempts",0)==1 && prefs.remove("ota_prev")){
@@ -2975,10 +3235,11 @@ void loop(){
  tracePhase(TracePhase::Http);srv.handleClient();
  tracePhase(TracePhase::Button);physicalButtonTask();
  tracePhase(TracePhase::WifiTick);wifiTask();
- if(!blePilotRequested && !blePilotAttempted && !bleReady && !rescueOpen &&
-    millis()-bootMs>=30000UL && WiFi.status()==WL_CONNECTED && wifiCoexistReady()){
+ if(!blePilotRequested && !bleReady &&
+    cielo96::r314::may_start_ble(millis()-bootMs,wifiApOn,wifiCoexistReady(),rescueOpen,
+      blePilotAttempted,(int32_t)(millis()-bleInitRetryAt)>=0)){
   blePilotRequested=true;
-  record("BLE_AUTO_SOLICITADO","WiFi listo, 30s desde arranque; solo inicializar radio");
+  record("BLE_AUTO_SOLICITADO","AP privado listo, 30s desde arranque; router domestico no requerido");
  }
  if(blePilotRequested && !blePilotAttempted && !rescueOpen){
   tracePhase(TracePhase::Ble);
@@ -2991,7 +3252,10 @@ void loop(){
    record("BLE_COEX_VALIDADO",wifiSleepName());
    record("BLE_PILOTO_INICIO","Se prueba Bluetooth con HTTP ya activo");
    bleReady=cielo96::ble_begin();
-   record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE");
+   if(bleReady && !bootBleStartMs)bootBleStartMs=millis()-bootMs;
+   if(!bleReady){++bleInitFailures;bleInitRetryAt=millis()+30000UL;
+     if(bleInitFailures<3)blePilotAttempted=false;}
+   record(bleReady?"BLE_PILOTO_PREPARADO":"BLE_PILOTO_ERROR",bleReady?"Tarea BLE creada":"No se pudo crear tarea BLE; reintento limitado");
   }
  }
  workLightTick();
@@ -3009,15 +3273,17 @@ void loop(){
  }
  // Fast daytime PV restoration AFTER OFF GATT and valid current curve.
  // CH return is deferred only briefly, and PV is never allowed to bypass night OFF.
- const bool pvEarlySafe=cielo96::pvday::early_boot_ready(bleRecoveryBoot,otaCandidateBoot,
-    millis()-bootMs,WiFi.status()==WL_CONNECTED,wifiCoexistReady(),
-    cieloWatchdogTripped,bleRecoveryExhausted);
+ const bool pvEarlySafe=cielo96::r314::may_recover_day_pv(millis()-bootMs,
+    clockEvidenceTrusted(),cielo96::profileValid(profile),bleReady,wifiCoexistReady(),
+    !cieloWatchdogTripped && !bleRecoveryExhausted && cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
+    pvOffLastGatt!=0,clockEvidenceTrusted()&&desiredPv().brightness>0,
+    otaBusy||otaTxn.phase!=OtaPhase::Idle,rescueOpen);
  if(pvControlDesired && cielo96::pvday::can_resume({
     bleRecoveryBootPvSafe,pvOffLastGatt!=0,(currentBootMarkedHealthy||pvEarlySafe),
-    timeOK(),cielo96::profileValid(profile),bleReady,
+    clockEvidenceTrusted(),cielo96::profileValid(profile),bleReady,
     otaBusy||rescueOpen||otaTxn.phase!=OtaPhase::Idle,
     cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
-    uint8_t(timeOK()&&cielo96::profileValid(profile)?desiredPv().brightness:0)})){
+    uint8_t(clockEvidenceTrusted()&&cielo96::profileValid(profile)?desiredPv().brightness:0)})){
    bleRecoveryBootPvSafe=false;
    pvOffObligation=false;pvOffNextTry=0;pvOffInFlightSeq=0;
    cielo96::ble_set_pv_off_required(false);
@@ -3032,20 +3298,27 @@ void loop(){
   pvDayRecoveryPending=false;
   record("PV_DIA_RECUPERACION_LIMITE","20s sin GATT confirmado; liberar retorno CH y mantener reintentos PV");
  }
- if(cieloResumePending && cieloAlwaysOn && !bleRecoveryBootPvSafe && currentBootMarkedHealthy &&
-    bleReady && timeOK() && wifiCoexistReady() && !rescueOpen &&
-    cielo96::profileValid(profile) && !customResumePending &&
-    !cieloChReturnPending && !cieloChAwaitResponse && !queue.busy()){
+ if(cieloResumePending && cieloAlwaysOn && cielo96::r314::may_resume_curves({
+    millis()-bootMs,clockEvidenceTrusted(),cielo96::profileValid(profile),bleReady,
+    wifiCoexistReady(),bleReady&&cielo96::ble_worker_snapshot().heartbeat_age_ms<15000UL,
+    otaBusy||otaTxn.phase!=OtaPhase::Idle,rescueOpen,cieloWatchdogTripped,
+    workLight.active()||workLightPreparing||labTxEnabled()||lab.scanPending||lab.probePending,
+    queue.busy()||customResumePending,
+    cieloChReturnPending||cieloChAwaitResponse||chSelectiveHold,
+    pvControlDesired,bleRecoveryBootPvSafe,pvOffLastGatt!=0,pvOffObligation,
+    clockEvidenceTrusted() && desiredPv().brightness>0})){
   cieloResumePending=false;cieloPvRun=true;cieloChRun=true;
+   if(!bootCurvesResumeMs)bootCurvesResumeMs=millis()-bootMs;
   pvControlDesired=true;
   cieloWatchdogTripped=false;cieloPvConsecutiveFailures=0;cieloChConsecutiveFailures=0;
   lastPvDesired=false;lastChDesired=false;
   cieloStartedAt=millis();lastScheduleAt=millis()-30000UL;
-  record("V5_AUTO_REANUDADO","Ambas curvas reanudadas tras comprobar hora, WiFi y Bluetooth");
+  record("V5_AUTO_REANUDADO","Ambas curvas reanudadas tras reloj verificado, Bluetooth vivo y OFF PV seguro; OTA observa 180s aparte");
  }
  lightingTask();
  cielo96::ble_set_pv_off_required(pvOffObligation);
  cieloTrendTick();
+ profileDeliveryTick314();
  labTick();
  chReconnectTick();
  otaPreparationTick();
@@ -3064,6 +3337,15 @@ void loop(){
  if(currentBootMarkedHealthy&&bleReady&&!cieloWatchdogTripped&&
     (!pvControlDesired||cieloLastSuccessfulPvAt>0)&&(!cieloAlwaysOn||cieloLastSuccessfulChAt>0)){
   if(cielo96::restarts::recovered(restartJournal,previousBootCount+1,clockEvidenceTrusted()?uint32_t(time(nullptr)):0))restartJournalDirty=true;
+ }
+ // Retain recent witnessed time only in RTC RAM; not in NVS.
+ if(clockEvidenceTrusted() && uint32_t(millis()-rtcClockLastRefresh)>=60000UL){
+  rtcClockLastRefresh=millis();
+  const uint32_t epochNow=uint32_t(time(nullptr));
+  rtcClockWitness.magic=0;
+  rtcClockWitness.epoch=epochNow;
+  rtcClockWitness.check=RTC_CLOCK_MAGIC^epochNow^0x93A714C3UL;
+  rtcClockWitness.magic=RTC_CLOCK_MAGIC;
  }
  profileCheckpointTick();
  flushRestartJournal();

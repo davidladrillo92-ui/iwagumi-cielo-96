@@ -12,5 +12,8 @@ assert s.index('if(bleRecoveryBootPvSafe)lightingTask();')<s.index('if(bleReady 
 assert '!night && pvOffObligation && !bleRecoveryBootPvSafe' in s
 assert 'if(!bleRecoveryBootPvSafe)return;' in s
 assert 'bleRecoveryBootPvSafe && pvOffLastGatt && currentBootMarkedHealthy && timeOK()' in s
-assert 'cieloAlwaysOn && !bleRecoveryBootPvSafe && currentBootMarkedHealthy' in s
+assert 'cieloAlwaysOn && cielo96::r314::may_resume_curves({' in s
+assert 'pvControlDesired,bleRecoveryBootPvSafe,pvOffLastGatt!=0,pvOffObligation' in s
+assert 'cielo96::r314::may_recover_day_pv(' in s
+assert 'currentBootMarkedHealthy=true;' in s and 'millis()-bootMs>=180000UL' in s
 print('PASS recovery integration: OTA/rescue inhibition, retained evidence and initial POWER OFF interlock')

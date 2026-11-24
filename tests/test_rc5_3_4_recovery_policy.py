@@ -5,7 +5,7 @@ import tempfile
 
 source = Path("src/main.cpp").read_text()
 assert "cielo96::pvday::can_resume(" in source
-assert "cielo96::pvday::prioritize_boot_day(" in source
+assert "cielo96::r314::prioritize_pv_day(" in source
 assert "cielo96::autonomy::Retry chReconnect" in source
 assert "cieloRequestReturn(" in source
 assert "cieloChAwaitResponse" in source

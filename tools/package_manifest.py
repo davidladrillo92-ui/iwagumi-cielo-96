@@ -15,6 +15,20 @@ if int.from_bytes(raw[12:14],'little')!=9:raise ValueError('El BIN no identifica
 source=Path('src/main.cpp').read_text()
 match=re.search(r'\bVERSION="([^"]+)"',source)
 if not match:raise ValueError('Versión del firmware no identificada')
+# The owner-approved current V5 differs from the older archival V5 fixture.
+profile_src=Path('include/profiles_generated.h').read_text()
+def bundled_count(name,kind):
+    match=re.search(r'static const '+kind+r' '+name+r'\[\] = \{(.*?)\};',
+                    profile_src,re.DOTALL)
+    if not match:raise ValueError('No encuentro el perfil integrado '+name)
+    return len(re.findall(r'\{\s*\d+\s*,',match.group(1)))
+pv_points=bundled_count('pezverde','PvPoint')
+ch_points=bundled_count('chihiros','ChiPoint')
+checksum_match=re.search(r'FNV1A32\s+([0-9a-fA-F]{8})',profile_src)
+if not checksum_match:raise ValueError('Falta checksum de exportacion del propietario')
+owner_checksum=checksum_match.group(1).lower()
+if (pv_points,ch_points,owner_checksum)!=(37,46,'c1960ba7'):
+    raise ValueError('El perfil integrado no coincide con V5 gen22 exportada por el propietario')
 m={'schema':'cielo-build-v1','commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
    'source_branch':os.environ.get('GITHUB_HEAD_REF') or os.environ.get('GITHUB_REF_NAME') or 'local',
    'version':match.group(1),'board':'ATOMS3 Lite C124 / ESP32-S3',
@@ -22,9 +36,10 @@ m={'schema':'cielo-build-v1','commit':subprocess.check_output(['git','rev-parse'
    'littlefs_probe_policy':{'read_only':True,'format_if_mount_failed':False,'grow_on_mount':False,'curve_writes_enabled':False},
    'littlefs_write_policy':{'enabled_after_ro_probe':True,'format_if_mount_failed':False,'grow_on_mount':False,'preserve_nvs_slots':True,'max_preserved_stages':64,'reserve_bytes':32768,'unknown_files_never_removed':True},
    'wifi_config_policy':{'record_bytes':112,'backend':'NVS_WIFI_AB','sdk_storage':'RAM','boot_migration_writes':False,'legacy_keys_preserved':True,'unknown_schema_blocks_fallback':True,'physical_power_cuts_tested':False},
-   'ota_signature':'NOT_REQUIRED_LAN_OWNER_REQUEST','hardware_validation':'PENDING','installed_confirmed':'11.1.0-RC5-RECOVERY3.11-CURVES-DESIGN-CANDIDATE (informe95,31/10/2026 14:08:12 Madrid; boot142; uptime342157s; FS gen14/37PV/44CH; esta candidata3.12 NO instalada)',
+   'ota_signature':'NOT_REQUIRED_LAN_OWNER_REQUEST','hardware_validation':'PENDING','installed_confirmed':'11.1.0-RC5-RECOVERY3.13-AUTONOMY-CANDIDATE (Informe Maestro del 23/11/2026, boot 150, LittleFS gen22, checksums V5 correctos; GATT observado, optica pendiente)',
    'diagnostic_evidence_policy':{'schema_version':1,'profile_wire_checksum':'fnv1a32','p95_window_operations':32,'operational_history_ram_events':16,'extra_flash_writes':False,'lighting_engine_unchanged':True},
-   'v5_reference':{'pv':34,'ch':31,'fnv1a32':'5814359c'},
+   'v5_reference':{'pv':pv_points,'ch':ch_points,'fnv1a32':owner_checksum,'persisted_generation_last_observed':22,'role':'compiled fallback, LittleFS active preferred'},
+   'legacy_v5_reference':{'pv':34,'ch':31,'fnv1a32':'5814359c','role':'historical test fixture only; not active owner export'},
    'stack_report':json.loads(Path('dist/STACK_REPORT.json').read_text()),
    'evidence_issue':'https://github.com/davidladrillo92-ui/iwagumi-cielo-96/issues/35',
    'ble_transport':'Arduino Bluedroid 2.0.17 / 8000ms connect, late-event quarantine',
