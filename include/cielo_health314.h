@@ -56,7 +56,7 @@ struct Trend {
    s.pv95>250 && uint64_t(s.pv95)>uint64_t(baseline.pv95)*3,
    s.ch95>1000 && uint64_t(s.ch95)>uint64_t(baseline.ch95)*3,
    s.busyBp>=2500,s.stack<3000,
-   s.nvsFree<s.nvsReserve || (baseline.nvsValid&&baseline.nvsFree>=s.nvsFree+16)};
+   s.nvsFree<s.nvsReserve || (baseline.nvsValid&&baseline.nvsFree>=s.nvsFree&&baseline.nvsFree-s.nvsFree>=16)};
   for(uint8_t i=0;i<7;i++){
    if(!known[i]){streak[i]=0;clear[i]=0;continue;}
    if(bad[i]){clear[i]=0;if(streak[i]<3)++streak[i];if(streak[i]>=3)flags|=1UL<<i;}
@@ -66,6 +66,8 @@ struct Trend {
 };
 struct BleClass {
  uint32_t completed=0,startupSlow=0,reconnectSlow=0,stableSlow=0,recoveredSlow=0,failedSlow=0;
+ uint32_t matchedSoftTimeoutOk=0,matchedSoftTimeoutFailed=0;
+ void softResult(bool timedOut,bool success){if(timedOut){if(success)++matchedSoftTimeoutOk;else ++matchedSoftTimeoutFailed;}}
  uint64_t lastStableSlow=0;uint8_t consecutiveStableSlow=0;
  void observe(uint64_t at,bool success,uint32_t ms,uint32_t discovery,uint32_t connect){
   bool slow=ms>3500;bool first=completed==0;++completed;
@@ -81,6 +83,7 @@ struct BleClass {
 };
 struct Levels {uint8_t r=0,g=0,b=0,brightness=0;};
 inline bool equal(Levels a,Levels b){return a.r==b.r&&a.g==b.g&&a.b==b.b&&a.brightness==b.brightness;}
+inline bool equivalent(Levels a,Levels b,bool pv){return (pv&&!a.brightness&&!b.brightness)||equal(a,b);}
 inline bool lit(Levels a,bool pv){return pv?a.brightness!=0:(a.r||a.g||a.b);}
 inline uint16_t intensity(Levels a,bool pv){return pv?a.brightness:uint16_t(a.r)+a.g+a.b;}
 inline const char* phase(Levels before,Levels now,Levels after,bool pv){
