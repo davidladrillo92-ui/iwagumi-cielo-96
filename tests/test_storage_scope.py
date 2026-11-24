@@ -15,6 +15,21 @@ for r in f['ranges']:
         part=part.replace('if(!clockEvidenceTrusted() || !cielo96::profileValid(profile))',
                           'if(!timeOK() || !cielo96::profileValid(profile))')
     if r['name']=='ble':
+        # V2 attaches passive delivery observers; no queue or transport logic changes.
+        observer=('   const bool softMatched=queue.active_sequence()==res.sequence&&queue.stalled();\n'
+                  '   const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;\n'
+                  '   bleClass314[device].softResult(softMatched&&matched,res.success);\n'
+                  '   bleClass314[device].observe(uptimeMillis64(),res.success,res.duration_ms,res.discovery_ms,res.connect_ms);\n'
+                  '   delivery314[device].finish(res.sequence,matched,res.success,uptimeMillis64(),res.off_sent);')
+        # Existing indentation of the matched result line is two spaces.
+        observer=observer.replace('   const bool softMatched','  const bool softMatched',1)
+        assert part.count(observer)==1
+        part=part.replace(observer,'  const bool matched=queue.complete(res.sequence,res.success,now);bleResultCount++;')
+        dispatched=('  }else if(cmd.action==cielo::ble::Action::Apply){\n'
+                    '   delivery314[cmd.device==cielo::ble::Device::Chihiros?1:0].dispatch(cmd.sequence,{cmd.r,cmd.g,cmd.b,cmd.brightness},uptimeMillis64());\n'
+                    '  }')
+        assert part.count(dispatched)==1
+        part=part.replace(dispatched,'  }')
         # 3.14 explicitly permits only these measured BLE spans, a new
         # boot timestamp, scan classification, boot-day priority and IDs.
         added=(
