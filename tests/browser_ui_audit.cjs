@@ -18,7 +18,11 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
   let data={ok:true};let code=200;
   if(path==='/api/status')data=status();
   else if(path==='/api/service/status')data={otaEnabled:true,version:'MOCK3.11'};
-  else if(path==='/api/diagnostico/maestro')return route.fulfill({contentType:'application/json',body:JSON.stringify({schema:'mock-report'})});
+  else if(path==='/api/diagnostico/maestro'){
+   const prefix=JSON.stringify({schema:'iwagumi-cielo-96-diagnostico-v3',request_nonce:u.searchParams.get('nonce'),report_id:'152-1-1234abcd'}).slice(0,-1);
+   let crc=0xffffffff;for(const b of Buffer.from(prefix,'utf8')){crc^=b;for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xedb88320:0)}
+   return route.fulfill({contentType:'application/json',body:prefix+',"report_crc32":"'+((~crc)>>>0).toString(16).padStart(8,'0')+'","report_complete":true}'});
+  }
   else if(path==='/api/work-light/start'){phase='checking';data=work();}
   else if(path==='/api/work-light/stop'){phase=phase==='checking'?'idle':'returning';data=work();}
   else if(path==='/api/curves/commit'){
@@ -112,7 +116,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.env.CIELO_
  await settings();await more();assert.equal(await page.locator('#monitorSettings').count(),0);await page.locator('#sheetClose').click();
  await settings();await more();await page.locator('#maintenanceRead').click();assert((await page.locator('#maintenanceResult').textContent()).includes('USB_REQUIRED'));await page.locator('#sheetClose').click();
  await settings();await more();await page.locator('#chNightOff').click();await page.locator('#cieloPauseAll').click();v.chihiros_active=v.pez_verde_active=false;v.always_on=false;await sync();await page.locator('#chNightOn').click();await page.locator('#sheetClose').click();
- await page.locator('[data-view="lab"]').click();const report=page.waitForEvent('download');await page.locator('#diagDownload').click();assert.equal((await report).suggestedFilename(),'CIELO_INFORME_MAESTRO.json');
+ await page.locator('[data-view="lab"]').click();const report=page.waitForEvent('download');await page.locator('#diagDownload').click();assert.equal((await report).suggestedFilename(),'CIELO_INFORME_MAESTRO_152-1-1234abcd.json');
  await page.locator('#viewLab details').click();await auditButtons();
  const binary=Buffer.alloc(600000);binary[0]=0xe9;binary[3]=0x30;binary[12]=9;
  await page.locator('#otaFile').setInputFiles({name:'firmware.bin',mimeType:'application/octet-stream',buffer:binary});

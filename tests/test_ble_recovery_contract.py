@@ -8,7 +8,11 @@ assert 'prefs.clear(' not in recovery and 'vTaskDelete(' not in recovery and 'BL
 assert 'RTC_NOINIT_ATTR static cielo96::recovery::Retained' in s
 assert 'esp_reset_reason()!=ESP_RST_SW' in s
 assert 'if(bleRecoveryBootPvSafe)lightingTask();' in s
-assert s.index('if(bleRecoveryBootPvSafe)lightingTask();')<s.index('if(bleReady && !rescueOpen){tracePhase(TracePhase::Ble);bleTick();bleUnexpectedDisconnectTick();}')
+boot=s.index('if(bleRecoveryBootPvSafe)lightingTask();')
+loop=s.index('if(bleReady && !rescueOpen){',boot)
+pre=s.index('bleUnexpectedDisconnectTick();cielo96::ble_set_pv_off_required(pvOffObligation);',loop)
+result=s.index('bleTick();bleUnexpectedDisconnectTick();',pre)
+assert boot<loop<pre<result
 assert '!night && pvOffObligation && !bleRecoveryBootPvSafe' in s
 assert 'if(!bleRecoveryBootPvSafe)return;' in s
 assert 'bleRecoveryBootPvSafe && pvOffLastGatt && currentBootMarkedHealthy && timeOK()' in s

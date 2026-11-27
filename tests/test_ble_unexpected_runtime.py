@@ -8,6 +8,15 @@ fixture=r'''
 #include <string>
 #include <cassert>
 #include "cielo_autonomy_policy.h"
+#include "cielo_recovery315_dev2.h"
+#include "cielo_health314.h"
+cielo96::health314::Delivery delivery314[2];
+cielo96::dev2::Recovery isolated315[2];
+uint32_t isolatedReturnAvoided315=0;
+bool lastChDesired=true, trusted=true;
+bool clockEvidenceTrusted(){return trusted;}
+struct Profile{} profile;
+namespace cielo96{bool profileValid(Profile&){return true;}}
 using String=std::string;
 uint32_t millis(){return 7000;}
 enum class OtaPhase {Idle,Uploading};
@@ -41,17 +50,19 @@ int main(){
  assert(!pvOffObligation&&!pvDisconnectInterlock&&pvOffNextTry==0);
  assert(isolatedChDisconnects==1&&pvDisconnectOffSafetyEpisodes==0);
  assert(workCancels==1);
- assert(!cieloChRun&&returns==1&&cieloChReturnPending&&pvSafety==PvSafetyState::Active);
- assert(chReconnect.pending&&chReconnect.recovering&&!chReconnect.ready(37000,false));
- cieloChReturnPending=false;assert(chReconnect.ready(37000,true));chReconnect.begin();chReconnect.success();
+ assert(cieloChRun&&returns==0&&!cieloChReturnPending&&pvSafety==PvSafetyState::Active);
+ assert(isolated315[1].waiting&&isolatedReturnAvoided315==1&&!lastChDesired);
  assert(!chReconnect.pending&&!chReconnect.recovering);
- auto prev=records;bleUnexpectedDisconnectTick();assert(records==prev&&returns==1);
+ assert(!isolated315[1].ready(11999)&&isolated315[1].ready(12000));
+ auto prev=records;bleUnexpectedDisconnectTick();assert(records==prev&&returns==0);
  otaBusy=true;cielo96::links[0].unexpected_disconnects=1;
  bleUnexpectedDisconnectTick();assert(observedUnexpectedDisconnect[0]==0);
  otaBusy=false;bleUnexpectedDisconnectTick();assert(observedUnexpectedDisconnect[0]==1);
- assert(pvOffObligation&&pvDisconnectInterlock&&pvOffNextTry==7000&&returns==1);
+ assert(pvOffObligation&&pvDisconnectInterlock&&pvOffNextTry==7000&&returns==0);
  assert(pvDisconnectOffSafetyEpisodes==1&&isolatedChDisconnects==1);
- assert(workCancels==2);
+ assert(workCancels==2&&isolated315[0].waiting);
+ trusted=false;cielo96::links[1].unexpected_disconnects=2;bleUnexpectedDisconnectTick();
+ assert(!cieloChRun&&returns==1&&cieloChReturnPending&&chReconnect.pending);
 }
 '''
 with tempfile.TemporaryDirectory() as d:
@@ -59,4 +70,4 @@ with tempfile.TemporaryDirectory() as d:
  out=str(Path(d)/'test')
  subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror','-Iinclude',str(p),'-o',out],check=True)
  subprocess.run([out],check=True)
-print('PASS actual unexpected disconnect handler: isolated CH, PV-only OFF interlock, OTA exclusion, dedup')
+print('PASS actual unexpected disconnect handler: isolated CH, PV-only OFF interlock, OTA exclusion, dedup, untrusted-clock fallback')

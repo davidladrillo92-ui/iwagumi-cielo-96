@@ -1,7 +1,7 @@
 name: CIELO 11.1 · Compilar y verificar
 on:
   push:
-    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-20261025, dev/cielo-recovery3-1-bloqueos-clasificados-20261025, dev/cielo-recovery3-1-selective-ch-20261025, dev/cielo-recovery3-1-pv-diagnostics-20261025, dev/cielo-rc5-recovery3-1-integrada-20261025, dev/cielo-rc5-3-2-app-stability-20261026, dev/cielo-rc5-3-3-persistent-ble-safety-20261026, dev/cielo-rc5-3-4-consolidacion-cinco-puntos-20261026, dev/cielo-rc5-recovery3-5-spiffs-curvas-seguras-20261026, dev/cielo-rc5-recovery3-5-1-fs-guard-20261026, dev/cielo-rc5-recovery3-5-2-nvs-recovery-20261026, dev/cielo-rc5-recovery3-6-maintenance-20261026, dev/cielo-rc5-recovery3-6-1-storage-audit-20261026, dev/cielo-rc5-recovery3-6-2-littlefs-ro-20261026, dev/cielo-rc5-recovery3-7-littlefs-ab-20261026, dev/cielo-rc5-recovery3-8-maintenance-20261027, dev/cielo-rc5-recovery3-9-ui-audit-20261027, dev/cielo-rc5-recovery3-10-wifi-atomic-20261027, dev/cielo-rc5-recovery3-11-curves-design-20261027, dev/cielo-rc5-recovery3-12-diagnostics-20261031, dev/cielo-rc5-recovery3-13-autonomia-20261120, dev/cielo-rc5-recovery3-14-arranque-ble-20261123]
+    branches: [dev/cielo-11-1-ux-producto, dev/cielo-11-1-seguridad-ota-20261021, dev/cielo-11-1-rc3-auth-lan-20261021, dev/cielo-11-1-rc4-signed-tls-20261021, dev/cielo-11-1-rc5-b1-night-safety-20261021, dev/cielo-11-1-rc5-b1-b5-diagnostico-20261021, dev/cielo-11-1-rc5-b1-b5-b3-ota-security-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-curvas-20261021, dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-20261025, dev/cielo-recovery3-1-bloqueos-clasificados-20261025, dev/cielo-recovery3-1-selective-ch-20261025, dev/cielo-recovery3-1-pv-diagnostics-20261025, dev/cielo-rc5-recovery3-1-integrada-20261025, dev/cielo-rc5-3-2-app-stability-20261026, dev/cielo-rc5-3-3-persistent-ble-safety-20261026, dev/cielo-rc5-3-4-consolidacion-cinco-puntos-20261026, dev/cielo-rc5-recovery3-5-spiffs-curvas-seguras-20261026, dev/cielo-rc5-recovery3-5-1-fs-guard-20261026, dev/cielo-rc5-recovery3-5-2-nvs-recovery-20261026, dev/cielo-rc5-recovery3-6-maintenance-20261026, dev/cielo-rc5-recovery3-6-1-storage-audit-20261026, dev/cielo-rc5-recovery3-6-2-littlefs-ro-20261026, dev/cielo-rc5-recovery3-7-littlefs-ab-20261026, dev/cielo-rc5-recovery3-8-maintenance-20261027, dev/cielo-rc5-recovery3-9-ui-audit-20261027, dev/cielo-rc5-recovery3-10-wifi-atomic-20261027, dev/cielo-rc5-recovery3-11-curves-design-20261027, dev/cielo-rc5-recovery3-12-diagnostics-20261031, dev/cielo-rc5-recovery3-13-autonomia-20261120, dev/cielo-rc5-recovery3-14-arranque-ble-20261123, dev/cielo-rc5-recovery3-15-dev2-20261126, dev/cielo-rc5-recovery3-15-dev3-20261126, dev/cielo-rc5-recovery3-15-candidate-20261127]
   pull_request:
     branches: [dev/cielo-11-1-rc5-b1-b5-b3-b2-b4-b6-b7-ui-20261021, dev/cielo-11-1-rc5-b8-b9-monitor-mantenimiento-20261021, dev/cielo-11-1-rc6-recovery1-20261023, dev/cielo-rc5-recovery3-5-spiffs-curvas-seguras-20261026, dev/cielo-rc5-recovery3-5-1-fs-guard-20261026, dev/cielo-rc5-recovery3-5-2-nvs-recovery-20261026, dev/cielo-rc5-recovery3-6-maintenance-20261026, dev/cielo-rc5-recovery3-6-1-storage-audit-20261026, dev/cielo-littlefs-migration-lab-20261026, dev/cielo-rc5-recovery3-7-littlefs-ab-20261026, dev/cielo-rc5-recovery3-8-maintenance-20261027, dev/cielo-rc5-recovery3-9-ui-audit-20261027, dev/cielo-rc5-recovery3-10-wifi-atomic-20261027, dev/cielo-rc5-recovery3-11-curves-design-20261027, dev/cielo-rc5-recovery3-12-diagnostics-20261031]
   workflow_dispatch:
@@ -72,6 +72,30 @@ jobs:
           python tests/test_rc5_3_5_integration.py
           g++ -std=c++17 -Wall -Wextra -Werror -Itests/mockfs -Iinclude tests/test_rc5_3_5_fs_store.cpp -o /tmp/cielo_rc5_3_5_fs_store
           /tmp/cielo_rc5_3_5_fs_store
+      - name: Probar Recovery 3.15 DEV1
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_recovery315.cpp -o /tmp/cielo315
+          /tmp/cielo315
+          python tests/test_restart315_runtime.py
+          python tests/test_rev3_contract.py
+          python tests/test_journal_low_space_runtime.py
+      - name: Probar Recovery 3.15 DEV2
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_recovery315_dev2.cpp -o /tmp/cielo315dev2
+          /tmp/cielo315dev2
+          python tests/test_dev2_contract.py
+          python tests/test_dev2_fresh_dispatch_runtime.py
+          python tests/test_ble_unexpected_runtime.py
+          python tests/test_ch_reconnect_runtime.py
+          python tests/test_worklight_runtime.py
+      - name: Probar Recovery 3.15 DEV3
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_history315.cpp -o /tmp/cielo315history
+          /tmp/cielo315history
+          g++ -std=c++11 -Wall -Wextra -Werror -Iinclude tests/test_report315.cpp -o /tmp/cielo315report
+          /tmp/cielo315report
+          node tests/test_report315_ui.js
+          python tests/test_dev3_contract.py
       - name: Instalar PlatformIO
         run: pip install platformio==6.1.18
       - name: Compilar ATOMS3 Lite
@@ -84,7 +108,7 @@ jobs:
           python tools/check_stack_build.py
           cp .pio/build/atoms3_lite_c124/firmware.bin dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin
           sha256sum dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin > dist/SHA256.txt
-          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_RECOVERY3_14_AUTONOMY_CANDIDATO.bin
+          cp dist/CIELO_11_1_CANDIDATO_SOLO_APLICACION.bin dist/IWAGUMI_CIELO_RC5_RECOVERY3_15_CANDIDATE.bin
           cp partitions_8mb.csv dist/partitions_8mb.csv
           cp -R docs dist/
           mkdir -p dist/tools dist/include
@@ -106,7 +130,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CIELO_RC5_RECOVERY3_14_DEBUG_ELF_MAP
+          name: CIELO_RC5_RECOVERY3_15_DEBUG_ELF_MAP
           path: |
             .pio/build/atoms3_lite_c124/firmware.elf
             .pio/build/atoms3_lite_c124/firmware.map

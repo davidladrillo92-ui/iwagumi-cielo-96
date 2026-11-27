@@ -6,6 +6,8 @@ wrappers=src[src.index('static cielo96::worklight::Levels programLevels()'):src.
 handlers=src[src.index('static bool workLightPreparing=false;'):src.index('static void statusJson(){')]
 fixture=r'''
 #include "cielo_worklight.h"
+#include "cielo_recovery315_dev2.h"
+cielo96::dev2::Recovery isolated315[2];
 #include "cielo_curve_policy.h"
 #include "cielo_ble_queue.h"
 #include "cielo_night_safety.h"
@@ -55,6 +57,7 @@ void startVerified(){workLightStart();assert(http==200&&workLightPreparing&&!wor
 int main(){
  profile.pvCount=profile.chCount=2;profile.pv[1].minute=profile.ch[1].minute=1440;cielo96::profileSeal(profile);
  assert(!workLightBlockReason(true));auto saved=profile;
+ isolated315[1].loss(now);assert(workLightBlockReason(true));isolated315[1].cancel();
  startVerified();
  assert(!lastPvDesired&&!lastChDesired);auto begun=workLight.elapsed(now);
  now+=60000;workLightStart();assert(http==200&&workLight.elapsed(now)==begun+60000);
