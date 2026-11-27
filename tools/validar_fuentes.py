@@ -25,7 +25,7 @@ assert 'const bool chWindow=true' in code
 assert 'const bool schedulerCH=cieloChRun&&timeOK()&&' in code
 assert 'v5_always' in code and 'cieloResumePending' in code
 assert 'V5_AUTO_REANUDADO' in code
-assert 'cieloTrendTick();' in code and 'cieloTrendJson()' in code
+assert 'cieloTrendTick();' in code and 'cieloTrendJson(j)' in code
 assert 'daily_monitoring' in code
 assert 'WiFi.scanNetworks(true,false)' in code
 assert '/api/wifi/scan' in code and '/api/wifi/networks' in code
@@ -36,7 +36,7 @@ assert 'lastPvDesiredAt' in code and 'lastChDesiredAt' in code
 assert 'queue.cancel_pending(cielo::ble::Device::Chihiros)' in code
 assert 'cielo96::ble_custom_resume_request(requestId)' in code
 assert 'cieloReturnTries<2' in code and 'V4_RETORNO_GATT_OK' in code
-assert 'PV_DEGRADADA' in code and 'V5_24H_ACTIVADA' in code
+assert 'PV_REINTENTO_AISLADO' in code and 'V5_24H_ACTIVADA' in code
 assert 'cieloChRun&&timeOK()' in code
 assert '/api/cielo/v4/start' in code and '/api/cielo/v4/return' in code and '/api/cielo/v4/pause' in code
 assert '!cieloPvRun && !cieloChRun && !cieloChReturnPending && !cieloChAwaitResponse' in code
@@ -156,7 +156,7 @@ assert 'id="releaseCh"' not in actual and 'id="releasePv"' not in actual
 assert 'id="curveChEvening"' not in actual
 assert 'function labGuided()' not in actual and 'function previewNatural' not in actual
 assert 'function releaseLight' not in actual
-assert "fetch('/api/diagnostico/maestro?download=1'" in actual
+assert "fetch('/api/diagnostico/maestro?download=1&nonce='" in actual
 # JavaScript embebido: sintaxis comprobada con Node en GitHub Actions.
 import tempfile
 with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as js:

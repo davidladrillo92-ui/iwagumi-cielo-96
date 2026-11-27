@@ -15,6 +15,13 @@ public:
  const Day& oldest(uint8_t offset)const {
   return days_[(uint8_t)((next_+30-count_+offset)%30)];
  }
+ // Restore validated chronological summaries without counting them as new samples.
+ bool restore(const Day* days,uint32_t count){
+  if(count>30||(!days&&count))return false;
+  for(uint32_t i=0;i<count;++i)if(!days[i].samples||!days[i].heap_min||(i&&days[i].day_key<=days[i-1].day_key))return false;
+  for(uint32_t i=0;i<count;++i)days_[i]=days[i];
+  count_=uint8_t(count);next_=uint8_t(count%30);return true;
+ }
  void sample(uint32_t day_key,uint32_t pv_inc,uint32_t ch_inc,
              uint32_t pv_err_inc,uint32_t ch_err_inc,uint32_t heap){
   if(day_key<2026000UL || heap==0)return;

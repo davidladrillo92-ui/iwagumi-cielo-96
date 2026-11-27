@@ -3,8 +3,15 @@ from pathlib import Path
 import json,hashlib
 f=json.loads(Path('tests/fixtures/maintenance_3_9_frozen_sha256.json').read_text())
 s=Path('src/main.cpp').read_text()
+# DEV2 explicitly revises only isolated retry orchestration and worklight admission.
+# Historical pins remain in the fixture; all other ranges/files retain their old checks.
+authorized=json.loads(Path('tests/fixtures/dev2_authorized_ranges_sha256.json').read_text())
+assert set(authorized)=={'lighting','ble','reconnect','disconnect','worklight_3_8_admission'}
 for r in f['ranges']:
     part=s[s.index(r['start']):s.index(r['end'],s.index(r['start']))]
+    if r['name'] in authorized:
+        assert hashlib.sha256(part.encode()).hexdigest()==authorized[r['name']],r['name']
+        continue
     if r['name']=='disconnect':
         # 3.13 changes exactly the ownership retry on unexpected CH loss.
         new='cieloChRun=false;\n   if(cieloAlwaysOn)chReconnect.arm(millis());else chReconnect.cancel();'

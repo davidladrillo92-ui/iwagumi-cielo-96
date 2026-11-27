@@ -11,7 +11,8 @@ assert "nvs_get_blob(verify,key,&value,&bytes)" in source
 assert "lastCurveNvsErr=err" in source
 assert "nvsPreserveCurveHeadroom()" in source
 assert 'previous_profile_preserved' in source
-assert "if(curveSaveInProgress)" in source
+assert "if(curveSaveInProgress||!nvsOptionalHeadroom(16))" in source
+assert "if(curveSaveInProgress||nvsPreserveCurveHeadroom()||!nvsOptionalHeadroom(16))" in source
 assert "nvs_get_stats(\"nvs\",&stats)" in source
 assert "ESP_ERR_NVS_NOT_ENOUGH_SPACE" in source
 assert "prefs.clear()" not in source

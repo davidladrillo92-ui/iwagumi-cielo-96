@@ -1,0 +1,472 @@
+{
+  "scope": "HOST_ONLY",
+  "passed": 93,
+  "failed": 0,
+  "tests": [
+    {
+      "test": "test_autonomy_policy.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_b1_scenarios.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_b2b4_curves.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_b3_security_policy.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_b5_diagnostics.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_ble_blockage.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_ble_match.cpp",
+      "code": 0,
+      "output": "PASS BLE matching: Pez Verde exact, Chihiros prefijo comprobado\n"
+    },
+    {
+      "test": "test_ble_queue.cpp",
+      "code": 0,
+      "output": "OK: dedup, BLE serializado, timeout blando, prioridad y cancelacion segura antes del retorno\n"
+    },
+    {
+      "test": "test_ble_recovery.cpp",
+      "code": 0,
+      "output": "PASS recovery: reports 41/42, timeout, inhibit, RTC, budget and millis rollover\n"
+    },
+    {
+      "test": "test_ble_selective.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_clock_evidence.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_codec_and_profile.cpp",
+      "code": 0,
+      "output": "OK: PV wire frames, CH RGB/AUTO with reserved bytes, double-slot snapshot seal, V5 gen22 end-of-day\n"
+    },
+    {
+      "test": "test_diagnostic_evidence.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_fs_active_guard.cpp",
+      "code": 0,
+      "output": "PASS FS audit regression: unreadable active + rename failure, active recheck, stale generation, uncertain publish, CRC and last-byte mount protection\n"
+    },
+    {
+      "test": "test_fs_v5_profile.cpp",
+      "code": 0,
+      "output": "PASS exact V5 38/31 points: filesystem write, independent read and boot selection preserve all bytes\n"
+    },
+    {
+      "test": "test_health314.cpp",
+      "code": 0,
+      "output": "PASS 3.14 V2: 144 OFF cycles, independent incidents, NVS margin, degradation debounce, BLE result identity and profile evidence\n"
+    },
+    {
+      "test": "test_history314.cpp",
+      "code": 0,
+      "output": "OK 3.14: 7/30 day bounded RAM history; no flash or NVS needed\n"
+    },
+    {
+      "test": "test_littlefs_posix.cpp",
+      "code": 0,
+      "output": "PASS actual POSIX exclusive create/write/fsync/close/read/atomic replacement; no-op, foreign stages, headroom, info error and RO mount gate\n"
+    },
+    {
+      "test": "test_littlefs_readonly_probe.cpp",
+      "code": 0,
+      "output": "PASS LittleFS probe: read-only/no-format/no-grow, known geometry/signatures, errors, cleanup, ownership, mirror and one-shot cache\n"
+    },
+    {
+      "test": "test_night_safety.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_ota_validation.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_profile_transaction.cpp",
+      "code": 0,
+      "output": "PASS actual profile transaction: report-77 allocator model, all modeled API cut points, read/commit/CRC errors, single-copy preservation, key whitelist, rollover, 10 bounded saves\n"
+    },
+    {
+      "test": "test_rc5_3_4_nvs_safe.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_rc5_3_5_fs_store.cpp",
+      "code": 0,
+      "output": "PASS RECOVERY3.5 dual-slot save/reboot/corruption/rename/short-write and safe mount\n"
+    },
+    {
+      "test": "test_rc6_presence.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_rc6_recovery.cpp",
+      "code": 0,
+      "output": "PASS RC6: bounded connection, journal retention/corruption, OFF priority/fairness, cadence and LAN Host\n"
+    },
+    {
+      "test": "test_recovery313.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_recovery314.cpp",
+      "code": 0,
+      "output": "OK 3.14: fast boot interlocks, offline BLE, no untrusted clock, request IDs\n"
+    },
+    {
+      "test": "test_recovery315.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_recovery315_dev2.cpp",
+      "code": 0,
+      "output": "PASS DEV2: isolated retry, capped backoff, stale results, OFF exception, real scheduler and fresh RGB\n"
+    },
+    {
+      "test": "test_recovery_scenarios.cpp",
+      "code": 0,
+      "output": ""
+    },
+    {
+      "test": "test_storage_mount_probe.cpp",
+      "code": 0,
+      "output": "PASS storage probe: blank/read-error/nonempty/encrypted/mounted distinguished; zero formats and bounded raw reads\n"
+    },
+    {
+      "test": "test_storage_noop.cpp",
+      "code": 0,
+      "output": "PASS no-op storage policy: semantic points, unused tails, first save, uncertain outcome, actual edits and generation wrap\n"
+    },
+    {
+      "test": "test_wifi_config.cpp",
+      "code": 0,
+      "output": "PASS Wi-Fi record: limits, checksum, schema, wrap/conflicts, read failures, disabled tombstone and zero-write no-op\n"
+    },
+    {
+      "test": "test_wifi_nvs.cpp",
+      "code": 0,
+      "output": "PASS Wi-Fi real NVS adapter: isolated handles, no-op1000, all read phases, commit/NoSpace/uncertain writes,112 torn replacements, unrelated keys preserved\n"
+    },
+    {
+      "test": "test_worklight.cpp",
+      "code": 0,
+      "output": "PASS worklight: full ascent, hold, early/repeated stop, moving return curve, dark OFF, cancel, reboot default and millis rollover\n"
+    },
+    {
+      "test": "test_b2b4_contract.py",
+      "code": 0,
+      "output": "OK RC5 B2+B4: limite 64, guardado dual transaccional, v5 intacta, cadence 15 ensayada, rollback NVS\n"
+    },
+    {
+      "test": "test_b3_contract.py",
+      "code": 0,
+      "output": "PASS LAN: no login/TLS/signature, origin guard, OTA preparation/hash/compatibility/rollback retained\n"
+    },
+    {
+      "test": "test_b5_source_contract.py",
+      "code": 0,
+      "output": "B5 source contracts: PASS\n"
+    },
+    {
+      "test": "test_b6b7_contract.py",
+      "code": 0,
+      "output": "PASS B6/B7 contratos: PWA sin SW, permisos, curva V5 intacta, zoom y gr\u00e1ficos honestos\n"
+    },
+    {
+      "test": "test_b89_ble_allocation.py",
+      "code": 0,
+      "output": "PASS B9: 9 fallos de colas, fallo tarea, reintento limpio y un solo worker\n"
+    },
+    {
+      "test": "test_b89_contract.py",
+      "code": 0,
+      "output": "PASS B8/B9: perfiles, protocolos, NVS y particiones id\u00e9nticos; vigilante externo retirado; mantenimiento USB conservado\n"
+    },
+    {
+      "test": "test_b89_flash.py",
+      "code": 0,
+      "output": ".......\n----------------------------------------------------------------------\nRan 7 tests in 1.192s\n\nOK\n"
+    },
+    {
+      "test": "test_ble_idle_runtime.py",
+      "code": 0,
+      "output": "PASS persistent BLE: reuse, selective release, OTA, no duplicate disconnect\n"
+    },
+    {
+      "test": "test_ble_persistent_safety.py",
+      "code": 0,
+      "output": "PASS persistent BLE and safe fallbacks: PV OFF, CH 0x03, SDK stage, OTA release\n"
+    },
+    {
+      "test": "test_ble_recovery_contract.py",
+      "code": 0,
+      "output": "PASS recovery integration: OTA/rescue inhibition, retained evidence and initial POWER OFF interlock\n"
+    },
+    {
+      "test": "test_ble_recovery_runtime.py",
+      "code": 0,
+      "output": "PASS actual bleRecoveryTick: report 41 restarts, OTA/rescue never restarts, budget halts loop\n"
+    },
+    {
+      "test": "test_ble_unexpected_runtime.py",
+      "code": 0,
+      "output": "PASS actual unexpected disconnect handler: isolated CH, PV-only OFF interlock, OTA exclusion, dedup, untrusted-clock fallback\n"
+    },
+    {
+      "test": "test_ch_reconnect_runtime.py",
+      "code": 0,
+      "output": "PASS actual Chihiros recovery: independent retry, all inhibition gates, NVS failure, deliberate pause\n"
+    },
+    {
+      "test": "test_dev2_contract.py",
+      "code": 0,
+      "output": "PASS DEV2 wiring and 67 protected files; target/hardware not tested\n"
+    },
+    {
+      "test": "test_dev2_fresh_dispatch_runtime.py",
+      "code": 0,
+      "output": "PASS actual dispatch block: latest CH/PV target, invalid clock cancellation, urgent OFF bypass\n"
+    },
+    {
+      "test": "test_diagnostic_evidence_runtime.py",
+      "code": 0,
+      "output": "PASS production diagnostics JSON: FS/NVS, unknown/no-op/failure/uncertainty, profile checksum, busy denominator, retained maintenance, effective OFF\n"
+    },
+    {
+      "test": "test_journal_low_space_runtime.py",
+      "code": 0,
+      "output": "PASS V2 actual journal: 30min low-space backoff, no redundant blob on counter retry, dirty evidence preserved\n"
+    },
+    {
+      "test": "test_littlefs_boot_runtime.py",
+      "code": 0,
+      "output": "PASS actual loadProfile: exact gen9 migration, reboot no-op, newest selection, conflicts, read failure fallback and NVS unchanged\n"
+    },
+    {
+      "test": "test_nvs_fallback_integration.py",
+      "code": 0,
+      "output": "PASS actual firmware saveProfile + NVS adapter: FS unavailable, 4357 fallback, single-copy/read/stats/commit errors and uncertain published write\n"
+    },
+    {
+      "test": "test_nvs_v5_runtime.py",
+      "code": 0,
+      "output": "PASS exact V5 c4d2d529: 38/31, unchanged Chihiros, protected generation 8, validated generation 9 readback/boot\n"
+    },
+    {
+      "test": "test_ota_lan_runtime.py",
+      "code": 0,
+      "output": "PASS actual OTA writer: fragmented prefix, exact bytes, incompatible chip and partition overflow\n"
+    },
+    {
+      "test": "test_planned_off_runtime.py",
+      "code": 0,
+      "output": "PASS report89 planned-OFF gate: no false live status,300s boundary, link loss, safety interlocks, radio/worker failures\n"
+    },
+    {
+      "test": "test_rc5_3_4_diagnostics.py",
+      "code": 0,
+      "output": "PASS RECOVERY3.4 non-destructive NVS, RAM and restart diagnostic guards\n"
+    },
+    {
+      "test": "test_rc5_3_4_nvs_policy.py",
+      "code": 0,
+      "output": "PASS NVS preflight, inactive-slot preservation, generation rollover, error taxonomy\n"
+    },
+    {
+      "test": "test_rc5_3_4_recovery_policy.py",
+      "code": 0,
+      "output": "PASS Chihiros retry and Pez Verde daytime recovery safety policy\n"
+    },
+    {
+      "test": "test_rc5_3_5_integration.py",
+      "code": 0,
+      "output": "PASS RECOVERY3.5 filesystem/NVS compatibility and non-destructive guards\n"
+    },
+    {
+      "test": "test_rc5_bluedroid_runtime.py",
+      "code": 0,
+      "output": "PASS actual Bluedroid patch: 2s/8s deadlines, rollover, quarantine, late callbacks, retry, SDK/GATT write failures and isolated pinned build\n"
+    },
+    {
+      "test": "test_rc6_off_runtime.py",
+      "code": 0,
+      "output": "PASS actual sendPez: OFF interlock during connect, power-on or RGB; normal protocol unchanged\n"
+    },
+    {
+      "test": "test_rc6_presence_runtime.py",
+      "code": 0,
+      "output": "PASS unplugged worker reconciliation, disconnect callbacks and 60 s refresh, idle release and pending SDK request wiring\n"
+    },
+    {
+      "test": "test_recovery313_runtime.py",
+      "code": 0,
+      "output": "PASS 3.13 actual lamp health and generation checkpoint: planned OFF, paused, grace, OTA, low NVS, old profile, no-op and retry\n"
+    },
+    {
+      "test": "test_restart315_runtime.py",
+      "code": 0,
+      "output": "PASS actual restart journal: low margin, failed write, backoff, eventual success\n"
+    },
+    {
+      "test": "test_rev3_contract.py",
+      "code": 0,
+      "output": "PASS REV3 integration source contract (not target compilation)\n"
+    },
+    {
+      "test": "test_sierra_backup.py",
+      "code": 0,
+      "output": "......\n----------------------------------------------------------------------\nRan 6 tests in 2.502s\n\nOK\n"
+    },
+    {
+      "test": "test_signing_identity.py",
+      "code": 0,
+      "output": "PASS: signing refuses a private key different from the immutable original identity\n"
+    },
+    {
+      "test": "test_storage_commit_runtime.py",
+      "code": 0,
+      "output": "PASS actual commit API: repeated identical curves write zero bytes, generation/cache unchanged, stale/integrity errors, first persistent save, uncertain result and real edit\n"
+    },
+    {
+      "test": "test_storage_copy_audit.py",
+      "code": 0,
+      "output": "PASS local-copy audit: metadata only, blank/signature hint, exact size, identical copies, mismatch rejection and input bytes preserved\n"
+    },
+    {
+      "test": "test_storage_scope.py",
+      "code": 0,
+      "output": "PASS storage scope: engine/BLE/recovery/partition and3.7 storage hashes unchanged; admission/UI changes authorized; no format/check/repair fallback\n"
+    },
+    {
+      "test": "test_tls_stack_contract.py",
+      "code": 0,
+      "output": "PASS first-boot stack regression: explicit loop stack and bounded heap PEM workspace\n"
+    },
+    {
+      "test": "test_ui_connected.py",
+      "code": 0,
+      "output": "PASS one lamp vocabulary, one live snapshot, shared home/Centre labels, explicit link/freshness guards and optical qualification\n"
+    },
+    {
+      "test": "test_ui_engine_equivalence.py",
+      "code": 0,
+      "output": "PASS real JS/C++ equivalence: both lamps,1441 minutes, descending half-steps and midnight RGB endpoint\n"
+    },
+    {
+      "test": "test_ui_routes.py",
+      "code": 0,
+      "output": "PASS all 20 browser API paths have firmware handlers; retired controls removed and shared state is the only presentation source\n"
+    },
+    {
+      "test": "test_wifi_config_runtime.py",
+      "code": 0,
+      "output": "PASS actual Wi-Fi handlers: legacy read-only, atomic verify before RAM/disconnect, failures, unchanged requests, tombstone, all mode guards, redaction and RAM SDK initialization order\n"
+    },
+    {
+      "test": "test_worklight_runtime.py",
+      "code": 0,
+      "output": "PASS actual worklight handlers: morning/daytime, idempotence, all admission guards, unsafe cancellation, queued values cleared, OFF priority and profile bytes unchanged\n"
+    },
+    {
+      "test": "test_b2b4_editor.js",
+      "code": 0,
+      "output": "PASS B2B4 JS: 64 puntos, V5 intacta, luna directa y checksum de importaci\u00f3n\n"
+    },
+    {
+      "test": "test_b3_browser_live.js",
+      "code": 0,
+      "output": "PASS local HTTP: live UI and single direct command without login\n"
+    },
+    {
+      "test": "test_b6b7_ui.js",
+      "code": 0,
+      "output": "PASS B6/B7: zoom 1/3/6/24, curvas comparadas, simulaci\u00f3n local, escala de brillo, roles, foco, PWA\n"
+    },
+    {
+      "test": "test_nvs_ui.js",
+      "code": 0,
+      "output": "PASS actual save UI: readable 507, dirty editor preserved, one request, confirmation only after success, uncertain-write warning\n"
+    },
+    {
+      "test": "test_simple_ui.js",
+      "code": 0,
+      "output": "PASS unified strict DOM: both lamps and both views identical, zero/day, failures, stale state, preview isolation, OFF priority, lightweight polling and health\n"
+    },
+    {
+      "test": "test_ui_async.js",
+      "code": 0,
+      "output": "PASS API concurrency: repeated writes rejected, one in-flight status GET, stale read discarded after a write, dirty editor preserved, live curves independent and failed lock released\n"
+    },
+    {
+      "test": "test_worklight_ui.js",
+      "code": 0,
+      "output": "PASS worklight UI: home placement, fresh/server state, actual paths, duplicate click, rise/hold/return, offline/error and unchanged editor\n"
+    },
+    {
+      "test": "validar_fuentes",
+      "code": 0,
+      "output": "OK: PV wire frames, CH RGB/AUTO with reserved bytes, double-slot snapshot seal, V5 gen22 end-of-day\nOK: dedup, BLE serializado, timeout blando, prioridad y cancelacion segura antes del retorno\nPASS BLE matching: Pez Verde exact, Chihiros prefijo comprobado\nOK interfaz original, endpoints implementados, tabla y cabecera bootloader flash original\nPruebas nativas correctas; compilacion ESP32-S3 pendiente de toolchain y hardware\n"
+    },
+    {
+      "test": "security_crypto",
+      "code": 0,
+      "output": "OK utilidades de firma opcional archivadas: ECDSA y PBKDF2 host; no son requisitos de LAN1\n"
+    },
+    {
+      "test": "littlefs_lab",
+      "code": 0,
+      "output": "scenario_mutation_boundaries=11 program_calls=7 erase_calls=1 sync_calls=3\nscenario_mutation_boundaries=11 program_calls=7 erase_calls=1 sync_calls=3\nscenario_mutation_boundaries=11 program_calls=7 erase_calls=1 sync_calls=3\nscenario_mutation_boundaries=11 program_calls=7 erase_calls=1 sync_calls=3\n{\"synthetic_only\":true,\"disk_version\":131073,\"profile_bytes\":788,\"power_cut_cases\":132,\"retries_preserved_for_review\":0,\"identical_saves\":1000,\"identical_save_mutations\":0,\"nvs_changed\":false,\"foreign_file_preserved\":true,\"full_disk_preserved\":true,\"blank_and_read_error_not_formatted\":true}\nPASS: laboratorio sint\u00e9tico; no valida todav\u00eda el ATOM f\u00edsico ni su VFS.\n"
+    },
+    {
+      "test": "test_history315.cpp",
+      "code": 0,
+      "output": "PASS history A/B, real POSIX, torn write, CRC fallback, replay, low space, monotonic wear, leap year\n"
+    },
+    {
+      "test": "test_report315.cpp",
+      "code": 0,
+      "output": "PASS bounded report chunks, nonce, CRC, allocation sentinel and disconnect\n"
+    },
+    {
+      "test": "test_report315_ui.js",
+      "code": 0,
+      "output": "PASS nonce, stale, incomplete, malformed, tampered Unicode and invalid filename rejected\n"
+    },
+    {
+      "test": "test_dev3_contract.py",
+      "code": 0,
+      "output": "PASS exact 64 protected DEV2 files, real trend serializer 96+30, storage and report wiring\n"
+    }
+  ]
+}

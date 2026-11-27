@@ -19,7 +19,7 @@ namespace cielo96 {bool profileValid(decltype(profile)&p){return p.valid;}}
 enum class OtaPhase {Idle,Preparing,Ready,Uploading};struct {OtaPhase phase=OtaPhase::Idle;} otaTxn;
 namespace cielo {namespace ble {enum class Device {Chihiros};}}
 struct {bool active=false,pendingCh=false;bool busy(){return active;}bool pending(cielo::ble::Device){return pendingCh;}} queue;
-struct {bool works=true;unsigned writes=0;unsigned putBool(const char*,bool){writes++;return works?1:0;}} prefs;
+struct {bool works=true,stored=false;unsigned writes=0;bool getBool(const char*,bool){return stored;}unsigned putBool(const char*,bool){writes++;if(works)stored=true;return works?1:0;}} prefs;
 bool cieloChRun=false,lastChDesired=true;unsigned cieloChConsecutiveFailures=2,lastScheduleAt=0;
 '''
 main=r'''
@@ -41,8 +41,9 @@ int main(){
  prefs.works=true;clockNow+=30000;chReconnectTick();assert(records==1&&cieloChRun&&!lastChDesired);
  assert(!chReconnect.pending&&chReconnect.attempts==1&&cieloChConsecutiveFailures==0);
  chReconnectTick();assert(records==1); // no repeat every loop
+ chReconnect.success();chReconnect.arm(clockNow);clockNow+=30000;unsigned writes=prefs.writes;chReconnectTick();assert(records==2&&prefs.writes==writes);
  chReconnect.arm(clockNow);cieloAlwaysOn=false;chReconnectTick();assert(!chReconnect.pending);
- clockNow+=600000;chReconnectTick();assert(records==1); // explicit pause remains respected
+ clockNow+=600000;chReconnectTick();assert(records==2); // explicit pause remains respected
 }
 '''
 with tempfile.TemporaryDirectory() as d:

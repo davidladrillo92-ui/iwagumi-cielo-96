@@ -929,18 +929,37 @@ let guidedBusy=false;
 function init(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>nav(b.dataset.view));document.querySelectorAll('[data-lamp]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.lamp);state.editIndex=0;pointEditor(b.dataset.lamp)});
 document.querySelectorAll('[data-curve]').forEach(b=>b.onclick=()=>{chooseCurve(b.dataset.curve)});$('openSettings').onclick=settings;$('sheetClose').onclick=close;$('editCurve').onclick=()=>{state.editIndex=0;pointEditor(selectedCurve())};$('editSelectedPoint').onclick=()=>{const sel=state.selectedPoint;if(sel){state.editIndex=sel.index;chooseCurve(sel.which);pointEditor(sel.which)}};document.querySelectorAll('[data-zoom]').forEach(b=>b.onclick=()=>selectZoom(Number(b.dataset.zoom)));$('compareCurves').onclick=()=>{state.compare=!state.compare;$('compareCurves').setAttribute('aria-pressed',String(state.compare));render()};$('saveCurve').onclick=saveProgram;$('undoCurve').onclick=curveUndo;$('redoCurve').onclick=curveRedo;$('resetCurve').onclick=restoreProgram;$('exportProfile').onclick=exportProgram;$('loadProfile').onclick=()=>$('importFile').click();$('importFile').onchange=importProgram;
 
+function reportNonce315(){
+ const bytes=new Uint32Array(4);crypto.getRandomValues(bytes);
+ return Array.from(bytes,n=>n.toString(16).padStart(8,'0')).join('');
+}
+function reportCrc315(text){
+ let crc=0xffffffff;for(const b of new TextEncoder().encode(text)){crc^=b;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0)}
+ return ((~crc)>>>0).toString(16).padStart(8,'0');
+}
+function validateReport315(text,nonce){
+ const report=JSON.parse(text);
+ if(report.schema!=='iwagumi-cielo-96-diagnostico-v3'||report.request_nonce!==nonce||report.report_complete!==true||
+    typeof report.report_id!=='string'||!/^\d+-\d+-[0-9a-f]{8}$/.test(report.report_id))throw Error('Informe antiguo, incompleto o sin identidad verificada');
+ const trailer=/,"report_crc32":"([0-9a-f]{8})","report_complete":true}$/.exec(text);
+ if(!trailer||trailer[1]!==reportCrc315(text.slice(0,trailer.index)))throw Error('Integridad del informe no confirmada');
+ return report.report_id;
+}
+let reportBusy315=false;
 onAction('diagDownload',async()=>{
+ if(reportBusy315)return;reportBusy315=true;
  try{
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
-  let blob;try{
-  const res=await fetch('/api/diagnostico/maestro?download=1',{cache:'no-store',signal:controller.signal});
-  if(!res.ok)throw Error('HTTP '+res.status);
-  blob=await res.blob();
+  const nonce=reportNonce315();const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  let text,id;try{
+   const res=await fetch('/api/diagnostico/maestro?download=1&nonce='+encodeURIComponent(nonce),{cache:'no-store',signal:controller.signal});
+   if(!res.ok)throw Error('HTTP '+res.status);
+   text=await res.text();id=validateReport315(text,nonce);
   }finally{clearTimeout(timer)}
-  const u=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=u;a.download='CIELO_INFORME_MAESTRO.json';a.click();
+  const u=URL.createObjectURL(new Blob([text],{type:'application/json'})),a=document.createElement('a');
+  a.href=u;a.download='CIELO_INFORME_MAESTRO_'+id+'.json';a.click();
   setTimeout(()=>URL.revokeObjectURL(u),1500);
- }catch(e){toast('No se pudo descargar: '+e.message)}
+  toast('Informe nuevo verificado');
+ }catch(e){toast('No se pudo descargar: '+e.message)}finally{reportBusy315=false}
 });
 $('otaInstall').onclick=otaInstallUi;
 $('workLightStart').onclick=()=>workLightAction(true);
